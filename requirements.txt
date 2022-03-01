@@ -1,0 +1,27 @@
+# >>>>>>>>> conda requirements
+python>=3.8
+numpy
+matplotlib
+jupyterlab
+ruamel.yaml
+tqdm
+wandb
+imageio
+seaborn
+#   htm.core dependencies
+mock
+
+# <<<<<<<<< conda requirements
+
+
+# >>>>>>>>> pip requirements
+#   htm.core dependencies
+hexy
+prettytable
+pytest>=4.6.5
+
+# <<<<<<<<< pip requirements
+
+
+# >>>>>>>>> install from sources
+#   install our fork of the htm.core (see README)
