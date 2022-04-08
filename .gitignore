@@ -15,6 +15,11 @@
 # wandb folders
 wandb/
 
+# pycharm settings: ignore all with some exceptions
+.idea/*
+!.idea/scopes
+!.idea/copyright
+
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 # please, place all project specific rules above this line
 # =====================================================
@@ -31,9 +36,6 @@ __pycache__/
 # Jupyter Notebook
 .ipynb_checkpoints
 .last_checked
-
-# pycharm settings
-.idea/
 
 # VS Code settings
 .vscode/
