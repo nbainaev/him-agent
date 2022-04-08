@@ -65,9 +65,8 @@ If only was a way to track some signature of these files, store their content so
 File `requirements.txt` contains all required dependencies. Also, as commented in `requirements.txt`, you will need to install four additional dependencies:
 
 1. Our fork of the `htm.core` package.
-2. PyTorch
-3. [optional] CoppeliaSim + PyRep
-4. [optional] AnimalAI
+2. [optional] CoppeliaSim + PyRep
+3. [optional] AnimalAI
 
 In this section we provide you with two options: a) install requirements using both conda and pip or b) install everything with pip. In both cases everything is installed into the dedicated conda environment. The name of the environment is up to you, while we use `hima` for this guide.
 
