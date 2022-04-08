@@ -19,6 +19,7 @@ wandb/
 .idea/*
 !.idea/scopes
 !.idea/copyright
+!.idea/codeStyles
 
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 # please, place all project specific rules above this line
