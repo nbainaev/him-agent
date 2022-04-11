@@ -198,12 +198,27 @@ class Experiment:
         if not self.logger:
             return
 
+        n_policies = len(policies)
+        input_similarity_matrix = self._get_policy_action_similarity(policies)
+        output_similarity_matrix = self._get_output_similarity_union(
+            self.stats.last_representations
+        )
+        diff = np.abs(input_similarity_matrix - output_similarity_matrix)
+        mae = np.mean(diff[np.logical_not(np.identity(n_policies))])
+        self.logger.summary['mae'] = mae
+        self.vis_similarity(
+            input_similarity_matrix, output_similarity_matrix, 'representations similarity'
+        )
+
         input_similarity_matrix = self._get_input_similarity(policies)
         output_similarity_matrix = self._get_output_similarity(self.stats.last_representations)
+        diff = np.abs(input_similarity_matrix - output_similarity_matrix)
+        mae = np.mean(diff[np.logical_not(np.identity(n_policies))])
+        self.logger.summary['mae_alt'] = mae
 
-        mae = np.mean(np.abs(input_similarity_matrix - output_similarity_matrix))
-        self.logger.summary['mae'] = mae
-        self.vis_similarity(input_similarity_matrix, output_similarity_matrix)
+        self.vis_similarity(
+            input_similarity_matrix, output_similarity_matrix, 'representations similarity alt'
+        )
 
     def compute_tm_step(
             self, feedforward_input: SparseSdr, basal_context: SparseSdr,
@@ -229,6 +244,27 @@ class Experiment:
 
         self.temporal_pooler.compute(self._tp_active_input, self._tp_predicted_input, learn)
 
+    def _get_policy_action_similarity(self, policies):
+        n_policies = len(policies)
+        similarity_matrix = np.zeros((n_policies, n_policies))
+
+        for i in range(n_policies):
+            for j in range(n_policies):
+
+                counter = 0
+                size = 0
+                for p1, p2 in zip(policies[i], policies[j]):
+                    _, a1 = p1
+                    _, a2 = p2
+
+                    size += 1
+                    # such comparison works only for bucket encoding
+                    if a1[0] == a2[0]:
+                        counter +=1
+
+                similarity_matrix[i, j] = safe_divide(counter, size)
+        return similarity_matrix
+
     def _get_input_similarity(self, policies):
         def elem_sim(x1, x2):
             overlap = np.intersect1d(x1, x2, assume_unique=True).size
@@ -253,6 +289,22 @@ class Experiment:
                 similarity_matrix[i, j] = reduce_elementwise_similarity(similarities)
         return similarity_matrix
 
+    def _get_output_similarity_union(self, representations):
+        n_policies = len(representations.keys())
+        similarity_matrix = np.zeros((n_policies, n_policies))
+        for i in range(n_policies):
+            for j in range(n_policies):
+                if i == j:
+                    continue
+
+                repr1: set = representations[i]
+                repr2: set = representations[j]
+                similarity_matrix[i, j] = safe_divide(
+                    len(repr1 & repr2),
+                    len(repr2 | repr2)
+                )
+        return similarity_matrix
+
     def _get_output_similarity(self, representations):
         n_policies = len(representations.keys())
         similarity_matrix = np.zeros((n_policies, n_policies))
@@ -269,7 +321,7 @@ class Experiment:
                 )
         return similarity_matrix
 
-    def vis_similarity(self, input_similarity_matrix, output_similarity_matrix):
+    def vis_similarity(self, input_similarity_matrix, output_similarity_matrix, title):
         from matplotlib import pyplot as plt
         import seaborn as sns
         import wandb
@@ -289,7 +341,7 @@ class Experiment:
             np.abs(output_similarity_matrix - input_similarity_matrix),
             vmin=0, vmax=1, cmap='plasma', ax=ax3, annot=True
         )
-        self.logger.log({'representations similarity': wandb.Image(ax1)})
+        self.logger.log({title: wandb.Image(ax1)})
 
 
 def resolve_tp(config, temporal_memory):
