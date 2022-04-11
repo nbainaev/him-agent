@@ -18,7 +18,7 @@ experiment:
 #  policy_repeats: 4
   steps_per_policy: *n_states
   policy_selection_rule: 'ordered'
-  temporal_pooler: ablation_utp
+  temporal_pooler: sandwich_tp
 
 generator:
   _type_: synthetic
@@ -98,6 +98,57 @@ temporal_poolers:
     untemporal_learning: True
     union_learning: True
     history_learning: True
+
+  custom_utp:
+    _type_: CustomUtp
+    inputDimensions: ...
+    columnDimensions: [*tp_output_size]
+    initial_pooling: 0.5
+    pooling_decay: 0.1
+    permanence_inc: 0.1
+    permanence_dec: 0.01
+    sparsity: 0.004
+    active_weight: 0.5
+    predicted_weight: 2.0
+    receptive_field_sparsity: 0.5
+    activation_threshold: 0.6
+    history_length: 20
+    union_sdr_sparsity: 0.01
+    prev_perm_inc: 0.05
+
+  sandwich_tp:
+    _type_: SandwichTp
+    initial_pooling: 1.
+    pooling_decay: 0.05
+    lower_sp_conf:
+      columnDimensions: [*tp_output_size]
+      boostStrength: 0.
+      localAreaDensity: 0.01
+      globalInhibition: True
+      dutyCyclePeriod: 1000
+      minPctOverlapDutyCycle: 0.001
+      numActiveColumnsPerInhArea: 0
+      potentialPct: 0.5
+      stimulusThreshold: 3
+      synPermConnected: 0.5
+      synPermActiveInc: 0.1
+      synPermInactiveDec: 0.01
+      wrapAround: False
+    upper_sp_conf:
+      columnDimensions: [*tp_output_size]
+      boostStrength: 0.
+      localAreaDensity: 0.01
+      globalInhibition: True
+      dutyCyclePeriod: 1000
+      minPctOverlapDutyCycle: 0.001
+      numActiveColumnsPerInhArea: 0
+      potentialPct: 0.5
+      stimulusThreshold: 3
+      synPermConnected: 0.5
+      synPermActiveInc: 0.1
+      synPermInactiveDec: 0.01
+      wrapAround: False
+
 
 temporal_memory:
   cells_per_column: 16

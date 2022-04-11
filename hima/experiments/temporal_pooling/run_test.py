@@ -21,6 +21,7 @@ from hima.experiments.temporal_pooling.data_generation import resolve_data_gener
 from hima.experiments.temporal_pooling.metrics import (
     symmetric_error, representations_intersection_1
 )
+from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
 from hima.modules.htm.spatial_pooler import UnionTemporalPooler
 from hima.modules.htm.temporal_memory import DelayedFeedbackTM
 
@@ -364,6 +365,12 @@ def resolve_tp(config, temporal_pooler: str, temporal_memory):
     elif tp_type == 'AblationUtp':
         config_tp = base_config_tp | config_tp
         tp = AblationUtp(seed=seed, **config_tp)
+    elif tp_type == 'SandwichTp':
+        # FIXME: dangerous mutations here! We should work with copies
+        base_config_tp['lower_sp_conf'] = base_config_tp['lower_sp_conf'] | config_tp
+        base_config_tp['lower_sp_conf']['seed'] = seed
+        base_config_tp['upper_sp_conf']['seed'] = seed
+        tp = SandwichTp(**base_config_tp)
     else:
         raise KeyError(f'Temporal Pooler type "{tp_type}" is not supported')
     return tp
