@@ -12,8 +12,10 @@ import numpy as np
 from htm.bindings.sdr import SDR
 from wandb.sdk.wandb_run import Run
 
+from hima.common.config_utils import which_type
 from hima.common.sdr import SparseSdr
 from hima.common.utils import ensure_absolute_number, safe_divide
+from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
 from hima.experiments.temporal_pooling.config_utils import make_logger, compile_config
 from hima.experiments.temporal_pooling.data_generation import resolve_data_generator
 from hima.experiments.temporal_pooling.metrics import (
@@ -123,6 +125,7 @@ class Experiment:
     def __init__(
             self, config: dict, n_policies: int, epochs: int,
             policy_repeats: int, steps_per_policy: int,
+            temporal_pooler: str,
             **kwargs
     ):
         self.config = config
@@ -140,7 +143,7 @@ class Experiment:
             state_encoder=self.data_generator.state_encoder
         )
         self.temporal_pooler = resolve_tp(
-            self.config,
+            self.config, temporal_pooler,
             temporal_memory=self.temporal_memory
         )
         self.stats = ExperimentStats()
@@ -344,8 +347,8 @@ class Experiment:
         self.logger.log({title: wandb.Image(ax1)})
 
 
-def resolve_tp(config, temporal_memory):
-    base_config_tp = config['temporal_pooler']
+def resolve_tp(config, temporal_pooler: str, temporal_memory):
+    base_config_tp = config['temporal_poolers'][temporal_pooler]
     seed = config['seed']
     input_size = temporal_memory.columns * temporal_memory.cells_per_column
 
@@ -354,8 +357,15 @@ def resolve_tp(config, temporal_memory):
         potentialRadius=input_size,
     )
 
-    config_tp = base_config_tp | config_tp
-    tp = UnionTemporalPooler(seed=seed, **config_tp)
+    tp_type, base_config_tp = which_type(base_config_tp, extract=True)
+    if tp_type == 'UnionSdr':
+        config_tp = base_config_tp | config_tp
+        tp = UnionTemporalPooler(seed=seed, **config_tp)
+    elif tp_type == 'AblationUtp':
+        config_tp = base_config_tp | config_tp
+        tp = AblationUtp(seed=seed, **config_tp)
+    else:
+        raise KeyError(f'Temporal Pooler type "{tp_type}" is not supported')
     return tp
 
 
