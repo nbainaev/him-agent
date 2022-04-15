@@ -12,11 +12,12 @@ import numpy as np
 from htm.bindings.sdr import SDR
 from wandb.sdk.wandb_run import Run
 
-from hima.common.config_utils import which_type
+from hima.common.config_utils import extracted_type
 from hima.common.sdr import SparseSdr
 from hima.common.utils import ensure_absolute_number, safe_divide
 from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
 from hima.experiments.temporal_pooling.config_utils import make_logger, compile_config
+from hima.experiments.temporal_pooling.custom_utp import CustomUtp
 from hima.experiments.temporal_pooling.data_generation import resolve_data_generator
 from hima.experiments.temporal_pooling.metrics import (
     symmetric_error, representations_intersection_1
@@ -358,13 +359,16 @@ def resolve_tp(config, temporal_pooler: str, temporal_memory):
         potentialRadius=input_size,
     )
 
-    tp_type, base_config_tp = which_type(base_config_tp, extract=True)
+    base_config_tp, tp_type = extracted_type(base_config_tp)
     if tp_type == 'UnionSdr':
         config_tp = base_config_tp | config_tp
         tp = UnionTemporalPooler(seed=seed, **config_tp)
     elif tp_type == 'AblationUtp':
         config_tp = base_config_tp | config_tp
         tp = AblationUtp(seed=seed, **config_tp)
+    elif tp_type == 'CustomTp':
+        config_tp = base_config_tp | config_tp
+        tp = CustomUtp(seed=seed, **config_tp)
     elif tp_type == 'SandwichTp':
         # FIXME: dangerous mutations here! We should work with copies
         base_config_tp['lower_sp_conf'] = base_config_tp['lower_sp_conf'] | config_tp

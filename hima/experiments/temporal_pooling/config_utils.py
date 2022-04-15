@@ -10,10 +10,11 @@ import yaml
 from hima.common.config_utils import parse_str
 
 
+# TODO: split into parse_arg str -> (key_path: list, value: Any) and overwrite
 def overwrite_config(config: dict, key_path: str, value: str):
-    # accepts everything non-parseable as is, i.e as a str
+    # accepts everything non-parseable as is, i.e. as a str
     value = parse_str(value)
-    key_path = key_path.lstrip('-')
+    key_path = key_path.removeprefix('--')
 
     # NOTE: to distinguish sweep params from the config params in wandb
     # interface, we introduced a trick - it's allowed to specify sweep param
@@ -22,11 +23,9 @@ def overwrite_config(config: dict, key_path: str, value: str):
 
     # ending dots are removed first to guarantee that after split by dots
     # the last item is the actual correct name stored in the config dict slice
-    while key_path.endswith('.'):
-        key_path = key_path[:-1]
+    key_path = key_path.rstrip('.')
 
-    # sequentially unfold config dict hierarchy (with the current
-    # dict root represented by `c`) following the path stored in the key
+    # sequentially unfold nested dicts following the path stored in the key
     tokens = key_path.split('.')
     c = config
     for key in tokens[:-1]:

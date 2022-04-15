@@ -5,12 +5,19 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
 from ast import literal_eval
-from typing import Iterable, Union
+from typing import Iterable, Any, Optional
+
+# TODO: rename file to `config` and add top-level description comment
+
+
+# Register config-related conventional constants here. Start them with `_` as non-importable!
+_TYPE_KEY = '_type_'
+_TO_BE_INDUCED_VALUE = 'TBI'
 
 
 def filtered(d: dict, keys_to_remove: Iterable[str], depth: int) -> dict:
     """
-    Returns a shallow copy of the provided dictionary without the items
+    Return a shallow copy of the provided dictionary without the items
     that match `keys_to_remove`.
 
     The `depth == 1` means filtering `d` itself,
@@ -27,29 +34,41 @@ def filtered(d: dict, keys_to_remove: Iterable[str], depth: int) -> dict:
     }
 
 
-def filtered_by_name_convention(config: dict, depth: int) -> dict:
+# sadly, cannot specify the correct type hint here, which is tuple[dict, Optional[Any], ...]
+def extracted(d: dict, *keys: str) -> tuple:
     """
-    Recursively filters out non-passable args started with '.' and '_'.
+    Return a copy of the dictionary without specified keys and each extracted value
+    (or None if a specified key was absent).
 
-    The `depth == 1` means filtering `config` itself,
-        `depth == 2` — with its dict immediate descendants
-        and so on.
-
-    For example, it filters out `_type_` and `.xyz` dict keys,
-    which by our convention in yaml configs denote the type name
-    and a local variable correspondingly.
+    Examples
+    --------
+    >>> extracted({'a': 1, 'b': 2, 'c': 3}, 'a', 'c')
+    ({'b': 2}, 1, 3)
     """
-    if not isinstance(config, dict) or depth <= 0:
-        return config
-
-    return {
-        k: filtered_by_name_convention(v, depth - 1)
-        for k, v in config.items()
-        if not (k.startswith('.') or k.startswith('_'))
-    }
+    values = tuple([d.get(k, None) for k in keys])
+    filtered_dict = filtered(d, keys, depth=1)
+    return (filtered_dict, ) + values
 
 
-def parse_str(val):
+def extracted_type(config: dict) -> tuple[dict, Optional[str]]:
+    return extracted(config, _TYPE_KEY)
+
+
+def split_arg(arg: str) -> tuple[str, str]:
+    # "--key=value" --> ["--key", "value"]
+    key_path, value = arg.split('=', maxsplit=1)
+
+    # "--key" --> "key"
+    key_path = key_path.removeprefix('--')
+
+    # TODO: modify the func to parse_arg str -> (key_path: list, value: Any)
+    return key_path, value
+
+
+def parse_str(s: str) -> Any:
+    """Parse string value to the most appropriate type."""
+
+    # noinspection PyShadowingNames
     def boolify(s):
         if s in ['True', 'true']:
             return True
@@ -57,19 +76,12 @@ def parse_str(val):
             return False
         raise ValueError('Not Boolean Value!')
 
+    # NB: try/except is widely accepted pythonic way to parse things
+
+    # NB: order here is important
     for caster in (boolify, int, float, literal_eval):
         try:
-            return caster(val)
+            return caster(s)
         except ValueError:
             pass
-    return val
-
-
-def which_type(config: dict, extract: bool = False) -> Union[str, tuple[str, dict]]:
-    key = '_type_'
-    t = config.get(key, None)
-    if extract:
-        filtered_config = filtered(config, keys_to_remove={key}, depth=1)
-        return t, filtered_config
-
-    return t
+    return s

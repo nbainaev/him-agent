@@ -3,6 +3,7 @@ entity: pkuderov
 project: temporal_pooling
 log: True    # wandb logging
 
+# FIXME: using &key/*key is error prone with sweeps overwriting
 .shared_params:
   n_states: &n_states 30
   tp_output_size: &tp_output_size 4000
@@ -17,7 +18,7 @@ experiment:
 #  epochs: 2
 #  policy_repeats: 4
   steps_per_policy: *n_states
-  policy_selection_rule: 'ordered'
+  policy_selection_rule: ordered
   temporal_pooler: sandwich_tp
 
 generator:

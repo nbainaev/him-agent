@@ -11,7 +11,7 @@ from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
 from hima.common.sdr_encoders import IntBucketEncoder
-from hima.common.config_utils import which_type
+from hima.common.config_utils import extracted_type
 
 
 class Policy:
@@ -116,7 +116,7 @@ class PolicySelector:
 
 def resolve_data_generator(config: dict):
     seed = config['seed']
-    generator_type, generator_config = which_type(config['generator'], extract=True)
+    generator_config, generator_type = extracted_type(config['generator'])
 
     if generator_type == 'synthetic':
         return SyntheticGenerator(config, seed=seed, **generator_config)
@@ -126,7 +126,7 @@ def resolve_data_generator(config: dict):
 
 def resolve_encoder(config: dict, key, registry_key: str):
     registry = config[registry_key]
-    encoder_type, encoder_config = which_type(registry[key], extract=True)
+    encoder_config, encoder_type = extracted_type(registry[key])
 
     if encoder_type == 'int_bucket':
         return IntBucketEncoder(**encoder_config)

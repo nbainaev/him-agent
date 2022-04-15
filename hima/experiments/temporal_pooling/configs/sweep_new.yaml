@@ -1,0 +1,20 @@
+program: TBI  # default: `run.py`
+entity: TBI   # default: $WANDB_ENTITY
+
+project: test
+method: grid
+parameters:
+  seed..what.whaaaat:
+#    values: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29]
+    values: [20]
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+    # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
+  - --config
+  - config
+
