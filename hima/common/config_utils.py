@@ -5,14 +5,22 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
 from ast import literal_eval
-from typing import Iterable, Any, Optional
+from pathlib import Path
+from typing import Iterable, Any, Optional, Union, NoReturn
 
 # TODO: rename file to `config` and add top-level description comment
 
 
 # Register config-related conventional constants here. Start them with `_` as non-importable!
+from ruamel import yaml
+
+from hima.common.utils import ensure_list
+
 _TYPE_KEY = '_type_'
 _TO_BE_INDUCED_VALUE = 'TBI'
+
+
+TConfigOverrideKV = tuple[list, Any]
 
 
 def filtered(d: dict, keys_to_remove: Iterable[str], depth: int) -> dict:
@@ -54,14 +62,38 @@ def extracted_type(config: dict) -> tuple[dict, Optional[str]]:
     return extracted(config, _TYPE_KEY)
 
 
-def split_arg(arg: str) -> tuple[str, str]:
-    # "--key=value" --> ["--key", "value"]
-    key_path, value = arg.split('=', maxsplit=1)
+def override_config(
+        config: dict,
+        overrides: Union[TConfigOverrideKV, list[TConfigOverrideKV]]
+) -> None:
+    overrides = ensure_list(overrides)
+    for key_path, value in overrides:
+        c = config
+        for key_token in key_path[:-1]:
+            c = c[key_token]
+        c[key_path[-1]] = value
 
-    # "--key" --> "key"
-    key_path = key_path.removeprefix('--')
 
-    # TODO: modify the func to parse_arg str -> (key_path: list, value: Any)
+def parse_arg(arg: Union[str, tuple[str, Any]]) -> TConfigOverrideKV:
+    if isinstance(arg, str):
+        # "--key=value" --> ["--key", "value"]
+        key_path, value = arg.split('=', maxsplit=1)
+
+        # "--key" --> "key"
+        key_path = key_path.removeprefix('--')
+    else:
+        # tuple from wandb config
+        key_path, value = arg
+
+    # We parse key tokens as they can represent array indices
+    # We skip empty key tokens (see [1] in the end of the file for an explanation)
+    key_path = [
+        parse_str(key_token)
+        for key_token in key_path.split('.')
+        if key_token
+    ]
+    value = parse_str(value)
+
     return key_path, value
 
 
@@ -85,3 +117,29 @@ def parse_str(s: str) -> Any:
         except ValueError:
             pass
     return s
+
+
+def read_config(filepath: str):
+    filepath = Path(filepath)
+    with filepath.open('r') as config_io:
+        return yaml.load(config_io, Loader=yaml.Loader)
+
+
+# [1]: Using sweeps we have a little problem with config logging. All parameters
+# provided to a run from sweep are logged to wandb automatically. At the same time, when
+# we also log our compiled config dictionary, its content is flattened such that
+# each param key is represented as `path.to.nested.dict.key`. Note that we declare
+# params in sweep config the same way. Therefore, each sweep run will have such params
+# duplicated in wandb and there's no correct way to distinguish them. However, wandb
+# does it! Also, only sweep runs will have params duplicated. Simple runs don't have
+# the second entry because they don't have sweep param args.
+#
+# Problem: when you want to filter or group by param in wandb interface,
+# you cannot be sure which of the duplicated entries to choose, while they're different
+# — the only entry that is presented in all runs [either sweep or simple] is the entry
+# from our config, not from a sweep.
+#
+# Solution: That's why we introduced a trick - it's allowed to specify sweep param
+# with insignificant additional dots (e.g. `path..to...key.`) to de-duplicate entries.
+# We ignore these dots [or empty path elements introduced by them after split-by-dots]
+# while parsing the nested key path.
