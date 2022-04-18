@@ -51,23 +51,22 @@ class Sweep:
     shared_run_config: dict
     shared_run_config_overrides: list[TConfigOverrideKV]
 
-    run_command_arg_parser: ArgumentParser
-
     def __init__(
             self, config: dict, n_agents: int,
             single_run_entry_point: TRunEntryPoint,
             shared_config_overrides: list[TConfigOverrideKV],
             run_arg_parser: ArgumentParser = None,
     ):
-        self.run_command_arg_parser = run_arg_parser
-
         config, run_command_args, wandb_project = extracted(config, 'command', 'project')
         self.config = config
         self.n_agents = isnone(n_agents, 1)
         self.project = wandb_project
         self.run_entry_point = single_run_entry_point
 
-        shared_config_filepath = self._extract_agents_shared_config_filepath(run_command_args)
+        shared_config_filepath = self._extract_agents_shared_config_filepath(
+            parser=run_arg_parser or get_run_command_arg_parser(),
+            run_command_args=run_command_args
+        )
         self.shared_run_config = read_config(shared_config_filepath)
         self.shared_run_config_overrides = shared_config_overrides
 
@@ -110,9 +109,13 @@ class Sweep:
         # start single run
         self.run_entry_point(config)
 
-    def _extract_agents_shared_config_filepath(self, run_args):
-        parser = self.run_command_arg_parser or get_run_command_arg_parser()
-        args, _ = parser.parse_known_args(run_args)
+    @staticmethod
+    def _extract_agents_shared_config_filepath(parser: ArgumentParser, run_command_args):
+        # there are several ways to extract config filepath based on different conventions
+        # we use parser as the most simplistic and automated,
+        # but we could introduce strict positional convention or parse with hands
+
+        args, _ = parser.parse_known_args(run_command_args)
         return args.config_filepath
 
 
