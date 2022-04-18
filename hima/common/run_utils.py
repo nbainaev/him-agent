@@ -23,7 +23,7 @@ TExperimentRunnerRegistry = dict[str, Type['Runner']]
 
 class Runner:
     config: TConfig
-    logger: Run
+    logger: Optional[Run]
 
     def __init__(
             self, config: TConfig,
@@ -32,6 +32,7 @@ class Runner:
     ):
         self.config = config
 
+        self.logger = None
         if log:
             self.logger = wandb.init(project=project)
             # we have to pass the config with update instead of init because of sweep runs

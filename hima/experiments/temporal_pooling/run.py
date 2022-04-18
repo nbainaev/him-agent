@@ -14,6 +14,6 @@ if __name__ == '__main__':
     run_experiment(
         run_command_parser=get_run_command_arg_parser(),
         experiment_runner_registry={
-            'policy': PoliciesExperiment
+            'tp.policy': PoliciesExperiment
         }
     )
