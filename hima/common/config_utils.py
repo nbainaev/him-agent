@@ -6,24 +6,26 @@
 
 from ast import literal_eval
 from pathlib import Path
-from typing import Iterable, Any, Optional, Union, NoReturn
+from typing import Iterable, Any, Optional, Union
+
+from ruamel import yaml
+
+from hima.common.utils import ensure_list
+
 
 # TODO: rename file to `config` and add top-level description comment
 
 
 # Register config-related conventional constants here. Start them with `_` as non-importable!
-from ruamel import yaml
-
-from hima.common.utils import ensure_list
-
 _TYPE_KEY = '_type_'
 _TO_BE_INDUCED_VALUE = 'TBI'
 
 
+TConfig = dict[str, Any]
 TConfigOverrideKV = tuple[list, Any]
 
 
-def filtered(d: dict, keys_to_remove: Iterable[str], depth: int) -> dict:
+def filtered(d: TConfig, keys_to_remove: Iterable[str], depth: int) -> TConfig:
     """
     Return a shallow copy of the provided dictionary without the items
     that match `keys_to_remove`.
@@ -42,11 +44,15 @@ def filtered(d: dict, keys_to_remove: Iterable[str], depth: int) -> dict:
     }
 
 
-# sadly, cannot specify the correct type hint here, which is tuple[dict, Optional[Any], ...]
-def extracted(d: dict, *keys: str) -> tuple:
+def extracted(d: TConfig, *keys: str) -> tuple:
     """
     Return a copy of the dictionary without specified keys and each extracted value
     (or None if a specified key was absent).
+
+    NOTE: Sadly, type checkers incorrectly understand the correct type hint here,
+    which is tuple[TConfig, Optional[Any], ...], so less strict type hint is provided
+
+    TODO: Probably, it should be reworked to a `split`-like function that returns two dicts
 
     Examples
     --------
@@ -58,14 +64,16 @@ def extracted(d: dict, *keys: str) -> tuple:
     return (filtered_dict, ) + values
 
 
-def extracted_type(config: dict) -> tuple[dict, Optional[str]]:
+def extracted_type(config: TConfig) -> tuple[TConfig, Optional[str]]:
+    """Extracts the type using the type hinting convention for configs."""
     return extracted(config, _TYPE_KEY)
 
 
 def override_config(
-        config: dict,
+        config: TConfig,
         overrides: Union[TConfigOverrideKV, list[TConfigOverrideKV]]
 ) -> None:
+    """Applies the number of overrides to the content of the config dictionary."""
     overrides = ensure_list(overrides)
     for key_path, value in overrides:
         c = config
@@ -76,13 +84,15 @@ def override_config(
 
 def parse_arg(arg: Union[str, tuple[str, Any]]) -> TConfigOverrideKV:
     if isinstance(arg, str):
+        # raw arg string: "key=value"
+
         # "--key=value" --> ["--key", "value"]
         key_path, value = arg.split('=', maxsplit=1)
 
         # "--key" --> "key"
         key_path = key_path.removeprefix('--')
     else:
-        # tuple from wandb config
+        # tuple ("key", value) from wandb config of the sweep single run
         key_path, value = arg
 
     # We parse key tokens as they can represent array indices
@@ -119,7 +129,7 @@ def parse_str(s: str) -> Any:
     return s
 
 
-def read_config(filepath: str):
+def read_config(filepath: str) -> TConfig:
     filepath = Path(filepath)
     with filepath.open('r') as config_io:
         return yaml.load(config_io, Loader=yaml.Loader)
