@@ -6,18 +6,19 @@
 from argparse import ArgumentParser
 from copy import deepcopy
 from multiprocessing import Process
-from typing import Callable, Any
+from typing import Callable, Any, Optional, Type
 
 import wandb
 from wandb.sdk.wandb_run import Run
 
 from hima.common.config_utils import (
     TConfig, TConfigOverrideKV, extracted, read_config, parse_arg,
-    override_config
+    override_config, extracted_type
 )
 from hima.common.utils import isnone
 
 TRunEntryPoint = Callable[[TConfig], None]
+TExperimentRunnerRegistry = dict[str, Type['Runner']]
 
 
 class Runner:
@@ -46,14 +47,15 @@ class Sweep:
     config: dict
     n_agents: int
 
+    experiment_runner_registry: TExperimentRunnerRegistry
+
     # sweep runs' shared config
-    run_entry_point: TRunEntryPoint
     shared_run_config: dict
     shared_run_config_overrides: list[TConfigOverrideKV]
 
     def __init__(
             self, config: dict, n_agents: int,
-            single_run_entry_point: TRunEntryPoint,
+            experiment_runner_registry: TExperimentRunnerRegistry,
             shared_config_overrides: list[TConfigOverrideKV],
             run_arg_parser: ArgumentParser = None,
     ):
@@ -61,7 +63,7 @@ class Sweep:
         self.config = config
         self.n_agents = isnone(n_agents, 1)
         self.project = wandb_project
-        self.run_entry_point = single_run_entry_point
+        self.experiment_runner_registry = experiment_runner_registry
 
         shared_config_filepath = self._extract_agents_shared_config_filepath(
             parser=run_arg_parser or get_run_command_arg_parser(),
@@ -75,6 +77,9 @@ class Sweep:
     def run(self):
         print(f'==> Sweep {self.id}')
 
+        # TODO: test error handling - we want to terminate [on any error]
+        #  a) the whole sweep
+        #  b) a single agent
         agent_processes = []
         for _ in range(self.n_agents):
             p = Process(
@@ -107,7 +112,8 @@ class Sweep:
         override_config(config, config_overrides)
 
         # start single run
-        self.run_entry_point(config)
+        runner = resolve_experiment_runner(config, self.experiment_runner_registry)
+        runner.run()
 
     @staticmethod
     def _extract_agents_shared_config_filepath(parser: ArgumentParser, run_command_args):
@@ -130,7 +136,10 @@ def get_run_command_arg_parser() -> ArgumentParser:
     return parser
 
 
-def run_experiment(run_command_parser: ArgumentParser, run_entry_point: TRunEntryPoint) -> None:
+def run_experiment(
+        run_command_parser: ArgumentParser,
+        experiment_runner_registry: TExperimentRunnerRegistry
+) -> None:
     args, unknown_args = run_command_parser.parse_known_args()
 
     config = read_config(args.config_filepath)
@@ -145,10 +154,22 @@ def run_experiment(run_command_parser: ArgumentParser, run_entry_point: TRunEntr
         Sweep(
             config=config,
             n_agents=args.n_sweep_agents,
-            single_run_entry_point=run_entry_point,
+            experiment_runner_registry=experiment_runner_registry,
             shared_config_overrides=config_overrides,
             run_arg_parser=run_command_parser,
         ).run()
     else:
         override_config(config, config_overrides)
-        run_entry_point(config)
+        runner = resolve_experiment_runner(config, experiment_runner_registry)
+        runner.run()
+
+
+def resolve_experiment_runner(
+        config: TConfig,
+        experiment_runner_registry: TExperimentRunnerRegistry
+) -> Runner:
+    config, experiment_type = extracted_type(config)
+    runner = experiment_runner_registry.get(experiment_type, None)
+
+    assert runner, f'Experiment runner type "{experiment_type}" is not supported'
+    return runner(config, **config)

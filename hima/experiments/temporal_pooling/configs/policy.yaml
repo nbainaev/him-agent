@@ -1,5 +1,5 @@
+_type_: tp.policy
 seed: 1337
-entity: pkuderov
 project: temporal_pooling
 log: True    # wandb logging
 
