@@ -101,6 +101,12 @@ class Sweep:
     def _wandb_agent_entry_point(self) -> None:
         # BE CAREFUL: this method is expected to be run in parallel — DO NOT mutate `self` here
 
+        # Matplotlib tries to spawn GUI which is prohibited for sub-processes meaning
+        # you will encounter kernel core errors. To prevent it we tell matplotlib to
+        # not touch GUI at all in each of the spawned sub-processes.
+        from matplotlib import pyplot as plt
+        plt.switch_backend('Agg')
+
         # we know here that it's a sweep-induced run and can expect single sweep run config to be
         # passed via wandb.config, hence we take it and apply all overrides:
         # while concatenating overrides, the order DOES matter: run params, then args
