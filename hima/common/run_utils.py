@@ -3,12 +3,14 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+import os
 from argparse import ArgumentParser
 from copy import deepcopy
 from multiprocessing import Process
 from typing import Callable, Any, Optional, Type
 
 import wandb
+from matplotlib import pyplot as plt
 from wandb.sdk.wandb_run import Run
 
 from hima.common.config_utils import (
@@ -101,11 +103,8 @@ class Sweep:
     def _wandb_agent_entry_point(self) -> None:
         # BE CAREFUL: this method is expected to be run in parallel — DO NOT mutate `self` here
 
-        # Matplotlib tries to spawn GUI which is prohibited for sub-processes meaning
-        # you will encounter kernel core errors. To prevent it we tell matplotlib to
-        # not touch GUI at all in each of the spawned sub-processes.
-        from matplotlib import pyplot as plt
-        plt.switch_backend('Agg')
+        # see comments inside func
+        turn_off_gui_for_matplotlib()
 
         # we know here that it's a sweep-induced run and can expect single sweep run config to be
         # passed via wandb.config, hence we take it and apply all overrides:
@@ -132,6 +131,18 @@ class Sweep:
         return args.config_filepath
 
 
+def turn_off_gui_for_matplotlib():
+    # Matplotlib tries to spawn GUI which is prohibited for sub-processes meaning
+    # you will encounter kernel core errors. To prevent it we tell matplotlib to
+    # not touch GUI at all in each of the spawned sub-processes.
+    plt.switch_backend('Agg')
+
+
+def set_single_threaded_math():
+    os.environ['OMP_NUM_THREADS'] = '1'
+    os.environ['MKL_NUM_THREADS'] = '1'
+
+
 def get_run_command_arg_parser() -> ArgumentParser:
     parser = ArgumentParser()
     # todo: add examples
@@ -154,8 +165,10 @@ def run_experiment(
 
     if args.wandb_entity:
         # overwrite wandb entity for the run
-        import os
         os.environ['WANDB_ENTITY'] = args.wandb_entity
+
+    # prevent math parallelization as it usually only slows things down for us
+    set_single_threaded_math()
 
     if args.wandb_sweep:
         Sweep(
