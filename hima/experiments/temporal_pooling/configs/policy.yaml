@@ -18,7 +18,7 @@ policy_repeats: 20
 #policy_repeats: 4
 steps_per_policy: *n_states
 policy_selection_rule: ordered
-temporal_pooler: union_sdr
+temporal_pooler: union_tp
 
 generator:
   _type_: synthetic
@@ -41,8 +41,8 @@ action_encoders:
     bucket_size: 10
 
 temporal_poolers:
-  union_sdr:
-    _type_: UnionSdr
+  union_tp:
+    _type_: UnionTp
     columnDimensions: [*tp_output_size]
     localAreaDensity: 0.01
     maxUnionActivity: &tp_output_sparsity 0.01

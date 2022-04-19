@@ -27,7 +27,7 @@ from hima.modules.htm.temporal_memory import DelayedFeedbackTM
 
 # noinspection PyAttributeOutsideInit
 class ExperimentStats:
-    def __init__(self):
+    def __init__(self, temporal_pooler):
         self.policy_id: Optional[int] = None
         self.last_representations = {}
         self.tp_current_representation = set()
@@ -128,7 +128,7 @@ class PoliciesExperiment(Runner):
             self, config: TConfig, n_policies: int, epochs: int, policy_repeats: int,
             steps_per_policy: int, temporal_pooler: str, **kwargs
     ):
-        super().__init__(config, **kwargs)
+        super().__init__(config, **config)
 
         self.n_policies = n_policies
         self.epochs = epochs
@@ -366,7 +366,7 @@ def resolve_tp(config, temporal_pooler: str, temporal_memory):
     )
 
     base_config_tp, tp_type = extracted_type(base_config_tp)
-    if tp_type == 'UnionSdr':
+    if tp_type == 'UnionTp':
         config_tp = base_config_tp | config_tp
         tp = UnionTemporalPooler(seed=seed, **config_tp)
     elif tp_type == 'AblationUtp':
