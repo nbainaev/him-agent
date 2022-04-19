@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from hima.envs.biogwlab.env import BioGwLabEnvironment
 from htm.bindings.algorithms import SpatialPooler
 from htm.bindings.sdr import SDR
+from hima.modules.motivation import Amygdala
 
 
 def xlogx(x):
@@ -143,17 +144,21 @@ class GwMotivationRunner:
         self.evaluate_step = config['evaluate_step']
         self.environment = BioGwLabEnvironment(**config['environment'])
 
-        print('> Spatial Pooler')
-        self.sp = SpatialPooler(
-            inputDimensions=[self.environment.output_sdr_size],
-            **config['sp']
-        )
         map_image = self.environment.callmethod('render_rgb')
         if isinstance(map_image, list):
             map_image = map_image[0]
         plt.imshow(map_image)
         plt.show()
         print(f">>> Environment sdr size: {self.environment.output_sdr_size}")
+
+        print('> Spatial Pooler')
+        self.sp = SpatialPooler(
+            inputDimensions=[self.environment.output_sdr_size],
+            **config['sp']
+        )
+
+        print('> Amygdala')
+        self.amg = Amygdala(sdr_size=self.environment.output_sdr_size, **config['amygdala'])
 
         self.episode = 0
         self.steps = 0
@@ -182,7 +187,7 @@ class GwMotivationRunner:
 
         while True:
 
-            _, obs, is_first = self.environment.observe()
+            reward, obs, is_first = self.environment.observe()
             self.counter += 1
             sdr_new = SDR(self.environment.output_sdr_size)
             sdr_sp = SDR(self.sp.getColumnDimensions())
@@ -212,12 +217,17 @@ class GwMotivationRunner:
                 self.sp_metrics.reset()
 
             if is_first:
+                # plt.imshow(self.amg.value_network.cell_value.reshape((9, 9)))
+                # plt.show()
                 self.episode += 1
                 self.steps = 0
+                self.amg.reset()
                 if self.episode > self.n_episodes:
                     break
             else:
                 self.steps += 1
+
+            self.amg.update(obs, reward)
             action = self._rng.integers(0, self.environment.n_actions)
             self.environment.act(action)
 
