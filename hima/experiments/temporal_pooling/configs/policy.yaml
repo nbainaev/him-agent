@@ -1,5 +1,5 @@
+_type_: tp.policy
 seed: 1337
-entity: irodkin
 project: temporal_pooling
 log: True    # wandb logging
 
@@ -10,16 +10,15 @@ log: True    # wandb logging
 #  n_states: &n_states 10
 #  tp_output_size: &tp_output_size 400
 
-experiment:
-  n_policies: 5
-  epochs: 4
-  policy_repeats: 20
-#  n_policies: 3
-#  epochs: 2
-#  policy_repeats: 4
-  steps_per_policy: *n_states
-  policy_selection_rule: ordered
-  temporal_pooler: ablation_utp
+n_policies: 5
+epochs: 4
+policy_repeats: 20
+#n_policies: 3
+#epochs: 2
+#policy_repeats: 4
+steps_per_policy: *n_states
+policy_selection_rule: ordered
+temporal_pooler: union_sdr
 
 generator:
   _type_: synthetic

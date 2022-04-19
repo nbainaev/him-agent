@@ -3,26 +3,23 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-
-import sys
-from collections import defaultdict
 from typing import Optional
 
+import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
+import wandb
 from htm.bindings.sdr import SDR
-from hima.modules.htm.temporal_memory import HtmTemporalMemory
 from wandb.sdk.wandb_run import Run
 
-from hima.common.config_utils import extracted_type
+from hima.common.config_utils import TConfig, extracted_type
+from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
-from hima.common.utils import ensure_absolute_number, safe_divide
+from hima.common.utils import safe_divide, ensure_absolute_number
 from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
-from hima.experiments.temporal_pooling.config_utils import make_logger, compile_config
 from hima.experiments.temporal_pooling.custom_utp import CustomUtp
 from hima.experiments.temporal_pooling.data_generation import resolve_data_generator
-from hima.experiments.temporal_pooling.metrics import (
-    symmetric_error, representations_intersection_1
-)
+
 from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
 from hima.modules.htm.spatial_pooler import UnionTemporalPooler
 from hima.modules.htm.temporal_memory import DelayedFeedbackTM
@@ -113,26 +110,26 @@ class ExperimentStats:
         }
 
 
-class Experiment:
+class PoliciesExperiment(Runner):
+    config: TConfig
+    logger: Optional[Run]
+
     n_policies: int
     epochs: int
     policy_repeats: int
     steps_per_policy: int
 
-    config: dict
-    logger: Optional[Run]
+    stats: ExperimentStats
 
     _tp_active_input: SDR
     _tp_predicted_input: SDR
 
     def __init__(
-            self, config: dict, n_policies: int, epochs: int,
-            policy_repeats: int, steps_per_policy: int,
-            temporal_pooler: str,
-            **kwargs
+            self, config: TConfig, n_policies: int, epochs: int, policy_repeats: int,
+            steps_per_policy: int, temporal_pooler: str, **kwargs
     ):
-        self.config = config
-        self.logger = make_logger(config)
+        super().__init__(config, **kwargs)
+
         self.n_policies = n_policies
         self.epochs = epochs
         self.policy_repeats = policy_repeats
@@ -201,16 +198,27 @@ class Experiment:
             )
 
     def log_summary(self, policies):
+        def centralize_sim_matrix(sim_matrix):
+            # mean row sim ==> diag
+            sim_matrix[diag_mask] = sim_matrix[non_diag_mask].mean(axis=-1)
+            # centralize
+            sim_matrix[diag_mask] -= sim_matrix[non_diag_mask].mean()
+
         if not self.logger:
             return
 
         n_policies = len(policies)
+        diag_mask = np.identity(n_policies, dtype=bool)
+        non_diag_mask = np.logical_not(np.identity(n_policies))
+
         input_similarity_matrix = self._get_policy_action_similarity(policies)
         output_similarity_matrix = self._get_output_similarity_union(
             self.stats.last_representations
         )
+        centralize_sim_matrix(input_similarity_matrix)
+        centralize_sim_matrix(output_similarity_matrix)
         diff = np.abs(input_similarity_matrix - output_similarity_matrix)
-        mae = np.mean(diff[np.logical_not(np.identity(n_policies))])
+        mae = np.mean(diff[non_diag_mask])
         self.logger.summary['mae'] = mae
         self.vis_similarity(
             input_similarity_matrix, output_similarity_matrix, 'representations similarity'
@@ -218,10 +226,11 @@ class Experiment:
 
         input_similarity_matrix = self._get_input_similarity(policies)
         output_similarity_matrix = self._get_output_similarity(self.stats.last_representations)
+        centralize_sim_matrix(input_similarity_matrix)
+        centralize_sim_matrix(output_similarity_matrix)
         diff = np.abs(input_similarity_matrix - output_similarity_matrix)
-        mae = np.mean(diff[np.logical_not(np.identity(n_policies))])
+        mae = np.mean(diff[non_diag_mask])
         self.logger.summary['mae_alt'] = mae
-
         self.vis_similarity(
             input_similarity_matrix, output_similarity_matrix, 'representations similarity alt'
         )
@@ -328,10 +337,6 @@ class Experiment:
         return similarity_matrix
 
     def vis_similarity(self, input_similarity_matrix, output_similarity_matrix, title):
-        from matplotlib import pyplot as plt
-        import seaborn as sns
-        import wandb
-
         fig = plt.figure(figsize=(40, 10))
         ax1 = fig.add_subplot(131)
         ax1.set_title('output', size=40)
@@ -340,12 +345,12 @@ class Experiment:
         ax3 = fig.add_subplot(133)
         ax3.set_title('diff', size=40)
 
-        sns.heatmap(output_similarity_matrix, vmin=0, vmax=1, cmap='plasma', ax=ax1)
-        sns.heatmap(input_similarity_matrix, vmin=0, vmax=1, cmap='plasma', ax=ax2)
+        sns.heatmap(output_similarity_matrix, vmin=-1, vmax=1, cmap='plasma', ax=ax1)
+        sns.heatmap(input_similarity_matrix, vmin=-1, vmax=1, cmap='plasma', ax=ax2)
 
         sns.heatmap(
             np.abs(output_similarity_matrix - input_similarity_matrix),
-            vmin=0, vmax=1, cmap='plasma', ax=ax3, annot=True
+            vmin=-1, vmax=1, cmap='plasma', ax=ax3, annot=True
         )
         self.logger.log({title: wandb.Image(ax1)})
 
@@ -367,8 +372,9 @@ def resolve_tp(config, temporal_pooler: str, temporal_memory):
     elif tp_type == 'AblationUtp':
         config_tp = base_config_tp | config_tp
         tp = AblationUtp(seed=seed, **config_tp)
-    elif tp_type == 'CustomTp':
+    elif tp_type == 'CustomUtp':
         config_tp = base_config_tp | config_tp
+        del config_tp['potentialRadius']
         tp = CustomUtp(seed=seed, **config_tp)
     elif tp_type == 'SandwichTp':
         # FIXME: dangerous mutations here! We should work with copies
@@ -423,18 +429,3 @@ def resolve_tm(config, action_encoder, state_encoder):
     config_tm = base_config_tm | config_tm
     tm = DelayedFeedbackTM(seed=seed, **config_tm)
     return tm
-
-
-def run_test():
-    if len(sys.argv) > 1:
-        run_args = sys.argv[1:]
-    else:
-        default_config_name = 'config'
-        run_args = [default_config_name]
-
-    config = compile_config(run_args, config_path_prefix='./configs/')
-    Experiment(config, **config['experiment']).run()
-
-
-if __name__ == '__main__':
-    run_test()

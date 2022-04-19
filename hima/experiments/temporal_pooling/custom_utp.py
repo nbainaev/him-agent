@@ -6,32 +6,37 @@
 
 import numpy as np
 from htm.bindings.sdr import SDR
+from numpy.random import Generator
 
 
 class CustomUtp:
     _initial_pooling = 1
     _pooling_decay = 0.1
 
-    def __init__(self,
-                 inputDimensions,
-                 columnDimensions,
-                 initial_pooling,
-                 pooling_decay,
-                 permanence_inc,
-                 permanence_dec,
-                 sparsity,
-                 active_weight,
-                 predicted_weight,
-                 receptive_field_sparsity,
-                 activation_threshold,
-                 history_length,
-                 union_sdr_sparsity,
-                 prev_perm_inc,
-                 untemporal_learning_enabled=True,
-                 union_learning_enabled=True,
-                 history_learning_enabled=True,
-                 limit_union_cells=True,
-                 ):
+    _rng: Generator
+
+    def __init__(
+            self,
+            inputDimensions,
+            columnDimensions,
+            initial_pooling,
+            pooling_decay,
+            permanence_inc,
+            permanence_dec,
+            sparsity,
+            active_weight,
+            predicted_weight,
+            receptive_field_sparsity,
+            activation_threshold,
+            history_length,
+            union_sdr_sparsity,
+            prev_perm_inc,
+            seed: int,
+            untemporal_learning_enabled=True,
+            union_learning_enabled=True,
+            history_learning_enabled=True,
+            limit_union_cells=True,
+    ):
         input_shape = inputDimensions
         output_shape = columnDimensions
         out_size = np.prod(output_shape)
@@ -52,12 +57,14 @@ class CustomUtp:
         self.history_length = history_length
         self.prev_perm_inc = prev_perm_inc
 
-        self.connections = np.random.normal(self.activation_threshold, 0.1, (out_size, in_size))
+        self._rng = np.random.default_rng(seed)
+
+        self.connections = self._rng.normal(self.activation_threshold, 0.1, (out_size, in_size))
 
         self.receptive_fields = np.zeros((out_size, in_size))
         self.set_receptive_fields()
 
-        self.sensitivity = np.random.uniform(0, 1, (out_size, in_size))
+        self.sensitivity = self._rng.uniform(0, 1, (out_size, in_size))
 
         self.predict_history = []
 
@@ -68,9 +75,14 @@ class CustomUtp:
         self.history_learning_enabled = history_learning_enabled
         self.limit_union_cells = limit_union_cells
 
+        # TODO: it smells, rename it at least
+        self._maxUnionCells = self.cells_in_union
+
     def set_receptive_fields(self):
         for cell in self.receptive_fields:
-            receptive_field = np.random.choice(np.prod(self.input_dimensions), self.field_size, replace=False)
+            receptive_field = self._rng.choice(
+                np.prod(self.input_dimensions), self.field_size, replace=False
+            )
             cell[receptive_field] = 1
 
     def pooling_decay_step(self):
@@ -78,7 +90,7 @@ class CustomUtp:
         self._pooling_activations = self._pooling_activations.clip(0, 1)
 
     def get_active_cells(self, data: np.ndarray) -> SDR:
-        tie_breaker = np.random.normal(0, 0.01, self._shape)
+        tie_breaker = self._rng.normal(0, 0.01, self._shape)
         activations = (self.connections * self.sensitivity) @ data + tie_breaker
 
         most_active = np.argpartition(activations.flatten(), -self.winners_num)[-self.winners_num:]
@@ -160,14 +172,14 @@ class CustomUtp:
         return cells_overlap
 
     def choose_winners(self, overlap: np.ndarray):
-        tie_breaker = np.random.normal(0, 0.01, np.prod(self._shape))
+        tie_breaker = self._rng.normal(0, 0.01, np.prod(self._shape))
         overlap += tie_breaker
         winners = np.argpartition(overlap, -self.winners_num)[-self.winners_num:]
         return winners
 
     def update_union_sdr(self):
         if self.limit_union_cells:
-            tie_breaker = np.random.normal(0, 0.001, np.prod(self._shape))
+            tie_breaker = self._rng.normal(0, 0.001, np.prod(self._shape))
             self._union_sdr.dense = (self._pooling_activations + tie_breaker) > np.partition(
                 (self._pooling_activations+tie_breaker).flatten(), -self.cells_in_union-1
             )[-self.cells_in_union-1]
