@@ -10,6 +10,7 @@ from typing import Optional
 
 import numpy as np
 from htm.bindings.sdr import SDR
+from hima.modules.htm.temporal_memory import HtmTemporalMemory
 from wandb.sdk.wandb_run import Run
 
 from hima.common.config_utils import which_type
@@ -424,7 +425,7 @@ def run_test():
     if len(sys.argv) > 1:
         run_args = sys.argv[1:]
     else:
-        default_config_name = 'lol'
+        default_config_name = 'config'
         run_args = [default_config_name]
 
     config = compile_config(run_args, config_path_prefix='./configs/')

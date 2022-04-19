@@ -177,7 +177,7 @@ def custom_utp_all_seq_5_epochs(data):
 def common_utp_all_seq_5_epochs(data):
     tp = UnionTemporalPooler(**config_tp)
     tm = DelayedFeedbackTM(**config_tm)
-    all_seq(tm, tp, data, epochs=15)
+    all_seq(tm, tp, data, epochs=5)
 
 
 def no_boosting(data):
@@ -354,10 +354,6 @@ def _run_tests():
     # custom_only_UnionL_uncut(data)
     # custom_no_HistoryL_uncut(data)
     # custom_no_HistoryL(data)
-    data = np.load('observations.npy')
-
-    plt.imshow(data[3], interpolation='nearest')
-    plt.show()
 
 
 if __name__ == '__main__':
