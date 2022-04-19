@@ -1,0 +1,38 @@
+program: run.py
+#entity: TBI   # default: $WANDB_ENTITY
+
+project: temporal_pooling
+method: grid
+parameters:
+
+  temporal_pooler.:
+    value: ablation_utp
+
+  seed.:
+    values: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29]
+
+  first_boosting.:
+    values: [True, False]
+
+  second_boosting.:
+    values: [True, False]
+
+  untemporal_learning.:
+    values: [True, False]
+
+  union_learning.:
+    values: [True, False]
+
+  history_learning.:
+    values: [True, False]
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+    # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
+  - --config
+  - ./configs/policy.yaml
+
