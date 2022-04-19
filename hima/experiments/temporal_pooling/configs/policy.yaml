@@ -18,7 +18,7 @@ policy_repeats: 20
 #policy_repeats: 4
 steps_per_policy: *n_states
 policy_selection_rule: ordered
-temporal_pooler: sandwich_tp
+temporal_pooler: union_sdr
 
 generator:
   _type_: synthetic

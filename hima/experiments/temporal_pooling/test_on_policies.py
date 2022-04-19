@@ -372,8 +372,9 @@ def resolve_tp(config, temporal_pooler: str, temporal_memory):
     elif tp_type == 'AblationUtp':
         config_tp = base_config_tp | config_tp
         tp = AblationUtp(seed=seed, **config_tp)
-    elif tp_type == 'CustomTp':
+    elif tp_type == 'CustomUtp':
         config_tp = base_config_tp | config_tp
+        del config_tp['potentialRadius']
         tp = CustomUtp(seed=seed, **config_tp)
     elif tp_type == 'SandwichTp':
         # FIXME: dangerous mutations here! We should work with copies
