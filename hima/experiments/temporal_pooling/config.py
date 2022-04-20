@@ -25,7 +25,7 @@ learning_margin_apical = 0.2
 seed = 42
 
 input_columns = 180  # FIXME ужасный костыль
-
+cells_per_column = 60
 
 config_tm = dict(
     columns=input_columns,

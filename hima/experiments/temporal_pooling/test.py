@@ -397,6 +397,7 @@ def states_seqs_test(states):
     wandb.init(project=wandb_project, entity=wandb_entity, reinit=True, config=config_tm_classic)
     for i in range(20):
         run_states_seq(tm, tp, states, state_encoder_)
+        tp.reset()
     wandb.finish()
 
 
