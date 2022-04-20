@@ -20,6 +20,12 @@ class StupidEncoder:
         return result
 
 
+class IdentityEncoder:
+    @staticmethod
+    def encode(state):
+        return state
+
+
 def make_sdr(pos: tuple, _shape: tuple) -> SDR:
     result = SDR(_shape)
     numpy_res = result.dense

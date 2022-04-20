@@ -23,6 +23,10 @@ output_union_sparsity = 0.01
 noise_tolerance_apical = 0.1
 learning_margin_apical = 0.2
 seed = 42
+
+input_columns = 180  # FIXME ужасный костыль
+
+
 config_tm = dict(
     columns=input_columns,
     cells_per_column=cells_per_column,
@@ -126,7 +130,8 @@ utp_conf = dict(
     activation_threshold=0.6,
     history_length=20,
     union_sdr_sparsity=0.01,
-    prev_perm_inc=0.05
+    prev_perm_inc=0.05,
+    seed=seed
 )
 
 stp_config = dict(
@@ -134,4 +139,20 @@ stp_config = dict(
     pooling_decay=0.05,
     lower_sp_conf=config_sp_lower,
     upper_sp_conf=config_sp_upper
+)
+
+config_tm_classic = dict(
+    n_columns=input_columns,
+    cells_per_column=cells_per_column,
+    activation_threshold=state_bucket,
+    learning_threshold=state_bucket,
+    connected_permanence=0.5,
+    permanenceIncrement=0.1,
+    permanenceDecrement=0.01,
+    initial_permanence=0.4,
+    predictedSegmentDecrement=0.001,
+    max_synapses_per_segment=state_bucket,
+    maxSegmentsPerCell=32,
+    max_new_synapse_count=20,
+    seed=seed
 )

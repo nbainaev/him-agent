@@ -76,7 +76,8 @@ class CustomUtp:
         self.limit_union_cells = limit_union_cells
 
         # TODO: it smells, rename it at least
-        self._maxUnionCells = self.cells_in_union
+        # Fix: I renamed, this var was necessary for cutting activations
+        self._max_union_cells = self.cells_in_union
 
     def set_receptive_fields(self):
         for cell in self.receptive_fields:
@@ -100,7 +101,7 @@ class CustomUtp:
 
     def adapt_synapses(self, input_: np.ndarray, output_: np.ndarray, inc, dec):
         self.connections[output_, :] -= dec
-
+        #
         active_synapses = np.ix_(output_, input_)
         self.connections[active_synapses] += dec
         self.connections[active_synapses] += inc

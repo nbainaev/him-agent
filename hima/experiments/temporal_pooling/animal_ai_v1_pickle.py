@@ -74,7 +74,7 @@ def collect_data(room_conf):
             'play': False,
             'useCamera': True,
             'useRayCasts': False,
-            'resolution': 200,
+            'resolution': 40,
         },
         'agent': {
             'action': 2
@@ -89,11 +89,12 @@ def collect_data(room_conf):
 def through_v1(images: np.ndarray, v1_config):
     resolution = images.shape[-2]
     v1 = V1((resolution, resolution), v1_config['complex_config'], *v1_config['simple_configs'])
+
     result = []
     for img in images:
         result.append(v1.compute(img)[0][0])
     return {
-        'shape': (resolution, resolution),
+        'shape': v1.output_sdr_size,
         'sparse': result
     }
 
@@ -102,7 +103,7 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         room_conf_path = sys.argv[1]
     else:
-        room_conf_path = '/home/ivan/htm/htm-rl/htm_rl/htm_rl/experiments/temporal_pooling/configs/arenas/1g.yml'
+        room_conf_path = '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/1g.yml'
     pics = collect_data(room_conf_path)
     simple_configs = [
         {
@@ -126,6 +127,6 @@ if __name__ == '__main__':
         'simple_configs': simple_configs,
         'complex_config': complex_config
     })
-    with open('saved_dictionary.pkl', 'wb') as f:
+    with open('room_obs_v1.pkl', 'wb') as f:
         dump(converted, f)
 

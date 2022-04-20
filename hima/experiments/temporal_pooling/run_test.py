@@ -82,11 +82,11 @@ class ExperimentStats:
         self.last_representations[self.policy_id] = curr_repr
 
         sparsity = safe_divide(
-            len(curr_repr), temporal_pooler._maxUnionCells
+            len(curr_repr), temporal_pooler._max_union_cells
         )
         new_cells_ratio = safe_divide(
             len(curr_repr - prev_repr),
-            temporal_pooler._maxUnionCells
+            temporal_pooler._max_union_cells
         )
 
         # if whole_active is not None:
