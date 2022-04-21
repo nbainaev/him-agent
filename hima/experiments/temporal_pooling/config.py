@@ -24,8 +24,10 @@ noise_tolerance_apical = 0.1
 learning_margin_apical = 0.2
 seed = 42
 
-input_columns = 180  # FIXME ужасный костыль
-cells_per_column = 60
+
+classic_tm_input_columns = 180
+classic_tm_cells_per_column = 60
+
 
 config_tm = dict(
     columns=input_columns,
@@ -141,9 +143,10 @@ stp_config = dict(
     upper_sp_conf=config_sp_upper
 )
 
+
 config_tm_classic = dict(
-    n_columns=input_columns,
-    cells_per_column=cells_per_column,
+    n_columns=classic_tm_input_columns,
+    cells_per_column=classic_tm_cells_per_column,
     activation_threshold=state_bucket,
     learning_threshold=state_bucket,
     connected_permanence=0.5,
