@@ -5,17 +5,17 @@ log: True    # wandb logging
 
 # FIXME: using &key/*key is error prone with sweeps overwriting
 .shared_params:
-  n_states: &n_states 30
-  tp_output_size: &tp_output_size 4000
-#  n_states: &n_states 10
-#  tp_output_size: &tp_output_size 400
+#  n_states: &n_states 30
+#  tp_output_size: &tp_output_size 4000
+  n_states: &n_states 10
+  tp_output_size: &tp_output_size 400
 
-n_policies: 5
-epochs: 4
-policy_repeats: 20
-#n_policies: 3
-#epochs: 2
-#policy_repeats: 4
+#n_policies: 5
+#epochs: 4
+#policy_repeats: 20
+n_policies: 3
+epochs: 2
+policy_repeats: 4
 steps_per_policy: *n_states
 policy_selection_rule: ordered
 temporal_pooler: union_tp

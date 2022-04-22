@@ -628,6 +628,14 @@ class UnionTemporalPooler(HtmSpatialPooler):
         # predicted inputs from the last n steps
         self._prePredictedActiveInput = list()
 
+    @property
+    def output_sdr_size(self):
+        return self.getNumColumns()
+
+    @property
+    def n_active_bits(self):
+        return self._maxUnionCells
+
     def reset(self, boosting=True):
         """
     Reset the state of the Union Temporal Pooler.
