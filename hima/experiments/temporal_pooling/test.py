@@ -330,7 +330,7 @@ def custom_no_history_l(data):
 # ---------------------------------------------------------------
 
 
-def run_states_seq(tm: ClassicTemporalMemory, tp, states, state_encoder, learn=True, prev_dense=None, whole_active: SDR = None):
+def run_states_seq(tm: ClassicTemporalMemory, tp, states, state_encoder, learn=True, prev_dense=None, whole_active: SDR=None):
     tp_prev_union = tp.getUnionSDR().sparse.copy()
     tp_input = SDR(tp.getNumInputs())
     tp_predictive = SDR(tp.getNumInputs())
@@ -375,7 +375,7 @@ def run_states_seq(tm: ClassicTemporalMemory, tp, states, state_encoder, learn=T
                 pass
 
             try:
-                my_log['tm_anomaly'] = tm.anomaly
+                my_log['tm.anomaly'] = tm.anomaly
             except BaseException:
                 pass
             window_error = 0
@@ -385,23 +385,34 @@ def run_states_seq(tm: ClassicTemporalMemory, tp, states, state_encoder, learn=T
         counter += 1
 
 
-def states_seqs_test(states):
+def states_seqs_test(dataset):
     print('Init tm ==>')
     tm = ClassicTemporalMemory(**config_tm_classic)
     print('<== Init tm')
     print('Init tp ==>')
-    tp = AblationUtp(**config_tp)
+    tp = AblationUtp(**config_tp_for_classic_tm)
     print('<== Init tp ')
     state_encoder_ = IdentityEncoder()
 
     wandb.init(project=wandb_project, entity=wandb_entity, reinit=True, config=config_tm_classic)
-    for i in range(20):
-        run_states_seq(tm, tp, states, state_encoder_)
+    representations = []
+    for states in dataset:
         tp.reset()
+        for i in range(20):
+            run_states_seq(tm, tp, states, state_encoder_)
+        representations.append(tp.getUnionSDR())
+
+    wandb.run.summary['rooms similarity'] = representation_similarity(representations[0].dense, representations[1].dense)
     wandb.finish()
 
 
 def get_sdr_from_sparse(sparse_data, shape):
+    if type(sparse_data[0]) == list:
+        datasets = []
+        for data in sparse_data:
+            datasets.append(get_sdr_from_sparse(data, shape))
+        return datasets
+
     sdr = []
     for data in sparse_data:
         sdr_ = SDR(shape)
@@ -434,11 +445,20 @@ def _run_tests():
     # custom_no_history_l_uncut(data)
     # custom_no_history_l(data)
 
-    unpick = pickle.load(open('room_obs_v1.pkl', 'rb'))
-    v1_sparse = unpick['sparse']
-    states = get_sdr_from_sparse(v1_sparse, unpick['shape'])
-
-    states_seqs_test(states)
+    unpick = pickle.load(open('2_rooms.pkl', 'rb'))
+    dataset = unpick['sparse']
+    # unpick2 = pickle.load(open('room2_obs_v1.pkl', 'rb'))
+    # v1_sparse2 = unpick2['sparse']
+    # states = get_sdr_from_sparse(v1_sparse, unpick['shape'])
+    # states2 = get_sdr_from_sparse(v1_sparse2, 180)
+    # states_2 = [states, states2]
+    # with open('2_rooms.pkl', 'wb') as f:
+    #     pickle.dump({
+    #         'sparse': states_2,
+    #         'shape': 180
+    #     }, f)
+    # print(states[59].dense & ~states[0].dense)
+    states_seqs_test(dataset)
 
 
 if __name__ == '__main__':

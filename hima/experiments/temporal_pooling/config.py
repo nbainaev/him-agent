@@ -26,7 +26,7 @@ seed = 42
 
 
 classic_tm_input_columns = 180
-classic_tm_cells_per_column = 60
+classic_tm_cells_per_column = 16
 
 
 config_tm = dict(
@@ -144,6 +144,44 @@ stp_config = dict(
 )
 
 
+# ----------------------------------------------------------------
+# AAI confs
+# ----------------------------------------------------------------
+
+config_sp_lower_for_classic_tm = dict(
+    boostStrength=0.0,
+    columnDimensions=[output_columns],
+    inputDimensions=[classic_tm_input_columns * classic_tm_cells_per_column],
+    potentialRadius=classic_tm_input_columns * classic_tm_cells_per_column,
+    dutyCyclePeriod=1000,
+    globalInhibition=True,
+    localAreaDensity=0.01,
+    minPctOverlapDutyCycle=0.001,
+    numActiveColumnsPerInhArea=0,
+    potentialPct=0.5,
+    spVerbosity=0,
+    stimulusThreshold=3,
+    synPermConnected=0.5,
+    synPermActiveInc=0.1,
+    synPermInactiveDec=0.01,
+    wrapAround=True,
+    seed=seed
+)
+
+config_tp_for_classic_tm = dict(
+    activeOverlapWeight=1,
+    predictedActiveOverlapWeight=2,
+    maxUnionActivity=output_union_sparsity,
+    exciteFunctionType='Logistic',
+    decayFunctionType='Exponential',
+    decayTimeConst=10.0,
+    synPermPredActiveInc=0.1,
+    synPermPreviousPredActiveInc=0.05,
+    historyLength=20,
+    minHistory=3,
+    **config_sp_lower_for_classic_tm
+)
+
 config_tm_classic = dict(
     n_columns=classic_tm_input_columns,
     cells_per_column=classic_tm_cells_per_column,
@@ -154,8 +192,9 @@ config_tm_classic = dict(
     permanenceDecrement=0.01,
     initial_permanence=0.4,
     predictedSegmentDecrement=0.001,
-    max_synapses_per_segment=state_bucket,
-    maxSegmentsPerCell=32,
-    max_new_synapse_count=20,
+    max_synapses_per_segment=255,
+    maxSegmentsPerCell=255,
+    max_new_synapse_count=255,
     seed=seed
 )
+

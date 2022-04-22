@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import sys
 
@@ -105,6 +106,8 @@ if __name__ == '__main__':
     else:
         room_conf_path = '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/1g.yml'
     pics = collect_data(room_conf_path)
+    plt.imshow(pics[59])
+    plt.show()
     simple_configs = [
         {
             'g_kernel_size': 12,
@@ -127,6 +130,6 @@ if __name__ == '__main__':
         'simple_configs': simple_configs,
         'complex_config': complex_config
     })
-    with open('room_obs_v1.pkl', 'wb') as f:
+    with open('room2_obs_v1.pkl', 'wb') as f:
         dump(converted, f)
 
