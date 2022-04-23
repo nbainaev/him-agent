@@ -67,18 +67,62 @@ class EligibilityTraces:
         self.cell_traces.fill(0.)
 
 
+class Unit2DEncoder:
+    def __init__(self, n_buckets: int, bucket_shape: tuple[int, int]):
+        self.n_buckets = n_buckets
+        self.bucket_shape = bucket_shape
+        self.sdr_shape = (bucket_shape[0], n_buckets * bucket_shape[1])
+        self.sdr_size = self.sdr_shape[0] * self.sdr_shape[1]
+
+        self.base_sdr = np.array([
+            self.sdr_shape[1] * i + np.arange(bucket_shape[1]) for i in range(bucket_shape[0])
+        ], dtype=int).flatten()
+
+    def compute(self, values: list[float]):
+        out = np.empty(self.base_sdr.size * len(values), dtype=int)
+        for ind, value in enumerate(values):
+            if value < 0:
+                x = 0
+            elif value > 1:
+                x = 1
+            else:
+                x = value
+            start = int(x * (self.sdr_shape[1] - self.bucket_shape[1]))
+            start += ind * self.sdr_size
+            out[ind * self.base_sdr.size: (ind + 1) * self.base_sdr.size] = start + self.base_sdr
+        return out
+
+
 class Amygdala:
     def __init__(
             self, seed: int, sdr_size: int, gamma: float,
-            alpha: float, lambda_: float, with_reset: bool
+            alpha: float, lambda_: float, with_reset: bool,
+            bucket_shape: tuple[int, int], n_buckets: int,
+            min_cut_fraction: float = 0.05
     ):
         self.sdr_size = sdr_size
+        self.min_cut_fraction = min_cut_fraction
+        self.encoder = Unit2DEncoder(n_buckets, bucket_shape)
+        self.out_sdr_shape = (2 * self.encoder.sdr_shape[0], self.encoder.sdr_shape[1])
+        self.out_sdr_size = 2 * self.encoder.sdr_size
+
         self.gamma = gamma
         self.alpha = alpha
         self.value_network = ValueNetwork(seed, sdr_size, gamma, alpha)
         self.eligibility_traces = EligibilityTraces(sdr_size, lambda_, gamma, with_reset)
         self.current_sdr = None
         self.current_reward = None
+
+    def compute(self, sdr: SparseSdr, dopamine: float) -> SparseSdr:
+        min_ = np.quantile(self.value_network.cell_value, self.min_cut_fraction)
+        max_ = np.max(self.value_network.cell_value)
+        value = (self.value_network.value(sdr) - min_) / (max_ - min_)
+        if value <= 0:
+            value = 0
+        d1 = np.tanh(value / (1 + dopamine))
+        d2 = 1 - np.tanh((1 + dopamine) * value)
+        output = self.encoder.compute([d1, d2])
+        return output
 
     def update(self, sdr: np.ndarray, reward: float):
         if self.current_sdr is None:
