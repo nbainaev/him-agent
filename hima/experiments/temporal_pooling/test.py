@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import wandb
+import pickle
 from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
 from hima.experiments.temporal_pooling.config import *
 from hima.experiments.temporal_pooling.custom_utp import CustomUtp
@@ -17,9 +18,9 @@ from hima.experiments.temporal_pooling.metrics import (
     representation_similarity, similarity_mae
 )
 from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
-from hima.experiments.temporal_pooling.utils import StupidEncoder
+from hima.experiments.temporal_pooling.utils import StupidEncoder, IdentityEncoder
 from hima.modules.htm.spatial_pooler import UnionTemporalPooler
-from hima.modules.htm.temporal_memory import DelayedFeedbackTM
+from hima.modules.htm.temporal_memory import DelayedFeedbackTM, ClassicTemporalMemory
 from htm.algorithms import TemporalMemory
 from htm.bindings.sdr import SDR
 
@@ -303,7 +304,7 @@ def custom_test(data):
     all_seq(tm, tp, data, epochs=5)
 
 
-def custom_only_UnionL_uncut(data):
+def custom_only_union_l_uncut(data):
     tp = CustomUtp(
         **utp_conf,
         untemporal_learning_enabled=False,
@@ -315,16 +316,109 @@ def custom_only_UnionL_uncut(data):
     all_seq(tm, tp, data, epochs=5)
 
 
-def custom_no_HistoryL_uncut(data):
+def custom_no_history_l_uncut(data):
     tp = CustomUtp(**utp_conf, history_learning_enabled=False, limit_union_cells=False)
     tm = DelayedFeedbackTM(**config_tm)
     all_seq(tm, tp, data, epochs=5)
 
 
-def custom_no_HistoryL(data):
+def custom_no_history_l(data):
     tp = CustomUtp(**utp_conf, history_learning_enabled=False)
     tm = DelayedFeedbackTM(**config_tm)
     all_seq(tm, tp, data, epochs=5)
+
+# ---------------------------------------------------------------
+
+
+def run_states_seq(tm: ClassicTemporalMemory, tp, states, state_encoder, learn=True, prev_dense=None, whole_active: SDR=None):
+    tp_prev_union = tp.getUnionSDR().sparse.copy()
+    tp_input = SDR(tp.getNumInputs())
+    tp_predictive = SDR(tp.getNumInputs())
+    window_size = 1
+    window_error = 0
+    counter = 0
+    for state in states:
+        active_input = state_encoder.encode(state)
+
+        tm.compute(active_input, learn=learn)
+        tm.activateDendrites(learn=learn)
+
+        tp_input.sparse = tm.getActiveCells().sparse.copy()
+        tp_predictive.sparse = np.intersect1d(tm.getPredictiveCells().sparse.copy(), tp_input.sparse)
+        tp.compute(tp_input, tp_predictive, learn)
+
+        current_union = tp.getUnionSDR().sparse.copy()
+
+        window_error += symmetric_error(current_union, tp_prev_union)
+
+        my_log = {}
+        if prev_dense is not None:
+            my_log['new_cells_percent'] = 1 - representations_intersection_1(tp.getUnionSDR().dense, prev_dense)
+            my_log['prev_similarity'] = representation_similarity(tp.getUnionSDR().dense, prev_dense)
+            my_log['num_in_prev'] = np.count_nonzero(prev_dense)
+
+        my_log['num_in_curr'] = np.count_nonzero(tp.getUnionSDR().dense)
+
+        if whole_active is not None:
+            whole_active.dense = np.logical_or(whole_active.dense, tp.getUnionSDR().dense)
+            whole_nonzero = np.count_nonzero(whole_active.dense)
+            my_log['cells_in_whole'] = np.count_nonzero(tp.getUnionSDR().dense) / whole_nonzero
+
+        if counter % window_size == window_size - 1:
+            my_log['difference'] = (window_error / window_size)
+            try:
+                my_log['nonzero_pooling'] = np.count_nonzero(tp._pooling_activations)
+                my_log['lower_bound'] = np.partition(
+                    tp._pooling_activations.flatten(), -tp.cells_in_union-1
+                )[-tp.cells_in_union-1]
+            except BaseException:
+                pass
+
+            try:
+                my_log['tm.anomaly'] = tm.anomaly
+            except BaseException:
+                pass
+            window_error = 0
+        wandb.log(my_log)
+        tp_prev_union = current_union.copy()
+
+        counter += 1
+
+
+def states_seqs_test(dataset):
+    print('Init tm ==>')
+    tm = ClassicTemporalMemory(**config_tm_classic)
+    print('<== Init tm')
+    print('Init tp ==>')
+    tp = AblationUtp(**config_tp_for_classic_tm)
+    print('<== Init tp ')
+    state_encoder_ = IdentityEncoder()
+
+    wandb.init(project=wandb_project, entity=wandb_entity, reinit=True, config=config_tm_classic)
+    representations = []
+    for states in dataset:
+        tp.reset()
+        for i in range(20):
+            run_states_seq(tm, tp, states, state_encoder_)
+        representations.append(tp.getUnionSDR())
+
+    wandb.run.summary['rooms similarity'] = representation_similarity(representations[0].dense, representations[1].dense)
+    wandb.finish()
+
+
+def get_sdr_from_sparse(sparse_data, shape):
+    if type(sparse_data[0]) == list:
+        datasets = []
+        for data in sparse_data:
+            datasets.append(get_sdr_from_sparse(data, shape))
+        return datasets
+
+    sdr = []
+    for data in sparse_data:
+        sdr_ = SDR(shape)
+        sdr_.sparse = data
+        sdr.append(sdr_)
+    return sdr
 
 
 def _run_tests():
@@ -337,7 +431,7 @@ def _run_tests():
     # custom_utp_one_seq(data)
     # only_custom_utp_test(row_data)
     # custom_utp_all_seq_5_epochs(data)
-    stp_all_seq_3_epochs(data)
+    # stp_all_seq_3_epochs(data)
     # common_utp_all_seq_5_epochs(data)
     # no_second_boosting(data)
     # no_history_learning_5_epochs(data)
@@ -347,9 +441,24 @@ def _run_tests():
     # no_union_learning(data)
     # custom_test(data)
     # common_only_UnionL(data)
-    # custom_only_UnionL_uncut(data)
-    # custom_no_HistoryL_uncut(data)
-    # custom_no_HistoryL(data)
+    # custom_only_union_l_uncut(data)
+    # custom_no_history_l_uncut(data)
+    # custom_no_history_l(data)
+
+    unpick = pickle.load(open('2_rooms.pkl', 'rb'))
+    dataset = unpick['sparse']
+    # unpick2 = pickle.load(open('room2_obs_v1.pkl', 'rb'))
+    # v1_sparse2 = unpick2['sparse']
+    # states = get_sdr_from_sparse(v1_sparse, unpick['shape'])
+    # states2 = get_sdr_from_sparse(v1_sparse2, 180)
+    # states_2 = [states, states2]
+    # with open('2_rooms.pkl', 'wb') as f:
+    #     pickle.dump({
+    #         'sparse': states_2,
+    #         'shape': 180
+    #     }, f)
+    # print(states[59].dense & ~states[0].dense)
+    states_seqs_test(dataset)
 
 
 if __name__ == '__main__':
