@@ -7,11 +7,14 @@
 import numpy as np
 from copy import deepcopy
 import matplotlib.pyplot as plt
+import wandb
 
 from hima.envs.biogwlab.env import BioGwLabEnvironment
 from htm.bindings.algorithms import SpatialPooler
 from htm.bindings.sdr import SDR
 from hima.modules.motivation import Amygdala
+from hima.common.run_utils import Runner
+from hima.common.config_utils import TConfig
 
 
 def xlogx(x):
@@ -133,13 +136,14 @@ class SPMetrics(SDRMetrics):
         return self.pre_stability / self.total_sdrs
 
 
-class GwMotivationRunner:
-    def __init__(self, config, logger=None):
+class GwMotivationRunner(Runner):
+    def __init__(self, config: TConfig, **kwargs):
+        super().__init__(config, **config)
+
         self.seed = config['seed']
         self._rng = np.random.default_rng(self.seed)
-        self.logger = logger
 
-        print('> Environment')
+        print('==> Environment')
         self.n_episodes = config['n_episodes']
         self.evaluate_step = config['evaluate_step']
         self.environment = BioGwLabEnvironment(**config['environment'])
@@ -147,17 +151,21 @@ class GwMotivationRunner:
         map_image = self.environment.callmethod('render_rgb')
         if isinstance(map_image, list):
             map_image = map_image[0]
-        plt.imshow(map_image)
-        plt.show()
-        print(f">>> Environment sdr size: {self.environment.output_sdr_size}")
+        if self.logger:
+            map_image = wandb.Image(map_image)
+            self.logger.log({'map': map_image})
+        else:
+            plt.imshow(map_image)
+            plt.show()
+        print(f"Environment sdr size: {self.environment.output_sdr_size}")
 
-        print('> Spatial Pooler')
+        print('==> Spatial Pooler')
         self.sp = SpatialPooler(
             inputDimensions=[self.environment.output_sdr_size],
             **config['sp']
         )
 
-        print('> Amygdala')
+        print('==> Amygdala')
         self.amg = Amygdala(sdr_size=self.environment.output_sdr_size, **config['amygdala'])
 
         self.episode = 0
@@ -179,8 +187,8 @@ class GwMotivationRunner:
                     base_states[(i, j)] = sdr_new
         return base_states
 
-    def run_episodes(self):
-        print('>> Starting run')
+    def run(self):
+        print('==> Run')
         self.episode = 0
         self.steps = 0
         self.counter = 0
@@ -231,4 +239,4 @@ class GwMotivationRunner:
             action = self._rng.integers(0, self.environment.n_actions)
             self.environment.act(action)
 
-        print('>> Run finished.')
+        print('<==')
