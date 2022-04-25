@@ -128,7 +128,7 @@ class PoliciesExperiment(Runner):
             self, config: TConfig, n_policies: int, epochs: int, policy_repeats: int,
             steps_per_policy: int, temporal_pooler: str, **kwargs
     ):
-        super().__init__(config, **kwargs)
+        super().__init__(config, **config)
 
         self.n_policies = n_policies
         self.epochs = epochs
