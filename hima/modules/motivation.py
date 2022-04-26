@@ -93,18 +93,12 @@ class Unit2DEncoder:
         return out
 
 
-class Amygdala:
+class TDLambda:
     def __init__(
             self, seed: int, sdr_size: int, gamma: float,
             alpha: float, lambda_: float, with_reset: bool,
-            bucket_shape: tuple[int, int], n_buckets: int,
-            min_cut_fraction: float = 0.05
     ):
         self.sdr_size = sdr_size
-        self.min_cut_fraction = min_cut_fraction
-        self.encoder = Unit2DEncoder(n_buckets, bucket_shape)
-        self.out_sdr_shape = self.encoder.sdr_shape
-        self.out_sdr_size = self.encoder.sdr_size
 
         self.gamma = gamma
         self.alpha = alpha
@@ -113,17 +107,8 @@ class Amygdala:
         self.current_sdr = None
         self.current_reward = None
 
-    def compute(self, sdr: SparseSdr) -> SparseSdr:
-        value = self.get_value(sdr)
-        output = self.encoder.compute(value)
-        return output
-
     def get_value(self, sdr: SparseSdr) -> float:
-        min_ = np.quantile(self.value_network.cell_value, self.min_cut_fraction)
-        max_ = np.max(self.value_network.cell_value)
-        value = (self.value_network.value(sdr) - min_) / (max_ - min_)
-        if value < 0:
-            value = 0
+        value = self.value_network.value(sdr)
         return value
 
     def update(self, sdr: np.ndarray, reward: float):
@@ -145,6 +130,33 @@ class Amygdala:
             self.value_network.update(prev_sdr, prev_rew, [], self.eligibility_traces.cell_traces)
             self.current_sdr, self.current_reward = None, None
             self.eligibility_traces.reset()
+
+
+class Amygdala(TDLambda):
+    def __init__(
+            self, seed: int, sdr_size: int, gamma: float,
+            alpha: float, lambda_: float, with_reset: bool,
+            bucket_shape: tuple[int, int], n_buckets: int,
+            min_cut_fraction: float = 0.05
+    ):
+        super().__init__(seed, sdr_size, gamma, alpha, lambda_, with_reset)
+        self.min_cut_fraction = min_cut_fraction
+        self.encoder = Unit2DEncoder(n_buckets, bucket_shape)
+        self.out_sdr_shape = self.encoder.sdr_shape
+        self.out_sdr_size = self.encoder.sdr_size
+
+    def compute(self, sdr: SparseSdr) -> SparseSdr:
+        value = self.get_value(sdr)
+        output = self.encoder.compute(value)
+        return output
+
+    def get_value(self, sdr: SparseSdr) -> float:
+        min_ = np.quantile(self.value_network.cell_value, self.min_cut_fraction)
+        max_ = np.max(self.value_network.cell_value)
+        value = (self.value_network.value(sdr) - min_) / (max_ - min_)
+        if value < 0:
+            value = 0
+        return value
 
 
 class StriatumBlock:
