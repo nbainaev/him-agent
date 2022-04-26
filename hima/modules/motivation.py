@@ -152,7 +152,7 @@ class StriatumBlock:
             boostStrength: float, seed: int, wrapAround: bool, dopamine_factor: float
     ):
         self.output_sdr_shape = (2 * columnDimensions[0], columnDimensions[1])
-        self.zone_size = columnDimensions[0] * columnDimensions[1]
+        self.zone_size = columnDimensions[0]
         self.sp = SpatialPooler(
                 inputDimensions=inputDimensions,
                 columnDimensions=self.output_sdr_shape,
@@ -184,8 +184,8 @@ class StriatumBlock:
         self.dopamine_level += dopamine
 
         self.sp.getBoostFactors(self._boost_factors)
-        self._boost_factors[:self.zone_size] *= (1 + self.dopamine_level)
-        self._boost_factors[self.zone_size:] /= (1 + self.dopamine_level)
+        self._boost_factors[:self.zone_size, :] *= (1 + self.dopamine_level)
+        self._boost_factors[self.zone_size:, :] /= (1 + self.dopamine_level)
         self.sp.setBoostFactors(self._boost_factors)
 
     def compute(self, sdr: SparseSdr, dopamine: float, learn: bool) -> SparseSdr:
