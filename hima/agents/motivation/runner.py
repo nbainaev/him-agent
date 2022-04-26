@@ -12,7 +12,7 @@ import wandb
 from hima.envs.biogwlab.env import BioGwLabEnvironment
 from htm.bindings.algorithms import SpatialPooler
 from htm.bindings.sdr import SDR
-from hima.modules.motivation import Amygdala, StriatumBlock
+from hima.modules.motivation import Amygdala, StriatumBlock, Policy
 from hima.common.run_utils import Runner
 from hima.common.config_utils import TConfig
 
@@ -176,6 +176,12 @@ class GwMotivationRunner(Runner):
         )
         self.striatum_output_sdr_size = self.str_sma.output_sdr_size + self.str_amg.output_sdr_size
 
+        print('==> Policy')
+        self.policy = Policy(
+            sdr_size=self.striatum_output_sdr_size, seed=self.seed,
+            n_actions=self.environment.n_actions, **config['policy']
+        )
+
         self.episode = 0
         self.steps = 0
         self.metrics = SDRMetrics(self.environment.output_sdr_size)
@@ -195,17 +201,48 @@ class GwMotivationRunner(Runner):
                     base_states[(i, j)] = sdr_new
         return base_states
 
+    def log_metrics(self):
+        value_map = np.zeros(self.environment.env.shape)
+        for key in self.base_states.keys():
+            value_map[key] = self.amg.get_value(self.base_states[key].sparse)
+            sdr_amg = self.str_amg.compute(self.amg.compute(self.base_states[key].sparse), 0, False)
+            sdr_sma = self.str_sma.compute(self.base_states[key].sparse, 0, False)
+            sdr_str = np.concatenate(
+                (
+                    sdr_amg, self.str_amg.output_sdr_size + sdr_sma
+                )
+            )
+            self.str_metrics.add(key, sdr_str)
+
+        self.logger.log(
+            {
+                'steps': self.steps,
+                'value_map': wandb.Image(plt.imshow(value_map)),
+                'env/sdr_entropy': self.metrics.rel_sdr_entropy,
+                'env/bit_entropy': self.metrics.rel_bit_entropy,
+                'env/redundancy': self.metrics.redundancy,
+                'env/sparsity': self.metrics.sparsity,
+                'env/entropy_stability': self.metrics.entropy_stability,
+                'env/max_sdr_per_full_entropy': self.metrics.max_sdr_per_full_entropy,
+                'striatum/sdr_entropy': self.str_metrics.rel_sdr_entropy,
+                'striatum/bit_entropy': self.str_metrics.rel_bit_entropy,
+                'striatum/redundancy': self.str_metrics.redundancy,
+                'striatum/sparsity': self.str_metrics.sparsity,
+                'striatum/stability': self.str_metrics.stability,
+                'striatum/entropy_stability': self.str_metrics.entropy_stability,
+                'striatum/max_sdr_per_full_entropy': self.str_metrics.max_sdr_per_full_entropy,
+            }, step=self.episode
+        )
+        self.str_metrics.reset()
+
     def run(self):
         print('==> Run')
         self.episode = 0
         self.steps = 0
-        self.counter = 0
 
         while True:
 
             reward, obs, is_first = self.environment.observe()
-            self.counter += 1
-
             sdr_amg = self.str_amg.compute(self.amg.compute(obs), 0, True)
             sdr_sma = self.str_sma.compute(obs, 0, True)
             sdr_str = np.concatenate((
@@ -214,50 +251,25 @@ class GwMotivationRunner(Runner):
 
             self.metrics.add(self.environment.env.agent.position, obs)
 
-            if self.counter % self.evaluate_step == 0:
-                value_map = np.zeros(self.environment.env.shape)
-                for key in self.base_states.keys():
-                    value_map[key] = self.amg.get_value(self.base_states[key].sparse)
-                    sdr_amg = self.str_amg.compute(self.amg.compute(self.base_states[key].sparse), 0, False)
-                    sdr_sma = self.str_sma.compute(self.base_states[key].sparse, 0, False)
-                    sdr_str = np.concatenate((
-                        sdr_amg, self.str_amg.output_sdr_size + sdr_sma
-                    ))
-                    self.str_metrics.add(key, sdr_str)
-                if self.logger:
-                    self.logger.log({
-                        'value_map': wandb.Image(plt.imshow(value_map)),
-                        'env/sdr_entropy': self.metrics.rel_sdr_entropy,
-                        'env/bit_entropy': self.metrics.rel_bit_entropy,
-                        'env/redundancy': self.metrics.redundancy,
-                        'env/sparsity': self.metrics.sparsity,
-                        'env/entropy_stability': self.metrics.entropy_stability,
-                        'env/max_sdr_per_full_entropy': self.metrics.max_sdr_per_full_entropy,
-                        'striatum/sdr_entropy': self.str_metrics.rel_sdr_entropy,
-                        'striatum/bit_entropy': self.str_metrics.rel_bit_entropy,
-                        'striatum/redundancy': self.str_metrics.redundancy,
-                        'striatum/sparsity': self.str_metrics.sparsity,
-                        'striatum/stability': self.str_metrics.stability,
-                        'striatum/entropy_stability': self.str_metrics.entropy_stability,
-                        'striatum/max_sdr_per_full_entropy': self.str_metrics.max_sdr_per_full_entropy,
-                    })
-                self.str_metrics.reset()
-
             if is_first:
-                # plt.imshow(self.amg.value_network.cell_value.reshape((9, 9)))
-                # plt.show()
+                if self.episode != 0 and self.logger:
+                    self.log_metrics()
                 self.episode += 1
                 self.steps = 0
                 self.amg.reset()
                 self.str_sma.reset()
                 self.str_amg.reset()
+                self.policy.reset()
                 if self.episode > self.n_episodes:
                     break
             else:
                 self.steps += 1
 
             self.amg.update(obs, reward)
-            action = self._rng.integers(0, self.environment.n_actions)
+            action = self.policy.compute(sdr_str)
+            sa = action * self.policy.state_size + sdr_str
+            self.policy.update(sa, reward)
+            # action = self._rng.integers(0, self.environment.n_actions)
             self.environment.act(action)
 
         print('<==')

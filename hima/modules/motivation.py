@@ -159,6 +159,26 @@ class Amygdala(TDLambda):
         return value
 
 
+class Policy(TDLambda):
+    def __init__(
+            self, seed: int, sdr_size: int, gamma: float,
+            alpha: float, lambda_: float, with_reset: bool,
+            n_actions: int
+    ):
+        super().__init__(seed, sdr_size * n_actions, gamma, alpha, lambda_, with_reset)
+        self.n_actions = n_actions
+        self.state_size = sdr_size
+
+    def get_values(self, state: SparseSdr) -> np.ndarray:
+        values = [self.get_value(a * self.state_size + state) for a in range(self.n_actions)]
+        return np.array(values)
+
+    def compute(self, state: SparseSdr) -> int:
+        values = self.get_values(state)
+        action = np.argmax(values)
+        return action
+
+
 class StriatumBlock:
     def __init__(
             self, inputDimensions: list[int], columnDimensions: list[int], potentialRadius: int,
