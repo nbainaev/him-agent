@@ -160,16 +160,19 @@ class GwMotivationRunner(Runner):
         print(f"Environment sdr size: {self.environment.output_sdr_size}")
 
         print('==> Amygdala')
-        self.amg = Amygdala(sdr_size=self.environment.output_sdr_size, **config['amygdala'])
+        self.amg = Amygdala(
+            sdr_size=self.environment.output_sdr_size,
+            seed=self.seed, **config['amygdala']
+        )
 
         print('==> Striatum')
         self.str_amg = StriatumBlock(
             inputDimensions=self.amg.out_sdr_shape,
-            **config['striatum']
+            seed=self.seed, **config['striatum']
         )
         self.str_sma = StriatumBlock(
             inputDimensions=[1, self.environment.output_sdr_size],
-            **config['striatum']
+            seed=self.seed, **config['striatum']
         )
         self.striatum_output_sdr_size = self.str_sma.output_sdr_size + self.str_amg.output_sdr_size
 
@@ -212,7 +215,9 @@ class GwMotivationRunner(Runner):
             self.metrics.add(self.environment.env.agent.position, obs)
 
             if self.counter % self.evaluate_step == 0:
+                value_map = np.zeros(self.environment.env.shape)
                 for key in self.base_states.keys():
+                    value_map[key] = self.amg.get_value(self.base_states[key].sparse)
                     sdr_amg = self.str_amg.compute(self.amg.compute(self.base_states[key].sparse), 0, False)
                     sdr_sma = self.str_sma.compute(self.base_states[key].sparse, 0, False)
                     sdr_str = np.concatenate((
@@ -221,6 +226,7 @@ class GwMotivationRunner(Runner):
                     self.str_metrics.add(key, sdr_str)
                 if self.logger:
                     self.logger.log({
+                        'value_map': wandb.Image(plt.imshow(value_map)),
                         'env/sdr_entropy': self.metrics.rel_sdr_entropy,
                         'env/bit_entropy': self.metrics.rel_bit_entropy,
                         'env/redundancy': self.metrics.redundancy,

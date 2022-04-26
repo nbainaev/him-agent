@@ -114,13 +114,17 @@ class Amygdala:
         self.current_reward = None
 
     def compute(self, sdr: SparseSdr) -> SparseSdr:
+        value = self.get_value(sdr)
+        output = self.encoder.compute(value)
+        return output
+
+    def get_value(self, sdr: SparseSdr) -> float:
         min_ = np.quantile(self.value_network.cell_value, self.min_cut_fraction)
         max_ = np.max(self.value_network.cell_value)
         value = (self.value_network.value(sdr) - min_) / (max_ - min_)
-        if value <= 0:
+        if value < 0:
             value = 0
-        output = self.encoder.compute(value)
-        return output
+        return value
 
     def update(self, sdr: np.ndarray, reward: float):
         if self.current_sdr is None:
