@@ -12,7 +12,7 @@ import wandb
 from hima.envs.biogwlab.env import BioGwLabEnvironment
 from htm.bindings.algorithms import SpatialPooler
 from htm.bindings.sdr import SDR
-from hima.modules.motivation import Amygdala
+from hima.modules.motivation import Amygdala, StriatumBlock
 from hima.common.run_utils import Runner
 from hima.common.config_utils import TConfig
 
@@ -159,19 +159,24 @@ class GwMotivationRunner(Runner):
             plt.show()
         print(f"Environment sdr size: {self.environment.output_sdr_size}")
 
-        print('==> Spatial Pooler')
-        self.sp = SpatialPooler(
-            inputDimensions=[self.environment.output_sdr_size],
-            **config['sp']
-        )
-
         print('==> Amygdala')
         self.amg = Amygdala(sdr_size=self.environment.output_sdr_size, **config['amygdala'])
+
+        print('==> Striatum')
+        self.str_amg = StriatumBlock(
+            inputDimensions=self.amg.out_sdr_shape,
+            **config['striatum']
+        )
+        self.str_sma = StriatumBlock(
+            inputDimensions=[1, self.environment.output_sdr_size],
+            **config['striatum']
+        )
+        self.striatum_output_sdr_size = self.str_sma.output_sdr_size + self.str_amg.output_sdr_size
 
         self.episode = 0
         self.steps = 0
         self.metrics = SDRMetrics(self.environment.output_sdr_size)
-        self.sp_metrics = SPMetrics(self.sp.getColumnDimensions()[0])
+        self.str_metrics = SPMetrics(self.striatum_output_sdr_size)
         self.base_states = self.create_base_states()
 
     def create_base_states(self):
@@ -197,15 +202,23 @@ class GwMotivationRunner(Runner):
 
             reward, obs, is_first = self.environment.observe()
             self.counter += 1
-            sdr_new = SDR(self.environment.output_sdr_size)
-            sdr_sp = SDR(self.sp.getColumnDimensions())
-            sdr_new.sparse = obs
+
+            sdr_amg = self.str_amg.compute(self.amg.compute(obs), 0, True)
+            sdr_sma = self.str_sma.compute(obs, 0, True)
+            sdr_str = np.concatenate((
+                sdr_amg, self.str_amg.output_sdr_size + sdr_sma
+            ))
+
             self.metrics.add(self.environment.env.agent.position, obs)
-            self.sp.compute(sdr_new, learn=True, output=sdr_sp)
+
             if self.counter % self.evaluate_step == 0:
                 for key in self.base_states.keys():
-                    self.sp.compute(self.base_states[key], learn=False, output=sdr_sp)
-                    self.sp_metrics.add(key, sdr_sp.sparse)
+                    sdr_amg = self.str_amg.compute(self.amg.compute(self.base_states[key].sparse), 0, False)
+                    sdr_sma = self.str_sma.compute(self.base_states[key].sparse, 0, False)
+                    sdr_str = np.concatenate((
+                        sdr_amg, self.str_amg.output_sdr_size + sdr_sma
+                    ))
+                    self.str_metrics.add(key, sdr_str)
                 if self.logger:
                     self.logger.log({
                         'env/sdr_entropy': self.metrics.rel_sdr_entropy,
@@ -214,15 +227,15 @@ class GwMotivationRunner(Runner):
                         'env/sparsity': self.metrics.sparsity,
                         'env/entropy_stability': self.metrics.entropy_stability,
                         'env/max_sdr_per_full_entropy': self.metrics.max_sdr_per_full_entropy,
-                        'sp/sdr_entropy': self.sp_metrics.rel_sdr_entropy,
-                        'sp/bit_entropy': self.sp_metrics.rel_bit_entropy,
-                        'sp/redundancy': self.sp_metrics.redundancy,
-                        'sp/sparsity': self.sp_metrics.sparsity,
-                        'sp/stability': self.sp_metrics.stability,
-                        'sp/entropy_stability': self.sp_metrics.entropy_stability,
-                        'sp/max_sdr_per_full_entropy': self.sp_metrics.max_sdr_per_full_entropy,
+                        'striatum/sdr_entropy': self.str_metrics.rel_sdr_entropy,
+                        'striatum/bit_entropy': self.str_metrics.rel_bit_entropy,
+                        'striatum/redundancy': self.str_metrics.redundancy,
+                        'striatum/sparsity': self.str_metrics.sparsity,
+                        'striatum/stability': self.str_metrics.stability,
+                        'striatum/entropy_stability': self.str_metrics.entropy_stability,
+                        'striatum/max_sdr_per_full_entropy': self.str_metrics.max_sdr_per_full_entropy,
                     })
-                self.sp_metrics.reset()
+                self.str_metrics.reset()
 
             if is_first:
                 # plt.imshow(self.amg.value_network.cell_value.reshape((9, 9)))
@@ -230,6 +243,8 @@ class GwMotivationRunner(Runner):
                 self.episode += 1
                 self.steps = 0
                 self.amg.reset()
+                self.str_sma.reset()
+                self.str_amg.reset()
                 if self.episode > self.n_episodes:
                     break
             else:

@@ -7,6 +7,8 @@
 import numpy as np
 from hima.common.sdr import SparseSdr
 from hima.common.utils import update_exp_trace
+from htm.bindings.algorithms import SpatialPooler
+from htm.bindings.sdr import SDR
 
 
 class ValueNetwork:
@@ -78,18 +80,16 @@ class Unit2DEncoder:
             self.sdr_shape[1] * i + np.arange(bucket_shape[1]) for i in range(bucket_shape[0])
         ], dtype=int).flatten()
 
-    def compute(self, values: list[float]):
-        out = np.empty(self.base_sdr.size * len(values), dtype=int)
-        for ind, value in enumerate(values):
-            if value < 0:
-                x = 0
-            elif value > 1:
-                x = 1
-            else:
-                x = value
-            start = int(x * (self.sdr_shape[1] - self.bucket_shape[1]))
-            start += ind * self.sdr_size
-            out[ind * self.base_sdr.size: (ind + 1) * self.base_sdr.size] = start + self.base_sdr
+    def compute(self, value: float):
+        out = np.empty(self.base_sdr.size, dtype=int)
+        if value < 0:
+            x = 0
+        elif value > 1:
+            x = 1
+        else:
+            x = value
+        start = int(x * (self.sdr_shape[1] - self.bucket_shape[1]))
+        out[:] = start + self.base_sdr
         return out
 
 
@@ -103,8 +103,8 @@ class Amygdala:
         self.sdr_size = sdr_size
         self.min_cut_fraction = min_cut_fraction
         self.encoder = Unit2DEncoder(n_buckets, bucket_shape)
-        self.out_sdr_shape = (2 * self.encoder.sdr_shape[0], self.encoder.sdr_shape[1])
-        self.out_sdr_size = 2 * self.encoder.sdr_size
+        self.out_sdr_shape = self.encoder.sdr_shape
+        self.out_sdr_size = self.encoder.sdr_size
 
         self.gamma = gamma
         self.alpha = alpha
@@ -113,15 +113,13 @@ class Amygdala:
         self.current_sdr = None
         self.current_reward = None
 
-    def compute(self, sdr: SparseSdr, dopamine: float) -> SparseSdr:
+    def compute(self, sdr: SparseSdr) -> SparseSdr:
         min_ = np.quantile(self.value_network.cell_value, self.min_cut_fraction)
         max_ = np.max(self.value_network.cell_value)
         value = (self.value_network.value(sdr) - min_) / (max_ - min_)
         if value <= 0:
             value = 0
-        d1 = np.tanh(value / (1 + dopamine))
-        d2 = 1 - np.tanh((1 + dopamine) * value)
-        output = self.encoder.compute([d1, d2])
+        output = self.encoder.compute(value)
         return output
 
     def update(self, sdr: np.ndarray, reward: float):
@@ -143,3 +141,61 @@ class Amygdala:
             self.value_network.update(prev_sdr, prev_rew, [], self.eligibility_traces.cell_traces)
             self.current_sdr, self.current_reward = None, None
             self.eligibility_traces.reset()
+
+
+class StriatumBlock:
+    def __init__(
+            self, inputDimensions: list[int], columnDimensions: list[int], potentialRadius: int,
+            potentialPct: float, globalInhibition: bool, localAreaDensity: float,
+            stimulusThreshold: int, synPermInactiveDec: float, synPermActiveInc: float,
+            synPermConnected: float, minPctOverlapDutyCycle: float, dutyCyclePeriod: int,
+            boostStrength: float, seed: int, wrapAround: bool, dopamine_factor: float
+    ):
+        self.output_sdr_shape = (2 * columnDimensions[0], columnDimensions[1])
+        self.zone_size = columnDimensions[0] * columnDimensions[1]
+        self.sp = SpatialPooler(
+                inputDimensions=inputDimensions,
+                columnDimensions=self.output_sdr_shape,
+                potentialPct=potentialPct,
+                potentialRadius=potentialRadius,
+                globalInhibition=globalInhibition,
+                localAreaDensity=localAreaDensity,
+                stimulusThreshold=stimulusThreshold,
+                synPermInactiveDec=synPermInactiveDec,
+                synPermActiveInc=synPermActiveInc,
+                synPermConnected=synPermConnected,
+                minPctOverlapDutyCycle=minPctOverlapDutyCycle,
+                dutyCyclePeriod=dutyCyclePeriod,
+                boostStrength=boostStrength,
+                seed=seed,
+                wrapAround=wrapAround
+        )
+
+        self.output_sdr_size = self.sp.getNumColumns()
+        self._input_sdr = SDR(inputDimensions)
+        self._output_sdr = SDR(self.output_sdr_shape)
+        self._boost_factors = np.ones(self.output_sdr_shape, dtype=np.float32)
+
+        self.dopamine_level = 0
+        self.dopamine_factor = dopamine_factor
+
+    def update_dopamine_boost(self, dopamine: float):
+        self.dopamine_level *= self.dopamine_factor
+        self.dopamine_level += dopamine
+
+        self.sp.getBoostFactors(self._boost_factors)
+        self._boost_factors[:self.zone_size] *= (1 + self.dopamine_level)
+        self._boost_factors[self.zone_size:] /= (1 + self.dopamine_level)
+        self.sp.setBoostFactors(self._boost_factors)
+
+    def compute(self, sdr: SparseSdr, dopamine: float, learn: bool) -> SparseSdr:
+        if learn:
+            self.update_dopamine_boost(dopamine)
+
+        self._input_sdr.sparse = sdr
+        self.sp.compute(self._input_sdr, learn=learn, output=self._output_sdr)
+        output = np.copy(self._output_sdr.sparse)
+        return output
+
+    def reset(self):
+        self.dopamine_level = 0
