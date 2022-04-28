@@ -6,8 +6,11 @@
 
 import numpy as np
 
+from hima.common.sdr import DenseSdr, SparseSdr
+from hima.common.utils import safe_divide
 
-def symmetric_diff_sz(set1: np.ndarray, set2: np.ndarray) -> int:
+
+def symmetric_diff_sz(set1: DenseSdr, set2: DenseSdr) -> int:
     return np.setdiff1d(set1, set2).size + np.setdiff1d(set2, set1).size
 
 
@@ -41,3 +44,22 @@ def representation_similarity(representation_1, representation_2):
 
 def similarity_mae(pure, representational):
     return np.mean(abs(pure - representational)[np.ones(pure.shape) - np.identity(pure.shape[0]) == 1])
+
+
+def sdr_similarity(x1: set, x2: set, symmetrical=False) -> float:
+    overlap = len(x1 & x2)
+    if symmetrical:
+        return safe_divide(overlap, len(x1 | x2))
+    return safe_divide(overlap, len(x2))
+
+
+def tuple_similarity(t1: tuple[SparseSdr, ...], t2: tuple[SparseSdr, ...]) -> float:
+    sim = 1.
+    for i in range(len(t1)):
+        sim *= sdr_similarity(t1[i], t2[i])
+    return sim
+
+
+def entropy(x: np.ndarray) -> float:
+    return -np.nansum(x * np.log(x))
+

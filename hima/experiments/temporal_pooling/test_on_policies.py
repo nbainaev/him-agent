@@ -27,13 +27,18 @@ from hima.modules.htm.temporal_memory import DelayedFeedbackTM
 
 # noinspection PyAttributeOutsideInit
 class ExperimentStats:
-    def __init__(self):
+    tp_expected_active_size: int
+    tp_output_sdr_size: int
+
+    def __init__(self, temporal_pooler):
         self.policy_id: Optional[int] = None
         self.last_representations = {}
         self.tp_current_representation = set()
         # self.tp_prev_policy_union = tp.getUnionSDR().copy()
         # self.tp_prev_union = tp.getUnionSDR().copy()
-        ...
+        self.tp_output_distribution = {}
+        self.tp_output_sdr_size = temporal_pooler.output_sdr_size
+        self.tp_expected_active_size = temporal_pooler.n_active_bits
 
     def on_policy_change(self, policy_id):
         # self.tp_prev_policy_union = self.tp_prev_union.copy()
@@ -45,14 +50,12 @@ class ExperimentStats:
         self.whole_active = None
         self.policy_repeat = 0
         self.intra_policy_step = 0
+        self.tp_output_distribution.setdefault(
+            policy_id, np.empty(self.tp_output_sdr_size, dtype=int)
+        ).fill(0)
 
     def on_policy_repeat(self):
         self.intra_policy_step = 0
-
-        # if self.policy_repeat == 2:
-        #     self.whole_active = SDR(tp.getUnionSDR().dense.shape)
-        #     self.whole_active.dense = np.zeros(tp.getUnionSDR().dense.shape)
-
         self.policy_repeat += 1
 
     def on_step(
@@ -67,36 +70,39 @@ class ExperimentStats:
         if logger:
             logger.log(tm_log | tp_log)
 
-        # self.window_error += symmetric_error(tp_output, self.tp_prev_union)
         self.intra_policy_step += 1
 
     # noinspection PyProtectedMember
     def _get_tp_metrics(self, temporal_pooler) -> dict:
         prev_repr = self.tp_current_representation
-        curr_repr = set(temporal_pooler.getUnionSDR().sparse)
+        curr_repr_lst = temporal_pooler.getUnionSDR().sparse
+        curr_repr = set(curr_repr_lst)
         self.tp_current_representation = curr_repr
         # noinspection PyTypeChecker
         self.last_representations[self.policy_id] = curr_repr
 
+        output_distribution = self.tp_output_distribution[self.policy_id]
+        output_distribution[curr_repr_lst] += 1
+
         sparsity = safe_divide(
-            len(curr_repr), temporal_pooler._max_union_cells
+            len(curr_repr), self.tp_expected_active_size
         )
         new_cells_ratio = safe_divide(
-            len(curr_repr - prev_repr),
-            temporal_pooler._max_union_cells
+            len(curr_repr - prev_repr), self.tp_expected_active_size
+        )
+        cells_in_whole = safe_divide(
+            len(curr_repr), np.count_nonzero(output_distribution)
+        )
+        step_difference = safe_divide(
+            len(curr_repr ^ prev_repr),
+            len(curr_repr | prev_repr)
         )
 
-        # if whole_active is not None:
-        #     whole_active.dense = np.logical_or(whole_active.dense, tp.getUnionSDR().dense)
-        #     whole_nonzero = np.count_nonzero(whole_active.dense)
-        #     my_log['cells_in_whole'] = np.count_nonzero(tp.getUnionSDR().dense) / whole_nonzero
-        #
-        # if counter % window_size == window_size - 1:
-        #     my_log['difference'] = (window_error / window_size)
-        #     window_error = 0
         return {
             'tp/sparsity': sparsity,
-            'tp/new_cells': new_cells_ratio
+            'tp/new_cells': new_cells_ratio,
+            'tp/cells_in_whole': cells_in_whole,
+            'tp/step_diff': step_difference
         }
 
     def _get_tm_metrics(self, temporal_memory) -> dict:
@@ -148,7 +154,7 @@ class PoliciesExperiment(Runner):
             self.config, temporal_pooler,
             temporal_memory=self.temporal_memory
         )
-        self.stats = ExperimentStats()
+        self.stats = ExperimentStats(self.temporal_pooler)
 
         # pre-allocated SDR
         tp_input_size = self.temporal_pooler.getNumInputs()
@@ -368,7 +374,7 @@ def resolve_tp(config, temporal_pooler: str, temporal_memory):
     )
 
     base_config_tp, tp_type = extracted_type(base_config_tp)
-    if tp_type == 'UnionSdr':
+    if tp_type == 'UnionTp':
         config_tp = base_config_tp | config_tp
         tp = UnionTemporalPooler(seed=seed, **config_tp)
     elif tp_type == 'AblationUtp':
