@@ -5,8 +5,8 @@ generator:
   dataset_path: room2_obs_v1.pkl
 
 
-seed: seed
-temporal_pooler: AblationUtp
+seed: 1337
+temporal_pooler: ablation_utp
 epochs: 3
 
 # FIXME: using &key/*key is error prone with sweeps overwriting
