@@ -102,34 +102,45 @@ def through_v1(images: np.ndarray, v1_config):
 
 if __name__ == '__main__':
     if len(sys.argv) > 1:
-        room_conf_path = sys.argv[1]
+        room_conf_paths = [sys.argv[1]]
     else:
-        room_conf_path = '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/1g.yml'
-    pics = collect_data(room_conf_path)
-    plt.imshow(pics[59])
-    plt.show()
-    simple_configs = [
-        {
+        room_conf_paths = [
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/1g.yml',
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/hunger-neq-reward.yml',
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/01-23-01.yml',
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/02-27-03.yml',
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/synergytmaze1.yml',
+
+        ]
+
+    rooms_observations = []
+    for room_conf in room_conf_paths:
+        pics = collect_data(room_conf)
+        plt.imshow(pics[39])
+        plt.show()
+        simple_configs = [
+            {
+                'g_kernel_size': 12,
+                'g_stride': 2,
+                'g_sigma_x': 4,
+                'g_sigma_y': 4,
+                'g_lambda_': 8,
+                'g_filters': 8,
+                'activity_level': 0.3
+            }
+        ]
+
+        complex_config = {
             'g_kernel_size': 12,
-            'g_stride': 2,
-            'g_sigma_x': 4,
-            'g_sigma_y': 4,
-            'g_lambda_': 8,
-            'g_filters': 8,
-            'activity_level': 0.3
+            'g_stride': 6,
+            'g_sigma': 19.2,
+            'activity_level': 0.6
         }
-    ]
+        converted = through_v1(list_to_np(pics), {
+            'simple_configs': simple_configs,
+            'complex_config': complex_config
+        })
+        rooms_observations.append(converted)
 
-    complex_config = {
-        'g_kernel_size': 12,
-        'g_stride': 6,
-        'g_sigma': 19.2,
-        'activity_level': 0.6
-    }
-    converted = through_v1(list_to_np(pics), {
-        'simple_configs': simple_configs,
-        'complex_config': complex_config
-    })
     with open('room2_obs_v1.pkl', 'wb') as f:
-        dump(converted, f)
-
+        dump(rooms_observations, f)

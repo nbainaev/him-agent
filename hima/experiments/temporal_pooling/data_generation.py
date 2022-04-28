@@ -13,6 +13,9 @@ from hima.common.sdr import SparseSdr
 from hima.common.sdr_encoders import IntBucketEncoder
 from hima.common.config_utils import extracted_type
 
+from animal_ai_v1_pickle import collect_data
+import pickle
+
 
 class Policy:
     id: int
@@ -91,6 +94,16 @@ class SyntheticGenerator:
         return encoded_policies
 
 
+class AAIRotationsGenerator:
+    def __init__(self, config):
+        gen_conf = config['generator']
+        dataset_path = gen_conf['dataset_path']
+        self.rooms_v1_outputs = pickle.load(open(dataset_path, 'rb'))
+
+    def generate_data(self):
+        return self.rooms_v1_outputs
+
+
 class PolicySelector:
     n_policies: int
     regime: str
@@ -120,6 +133,8 @@ def resolve_data_generator(config: dict):
 
     if generator_type == 'synthetic':
         return SyntheticGenerator(config, seed=seed, **generator_config)
+    elif generator_type == 'aai_rotation':
+        return AAIRotationsGenerator(config)
     else:
         raise KeyError(f'{generator_type} is not supported')
 
