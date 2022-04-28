@@ -1,0 +1,61 @@
+_type_: tp.observations
+
+generator:
+  _type_: aai_rotation
+  dataset_path: room2_obs_v1.pkl
+
+
+seed: seed
+temporal_pooler: AblationUtp
+epochs: 3
+
+# FIXME: using &key/*key is error prone with sweeps overwriting
+.shared_params:
+  tp_output_size: &tp_output_size 4000
+
+temporal_poolers:
+  ablation_utp:
+    _type_: AblationUtp
+    activeOverlapWeight: 1
+    predictedActiveOverlapWeight: 2
+    maxUnionActivity: 0.01
+    exciteFunctionType: Logistic
+    decayFunctionType: Exponential
+    decayTimeConst: 10.0
+    synPermPredActiveInc: 0.1
+    synPermPreviousPredActiveInc: 0.05
+    historyLength: 20
+    minHistory: 3
+    columnDimensions: [ *tp_output_size ]
+    boostStrength: 0.
+    localAreaDensity: 0.01
+    globalInhibition: True
+    dutyCyclePeriod: 1000
+    minPctOverlapDutyCycle: 0.001
+    numActiveColumnsPerInhArea: 0
+    potentialPct: 0.5
+    stimulusThreshold: 3
+    synPermConnected: 0.5
+    synPermActiveInc: 0.1
+    synPermInactiveDec: 0.01
+    wrapAround: False
+    # ablation
+    first_boosting: False
+    second_boosting: False
+    untemporal_learning: True
+    union_learning: True
+    history_learning: True
+
+temporal_memory:
+  n_columns: 180
+  cells_per_column: 16
+  activation_threshold: 3
+  learning_threshold: 3
+  connected_permanence: 0.5
+  permanenceIncrement: 0.1
+  permanenceDecrement: 0.01
+  initial_permanence: 0.4
+  predictedSegmentDecrement: 0.001
+  max_synapses_per_segment: 255
+  maxSegmentsPerCell: 255
+  max_new_synapse_count: 255

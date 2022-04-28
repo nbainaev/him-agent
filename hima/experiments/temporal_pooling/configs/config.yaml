@@ -135,6 +135,7 @@ temporal_poolers:
       synPermActiveInc: 0.1
       synPermInactiveDec: 0.01
       wrapAround: False
+
     upper_sp_conf:
       columnDimensions: [*tp_output_size]
       boostStrength: 0.
