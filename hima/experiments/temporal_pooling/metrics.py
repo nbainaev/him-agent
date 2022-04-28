@@ -8,6 +8,7 @@ import numpy as np
 
 from hima.common.sdr import DenseSdr, SparseSdr
 from hima.common.utils import safe_divide
+from htm.bindings.sdr import SDR
 
 
 def symmetric_diff_sz(set1: DenseSdr, set2: DenseSdr) -> int:
@@ -40,6 +41,12 @@ def representation_similarity(representation_1, representation_2):
     if union == 0:
         return 1
     return overlap / union
+
+
+def sdrs_similarity(sdr1: SDR, sdr2: SDR):
+    inversection = np.intersect1d(sdr1.sparse, sdr2.sparse).shape[0]
+    union = np.union1d(sdr1.sparse, sdr2.sparse).shape[0]
+    return safe_divide(inversection, union, 1)
 
 
 def similarity_mae(pure, representational):
