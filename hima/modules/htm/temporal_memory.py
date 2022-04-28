@@ -2671,6 +2671,10 @@ class ClassicTemporalMemory(HtmTemporalMemory):
             self.learning_threshold, self.initial_permanence, self.connected_permanence
         ) = data
 
+    def getCorrectrlyPredictedCells(self) -> SDR:
+        correct_predict = SDR(self.columns*self.cells_per_column)
+        correct_predict.sparse = np.intersect1d(self.getPredictiveCells().sparse.copy(), self.getActiveCells().sparse)
+        return correct_predict
     @property
     def output_sdr_size(self):
         return self.columns
