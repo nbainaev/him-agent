@@ -10,6 +10,8 @@ from animalai.envs.actions import AAIActions
 from hima.common.sdr import SparseSdr
 from hima.modules.v1 import V1
 
+from htm.bindings.sdr import SDR
+
 
 class SpinAgent:
     n_actions: int
@@ -93,11 +95,10 @@ def through_v1(images: np.ndarray, v1_config):
 
     result = []
     for img in images:
-        result.append(v1.compute(img)[0][0])
-    return {
-        'shape': v1.output_sdr_size,
-        'sparse': result
-    }
+        sdr = SDR(v1.output_sdr_size)
+        sdr.sparse = v1.compute(img)[0][0]
+        result.append(sdr)
+    return result
 
 
 if __name__ == '__main__':
