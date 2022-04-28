@@ -2610,7 +2610,7 @@ class ApicalBasalFeedbackTM:
 
 
 class ClassicTemporalMemory(HtmTemporalMemory):
-    n_columns: int
+    columns: int
     cells_per_column: int
     activation_threshold: int
     learning_threshold: int
@@ -2645,7 +2645,7 @@ class ClassicTemporalMemory(HtmTemporalMemory):
             anomalyMode=ANMode.RAW,
             **kwargs
         )
-        self.n_columns = n_columns
+        self.columns = n_columns
         self.cells_per_column = cells_per_column
         self.activation_threshold = activation_threshold
         self.learning_threshold = learning_threshold
@@ -2655,7 +2655,7 @@ class ClassicTemporalMemory(HtmTemporalMemory):
     def __getstate__(self):
         # used to pickle object
         data = (
-            self.n_columns, self.cells_per_column, self.activation_threshold,
+            self.columns, self.cells_per_column, self.activation_threshold,
             self.learning_threshold, self.initial_permanence, self.connected_permanence
         )
         return super().__getstate__(), data
@@ -2667,13 +2667,13 @@ class ClassicTemporalMemory(HtmTemporalMemory):
         super().__setstate__(super_data)
 
         (
-            self.n_columns, self.cells_per_column, self.activation_threshold,
+            self.columns, self.cells_per_column, self.activation_threshold,
             self.learning_threshold, self.initial_permanence, self.connected_permanence
         ) = data
 
     @property
     def output_sdr_size(self):
-        return self.n_columns
+        return self.columns
 
 
 def abs_or_relative(value: Union[int, float], base: int):
