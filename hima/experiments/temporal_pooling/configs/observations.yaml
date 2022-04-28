@@ -1,5 +1,8 @@
 _type_: tp.observations
 
+project: temporal_pooling
+log: True    # wandb logging
+
 generator:
   _type_: aai_rotation
   dataset_path: room2_obs_v1.pkl
