@@ -407,18 +407,15 @@ def states_seqs_test(dataset):
 
 
 def get_sdr_from_sparse(sparse_data, shape):
-    if type(sparse_data[0]) == list:
+    if type(sparse_data) == list:
         datasets = []
         for data in sparse_data:
             datasets.append(get_sdr_from_sparse(data, shape))
         return datasets
 
-    sdr = []
-    for data in sparse_data:
-        sdr_ = SDR(shape)
-        sdr_.sparse = data
-        sdr.append(sdr_)
-    return sdr
+    sdr_ = SDR(shape)
+    sdr_.sparse = sparse_data
+    return sdr_
 
 
 def _run_tests():
@@ -447,17 +444,6 @@ def _run_tests():
 
     unpick = pickle.load(open('2_rooms.pkl', 'rb'))
     dataset = unpick['sparse']
-    # unpick2 = pickle.load(open('room2_obs_v1.pkl', 'rb'))
-    # v1_sparse2 = unpick2['sparse']
-    # states = get_sdr_from_sparse(v1_sparse, unpick['shape'])
-    # states2 = get_sdr_from_sparse(v1_sparse2, 180)
-    # states_2 = [states, states2]
-    # with open('2_rooms.pkl', 'wb') as f:
-    #     pickle.dump({
-    #         'sparse': states_2,
-    #         'shape': 180
-    #     }, f)
-    # print(states[59].dense & ~states[0].dense)
     states_seqs_test(dataset)
 
 

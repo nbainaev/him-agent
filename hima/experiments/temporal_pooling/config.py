@@ -37,9 +37,11 @@ config_tm = dict(
     activation_threshold_basal=state_bucket,
     learning_threshold_basal=state_bucket,
     activation_threshold_apical=int(
-        output_union_sparsity * output_columns * (1 - noise_tolerance_apical)),
+        output_union_sparsity * output_columns * (1 - noise_tolerance_apical)
+    ),
     learning_threshold_apical=int(
-        output_union_sparsity * output_columns * (1 - learning_margin_apical)),
+        output_union_sparsity * output_columns * (1 - learning_margin_apical)
+    ),
     connected_threshold_basal=0.5,
     permanence_increment_basal=0.1,
     permanence_decrement_basal=0.01,
