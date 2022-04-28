@@ -133,7 +133,9 @@ class PoliciesExperiment(Runner):
         self.n_policies = n_policies
         self.epochs = epochs
         self.policy_repeats = policy_repeats
+        # --------------------------------------
         self.steps_per_policy = steps_per_policy
+        # ---- is this field really needed? ----
 
         print('==> Init')
         self.data_generator = resolve_data_generator(config)
