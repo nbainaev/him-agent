@@ -4,6 +4,7 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
+from typing import Union
 import numpy as np
 from abc import ABCMeta, abstractmethod
 from htm.bindings.algorithms import SpatialPooler
@@ -170,3 +171,12 @@ def get_receptive_field(sp: SpatialPooler, cell: int):
             receptive_field[presynaptic_cell // receptive_field.shape[1],
                             presynaptic_cell % receptive_field.shape[1]] = 1
     return receptive_field
+
+
+def abs_or_relative(value: Union[int, float], base: int):
+    if isinstance(value, int):
+        return value
+    elif isinstance(value, float):
+        return int(base * value)
+    else:
+        ValueError(value)

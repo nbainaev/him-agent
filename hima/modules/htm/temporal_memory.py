@@ -4,16 +4,19 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from typing import Union
 from htm.algorithms import TemporalMemory as HtmTemporalMemory
 from htm.bindings.algorithms import ANMode
-from functools import reduce
-from hima.modules.htm.connections import Connections
+from htm.bindings.math import Random
 from htm.bindings.sdr import SDR
 from htm.advanced.support.numpy_helpers import setCompare, argmaxMulti, getAllCellsInColumns
+
+from hima.modules.htm.connections import Connections
+from hima.modules.htm.utils import abs_or_relative
+
+from typing import Union
 import numpy as np
-from htm.bindings.math import Random
 from math import exp
+from functools import reduce
 
 
 EPS = 1e-12
@@ -2674,16 +2677,3 @@ class ClassicTemporalMemory(HtmTemporalMemory):
     @property
     def output_sdr_size(self):
         return self.n_columns
-
-
-def abs_or_relative(value: Union[int, float], base: int):
-    if isinstance(value, int):
-        return value
-    elif isinstance(value, float):
-        return int(base * value)
-    else:
-        ValueError(value)
-
-
-if __name__ == '__main__':
-    pass
