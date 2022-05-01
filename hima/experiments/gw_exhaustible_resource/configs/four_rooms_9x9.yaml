@@ -1,0 +1,101 @@
+_type_: exhaustible.resource
+agent: motiv
+project: exhaustible_resource
+
+scenario:
+  n_episodes: 10
+  goals_per_task: 100
+  tasks_per_level: 10
+  agent_fixed_positions: [ [ 1, 2 ], [ 1, 6 ], [ 7, 2 ], [ 7, 6 ] ]
+  door_positions: [ [4, 2], [1, 4], [4, 6], [7, 4] ]
+
+log: True
+path_to_store_logs: '/tmp'  # important: change, if you are Windows user
+
+seed: 4545
+n_episodes: 200
+gif_schedule: 50
+log_schedule: 10
+animation_fps: 3
+
+goals_per_task: 100
+
+
+environment:
+  seed: 432921
+  shape_xy: [9, 9]
+
+  actions_cost:
+    base_cost: -0.005
+    weights:
+      stay: 2.0
+      turn: 1.0
+      move: 1.0
+  actions:
+    - move right
+    - move down
+    - move left
+    - move up
+
+  rendering:
+    view_rectangle: [[-2, -2], [2, 2]]
+
+  areas:
+    n_types: 5
+
+  obstacle:
+    density: 0.1
+    map_name: 'maps/four_rooms_9x9.map'
+
+  food:
+    n_items: 1
+    reward: 1.
+    positions: [ [ 4, 6 ] ]
+
+  agent:
+    positions: [ [ 1, 2 ], [ 7, 2 ], [ 7, 6 ], [ 1, 6 ] ]
+    change_position: true
+    direction: up
+  #  rendering:
+  #    what:
+  #      - position
+  ##      - view direction
+  #    bucket_size: 3
+
+  terminate:
+    episode_max_steps: 200
+    early_stop: true
+    n_items_to_collect: 1
+
+agent_config:
+  seed: 54484
+  amygdala:
+    gamma: 0.999
+    alpha: 0.01
+    lambda_: 0.9
+    with_reset: True
+    bucket_shape: [ 1, 10 ]
+    n_buckets: 10
+    min_cut_fraction: 0.08
+  striatum:
+    columnDimensions:
+      - 1
+      - 300
+    potentialRadius: 1000
+    potentialPct: 0.9
+    globalInhibition: true
+    localAreaDensity: 0.04
+    stimulusThreshold: 1
+    synPermInactiveDec: 0.01
+    synPermActiveInc: 0.1
+    synPermConnected: 0.5
+    minPctOverlapDutyCycle: 0.001
+    dutyCyclePeriod: 1000
+    boostStrength: 0
+    wrapAround: true
+    dopamine_factor: 0.99
+  policy:
+    gamma: 0.999
+    alpha: 0.01
+    lambda_: 0.9
+    with_reset: True
