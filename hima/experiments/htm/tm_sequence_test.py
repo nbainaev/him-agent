@@ -36,8 +36,9 @@ def main():
 
     char_to_number = {'B': 0, 'P': 1, 'T': 2, 'V': 3, 'S': 4, 'X': 5, 'E': 6}
 
+    log = True
     bucket_size = 3
-    seed = 32342
+    seed = 6564
     encoder = IntBucketEncoder(len(char_to_number), bucket_size)
 
     mpg = MarkovProcessGrammar(
@@ -61,14 +62,16 @@ def main():
         b_lr=0.1,
         seed=seed
     )
-
-    logger = wandb.init(
-        project='test_belief_tm', entity='hauska',
-        config=dict(
-            seed=seed,
-            bucket_size=bucket_size
+    if log:
+        logger = wandb.init(
+            project='test_belief_tm', entity='hauska',
+            config=dict(
+                seed=seed,
+                bucket_size=bucket_size
+            )
         )
-    )
+    else:
+        logger = None
 
     for i in range(1000):
         mpg.reset()
@@ -94,11 +97,11 @@ def main():
 
             tm.activate_dendrites()
             tm.predict_cells()
-
-        logger.log({
-            'surprise': np.array(surprise)[1:].mean(),
-            'anomaly': np.array(anomaly)[1:].mean()
-        })
+        if logger is not None:
+            logger.log({
+                'surprise': np.array(surprise)[1:].mean(),
+                'anomaly': np.array(anomaly)[1:].mean()
+            })
 
     ...
 
