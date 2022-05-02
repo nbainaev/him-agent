@@ -56,3 +56,9 @@ class Agent:
         sa = action * self.policy.state_size + sdr_str
         self.policy.update(sa, reward)
         return action
+
+    def get_amg_value(self, obs: SparseSdr) -> float:
+        return self.amg.get_value(obs)
+
+    def get_q_values(self, obs: SparseSdr) -> np.ndarray:
+        return self.policy.get_values(obs)

@@ -2,24 +2,19 @@ _type_: exhaustible.resource
 agent: motiv
 project: exhaustible_resource
 
-scenario:
-  n_episodes: 10
-  goals_per_task: 100
-  tasks_per_level: 10
-  agent_fixed_positions: [ [ 1, 2 ], [ 1, 6 ], [ 7, 2 ], [ 7, 6 ] ]
-  door_positions: [ [4, 2], [1, 4], [4, 6], [7, 4] ]
-
 log: True
 path_to_store_logs: '/tmp'  # important: change, if you are Windows user
 
 seed: 4545
-n_episodes: 200
 gif_schedule: 50
-log_schedule: 10
 animation_fps: 3
 
-goals_per_task: 100
-
+scenario:
+  n_episodes: 200
+  goals_per_task: 100
+  tasks_per_level: 10
+  agent_fixed_positions: [ [ 1, 2 ], [ 1, 6 ], [ 7, 2 ], [ 7, 6 ] ]
+  door_positions: [ [4, 2], [1, 4], [4, 6], [7, 4] ]
 
 environment:
   seed: 432921
@@ -99,3 +94,4 @@ agent_config:
     alpha: 0.01
     lambda_: 0.9
     with_reset: True
+    temperature: 0.001
