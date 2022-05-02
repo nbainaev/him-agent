@@ -7,7 +7,7 @@
 import numpy as np
 from htm.advanced.support.numpy_helpers import setCompare, argmaxMulti, getAllCellsInColumns
 
-EPS = 1e-12
+EPS = 1e-24
 UINT_DTYPE = "uint32"
 REAL_DTYPE = "float32"
 REAL64_DTYPE = "float64"
@@ -48,10 +48,10 @@ class NaiveBayesTM:
 
         # probabilities
         self.column_probs = np.zeros(
-            n_columns, dtype=REAL64_DTYPE
+            self.n_columns, dtype=REAL64_DTYPE
         )
         self.cell_probs = np.zeros(
-            n_columns * cells_per_column, dtype=REAL64_DTYPE
+            self.n_columns * self.cells_per_column, dtype=REAL64_DTYPE
         )
         self.segment_probs = np.zeros(
             self.cell_probs.size * self.max_segments_per_cell, dtype=REAL64_DTYPE
@@ -59,24 +59,43 @@ class NaiveBayesTM:
 
         # learning parameters
         self.w = np.zeros(
-            (self.predicted_segments.size, self.cell_probs.size),
+            (self.segment_probs.size, self.cell_probs.size),
             dtype=REAL64_DTYPE
         )
         self.receptive_fields = np.zeros(
-            (self.predicted_segments.size, self.cell_probs.size),
+            (self.segment_probs.size, self.cell_probs.size),
             dtype=REAL64_DTYPE
         )
         self.theta = np.zeros(self.cell_probs.size, dtype=REAL64_DTYPE)
-        self.b = np.zeros(self.predicted_segments.size, dtype=REAL64_DTYPE)
+        self.b = np.zeros(self.segment_probs.size, dtype=REAL64_DTYPE)
 
         # surprise (analog to anomaly in classical TM)
         self.surprise = 0
+        self.anomaly = 0
 
         # init random generator
         self.rng = np.random.default_rng(seed)
 
     def set_active_columns(self, active_columns):
         self.active_columns = active_columns
+
+    def reset(self):
+        # discrete states
+        self.active_cells = np.empty(0, dtype=UINT_DTYPE)
+        self.predicted_cells = np.empty(0, dtype=UINT_DTYPE)
+        self.predicted_segments = np.empty(0, dtype=UINT_DTYPE)
+        self.active_columns = np.empty(0, dtype=UINT_DTYPE)
+
+        # probabilities
+        self.column_probs = np.zeros(
+            self.n_columns, dtype=REAL64_DTYPE
+        )
+        self.cell_probs = np.zeros(
+            self.n_columns * self.cells_per_column, dtype=REAL64_DTYPE
+        )
+        self.segment_probs = np.zeros(
+            self.cell_probs.size * self.max_segments_per_cell, dtype=REAL64_DTYPE
+        )
 
     def activate_cells(self, learn=True):
         # compute surprise
@@ -93,6 +112,8 @@ class NaiveBayesTM:
             ),
             rightMinusLeft=True
         )
+
+        self.anomaly = len(bursting_columns) / len(self.active_columns)
 
         (true_positive_segments,
          false_positive_segments,
@@ -135,16 +156,16 @@ class NaiveBayesTM:
             cell_probs[self.active_cells] = 1
 
         for step in range(steps):
+            w_relative = np.log(self.w/self.theta)
+            w_relative[:, cell_probs == 0] = 0
             segment_logits = np.log(self.b) + np.dot(
-                np.log(self.w) - np.log(self.theta), cell_probs
+                w_relative, cell_probs
             )
 
             segment_probs = np.exp(segment_logits)
-            segment_probs[np.isnan(segment_probs)] = 0
+            segment_probs = np.clip(segment_probs, 0, 1)
 
-            cell_probs = 1 - np.exp(
-                np.sum(np.log(1 - segment_probs.reshape(self.cell_probs.size, -1)), axis=-1)
-            )
+            cell_probs = 1 - np.prod(1 - segment_probs.reshape(self.cell_probs.size, -1), axis=-1)
 
         self.predicted_segments = np.flatnonzero(
             np.random.random(segment_probs.size) < segment_probs
@@ -152,7 +173,7 @@ class NaiveBayesTM:
         self.segment_probs = segment_probs
         self.cell_probs = cell_probs
 
-        cell_probs = 1 - cell_probs.reshape(shape=(self.n_columns, -1))
+        cell_probs = 1 - cell_probs.reshape((self.n_columns, -1))
         self.column_probs = 1 - np.prod(cell_probs, axis=-1)
 
     def _update_weights(
