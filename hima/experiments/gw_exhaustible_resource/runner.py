@@ -403,19 +403,7 @@ class GwExhaustibleResource(Runner):
         map_image = self.environment.callmethod('render_rgb')
         if isinstance(map_image, list):
             map_image = map_image[0]
-        plt.imsave(os.path.join(
-            self.path_to_store_logs,
-            f'map_{self.env_config["seed"]}_{self.episode}.png'),
-            map_image.astype('uint8')
-        )
-        plt.close()
-        self.logger.log({
-                'maps/map': wandb.Image(os.path.join(
-                    self.path_to_store_logs, f'map_{self.env_config["seed"]}_{self.episode}.png'
-                ))
-            },
-            step=self.episode
-        )
+        self.logger.log({'maps/map': wandb.Image(map_image)}, step=self.episode)
 
     def get_all_observations(self) -> dict[tuple[int, int], SparseSdr]:
         height, width = self.environment.shape
