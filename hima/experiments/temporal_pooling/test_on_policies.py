@@ -107,10 +107,10 @@ class ExperimentStats:
         }
 
     def _get_tm_metrics(self, temporal_memory) -> dict:
-        active_cells: np.ndarray = temporal_memory.get_active_cells()
-        predicted_cells: np.ndarray = temporal_memory.get_correctly_predicted_cells()
+        active_cells: SDR = temporal_memory.get_active_cells()
+        predicted_cells: SDR = temporal_memory.get_correctly_predicted_cells()
 
-        recall = safe_divide(predicted_cells.size, active_cells.size)
+        recall = safe_divide(predicted_cells.sparse.size, active_cells.sparse.size)
 
         return {
             'tm/recall': recall
