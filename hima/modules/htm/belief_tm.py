@@ -47,6 +47,9 @@ class NaiveBayesTM:
         self.active_columns = np.empty(0, dtype=UINT_DTYPE)
 
         # probabilities
+        self.column_probs = np.zeros(
+            n_columns, dtype=REAL64_DTYPE
+        )
         self.cell_probs = np.zeros(
             n_columns * cells_per_column, dtype=REAL64_DTYPE
         )
@@ -66,12 +69,22 @@ class NaiveBayesTM:
         self.theta = np.zeros(self.cell_probs.size, dtype=REAL64_DTYPE)
         self.b = np.zeros(self.predicted_segments.size, dtype=REAL64_DTYPE)
 
+        # surprise (analog to anomaly in classical TM)
+        self.surprise = 0
+
+        # init random generator
         self.rng = np.random.default_rng(seed)
 
     def set_active_columns(self, active_columns):
         self.active_columns = active_columns
 
     def activate_cells(self, learn=True):
+        # compute surprise
+        inactive_columns = np.flatnonzero(np.in1d(np.arange(self.n_columns), self.active_columns, invert=True))
+        surprise = - np.sum(np.log(self.column_probs[self.active_columns]))
+        surprise += - np.sum(np.log(1 - self.column_probs[inactive_columns]))
+        self.surprise = surprise
+
         correct_predicted_cells, bursting_columns = setCompare(
             self.predicted_cells,
             self.active_columns,
@@ -82,9 +95,9 @@ class NaiveBayesTM:
         )
 
         (true_positive_segments,
-        false_positive_segments,
-        new_active_segments,
-        winner_cells_in_bursting_columns) = self._calculate_learning(
+         false_positive_segments,
+         new_active_segments,
+         winner_cells_in_bursting_columns) = self._calculate_learning(
             bursting_columns,
             correct_predicted_cells
         )
@@ -138,6 +151,9 @@ class NaiveBayesTM:
         )
         self.segment_probs = segment_probs
         self.cell_probs = cell_probs
+
+        cell_probs = 1 - cell_probs.reshape(shape=(self.n_columns, -1))
+        self.column_probs = 1 - np.prod(cell_probs, axis=-1)
 
     def _update_weights(
             self,
@@ -245,9 +261,3 @@ class NaiveBayesTM:
     def _filter_segments_by_cell(self, segments, cells, invert=False):
         mask = np.isin(self._cells_for_segments(segments), cells, invert=invert)
         return segments[mask]
-
-
-if __name__ == '__main__':
-    tm = NaiveBayesTM(4, 3, 2, 5, 0.1, 0.1, 0.1)
-
-    tm.activate_dendrites()
