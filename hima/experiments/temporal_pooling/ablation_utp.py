@@ -319,3 +319,12 @@ class AblationUtp(SpatialPooler):
 
     def getUnionSDR(self):
         return self._unionSDR
+
+    @property
+    def output_sdr_size(self):
+        return self.getNumColumns()
+
+    @property
+    def n_active_bits(self):
+        return self._maxUnionCells
+
