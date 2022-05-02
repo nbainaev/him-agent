@@ -465,7 +465,7 @@ class GwExhaustibleResource(Runner):
             [0, -1],
             [-1, 0],
             [0, 1]
-        ])
+        ]) / 2
 
         fig = plt.figure(frameon=False)
         fig.set_size_inches(10, 10)
@@ -476,12 +476,12 @@ class GwExhaustibleResource(Runner):
         ax.imshow(q_map)
 
         for position, values in q_values.items():
-            i, j = position
-            x, y = j, self.environment.shape[0] - 1 - i
+            y, x = position
             d = values.reshape((-1, 1)) * base_vectors
             m = np.argmax(values)
             for dx, dy in d:
-                ax.arrow(x, y, dx, dy, width=0.05, color='red', length_includes_head=True)
+                if dx > 1e-2 or dy > 1e-2:
+                    ax.arrow(x, y, dx, dy, width=0.05, color='red', length_includes_head=True)
             ax.arrow(x, y, *(d[m]), width=0.05, color='black', length_includes_head=True)
         fig.canvas.draw()
         img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
