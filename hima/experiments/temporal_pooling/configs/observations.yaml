@@ -8,9 +8,10 @@ generator:
   dataset_path: room2_obs_v1.pkl
 
 
-seed: 1337
+seed: &seed 1337
 temporal_pooler: ablation_utp
 epochs: 3
+v1_output: &v1_output 180
 
 # FIXME: using &key/*key is error prone with sweeps overwriting
 .shared_params:
@@ -50,7 +51,7 @@ temporal_poolers:
     history_learning: True
 
 temporal_memory:
-  n_columns: 180
+  n_columns: *v1_output
   cells_per_column: 16
   activation_threshold: 3
   learning_threshold: 3
@@ -62,3 +63,21 @@ temporal_memory:
   max_synapses_per_segment: 255
   maxSegmentsPerCell: 255
   max_new_synapse_count: 255
+
+
+apical_temporal_memory:
+  columnCount: *v1_output
+  apicalInputSize: *tp_output_size
+  cellsPerColumn: 16
+  activationThreshold: 3
+  reducedBasalThreshold: 3
+  initialPermanence: 0.4
+  connectedPermanence: 0.5
+  minThreshold: 1
+  sampleSize: 40
+  permanenceIncrement: 0.1
+  permanenceDecrement: 0.1
+  basalPredictedSegmentDecrement: 0.01
+  apicalPredictedSegmentDecrement: 0.0
+  maxSynapsesPerSegment: 255
+  seed: *seed

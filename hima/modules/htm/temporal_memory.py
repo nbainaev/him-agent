@@ -6,6 +6,7 @@
 
 from typing import Union
 from htm.algorithms import TemporalMemory as HtmTemporalMemory
+from htm.advanced.algorithms.apical_tiebreak_temporal_memory import ApicalTiebreakSequenceMemory
 from htm.bindings.algorithms import ANMode
 from functools import reduce
 from hima.modules.htm.connections import Connections
@@ -14,7 +15,6 @@ from htm.advanced.support.numpy_helpers import setCompare, argmaxMulti, getAllCe
 import numpy as np
 from htm.bindings.math import Random
 from math import exp
-
 
 EPS = 1e-12
 UINT_DTYPE = "uint32"
@@ -576,6 +576,7 @@ class DelayedFeedbackTM:
     Updates apical connections only when propagate method is called.
     Stores all cells to grow apical connections in union sparse array.
     """
+
     def __init__(self,
                  columns,
                  cells_per_column,
@@ -1112,6 +1113,7 @@ class MovingDelayedFeedbackTM:
     Stores all cells to grow apical segments in a list for every step.
     When it comes to grow apical connections, it unites all patterns in history.
     """
+
     def __init__(self,
                  columns,
                  cells_per_column,
@@ -2634,7 +2636,7 @@ class ClassicTemporalMemory(HtmTemporalMemory):
             # print(activation_threshold, learning_threshold, max_new_synapse_count, max_synapses_per_segment)
 
         super().__init__(
-            columnDimensions=(n_columns, ),
+            columnDimensions=(n_columns,),
             cellsPerColumn=cells_per_column,
             activationThreshold=activation_threshold,
             minThreshold=learning_threshold,
@@ -2672,9 +2674,10 @@ class ClassicTemporalMemory(HtmTemporalMemory):
         ) = data
 
     def getCorrectrlyPredictedCells(self) -> SDR:
-        correct_predict = SDR(self.columns*self.cells_per_column)
+        correct_predict = SDR(self.columns * self.cells_per_column)
         correct_predict.sparse = np.intersect1d(self.getPredictiveCells().sparse.copy(), self.getActiveCells().sparse)
         return correct_predict
+
     @property
     def output_sdr_size(self):
         return self.columns
@@ -2687,6 +2690,30 @@ def abs_or_relative(value: Union[int, float], base: int):
         return int(base * value)
     else:
         ValueError(value)
+
+
+class ClassicApicalTemporalMemory(ApicalTiebreakSequenceMemory):
+    columns: int
+    cells_per_column: int
+
+    def __init__(self, **kwargs):
+        super(ClassicApicalTemporalMemory, self).__init__(**kwargs)
+        self.columns = self.columnCount
+        self.cells_per_column = self.cellsPerColumn
+
+
+    def get_correctly_predicted_cells(self) -> SDR:
+        sdr = SDR(self.cells_per_column*self.columns)
+        sdr.sparse = self.getPredictedActiveCells()
+        return sdr
+
+    def get_active_cells(self) -> SDR:
+        sdr = SDR(self.cells_per_column * self.columns)
+        sdr.sparse = super(ClassicApicalTemporalMemory, self).getActiveCells()
+        return sdr
+
+
+
 
 
 if __name__ == '__main__':
