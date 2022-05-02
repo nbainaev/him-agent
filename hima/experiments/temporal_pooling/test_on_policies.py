@@ -40,9 +40,9 @@ class ExperimentStats:
         self.tp_output_sdr_size = temporal_pooler.output_sdr_size
         self.tp_expected_active_size = temporal_pooler.n_active_bits
 
-    def on_policy_change(self, policy_id):
+    def on_policy_change(self, policy_id, temporal_pooler):
         # self.tp_prev_policy_union = self.tp_prev_union.copy()
-        # self.tp_prev_union = tp.getUnionSDR().copy()
+        self.tp_prev_union = set(temporal_pooler.getUnionSDR().sparse)
 
         self.policy_id = policy_id
         self.window_size = 1
@@ -63,7 +63,7 @@ class ExperimentStats:
             temporal_memory, temporal_pooler, logger
     ):
         if policy_id != self.policy_id:
-            self.on_policy_change(policy_id)
+            self.on_policy_change(policy_id, temporal_pooler)
 
         tm_log = self._get_tm_metrics(temporal_memory)
         tp_log = self._get_tp_metrics(temporal_pooler)
@@ -88,7 +88,8 @@ class ExperimentStats:
             len(curr_repr), self.tp_expected_active_size
         )
         new_cells_ratio = safe_divide(
-            len(curr_repr - prev_repr), self.tp_expected_active_size
+            # len(curr_repr - prev_repr), self.tp_expected_active_size
+            len(curr_repr - self.tp_prev_union), self.tp_expected_active_size
         )
         cells_in_whole = safe_divide(
             len(curr_repr), np.count_nonzero(output_distribution)
@@ -267,7 +268,8 @@ class PoliciesExperiment(Runner):
 
         self.temporal_pooler.compute(self._tp_active_input, self._tp_predicted_input, learn)
 
-    def _get_policy_action_similarity(self, policies):
+    @staticmethod
+    def _get_policy_action_similarity(policies):
         n_policies = len(policies)
         similarity_matrix = np.zeros((n_policies, n_policies))
 
@@ -288,7 +290,8 @@ class PoliciesExperiment(Runner):
                 similarity_matrix[i, j] = safe_divide(counter, size)
         return similarity_matrix
 
-    def _get_input_similarity(self, policies):
+    @staticmethod
+    def _get_input_similarity(policies):
         def elem_sim(x1, x2):
             overlap = np.intersect1d(x1, x2, assume_unique=True).size
             return safe_divide(overlap, x2.size)
@@ -312,7 +315,8 @@ class PoliciesExperiment(Runner):
                 similarity_matrix[i, j] = reduce_elementwise_similarity(similarities)
         return similarity_matrix
 
-    def _get_output_similarity_union(self, representations):
+    @staticmethod
+    def _get_output_similarity_union(representations):
         n_policies = len(representations.keys())
         similarity_matrix = np.zeros((n_policies, n_policies))
         for i in range(n_policies):
@@ -328,7 +332,8 @@ class PoliciesExperiment(Runner):
                 )
         return similarity_matrix
 
-    def _get_output_similarity(self, representations):
+    @staticmethod
+    def _get_output_similarity(representations):
         n_policies = len(representations.keys())
         similarity_matrix = np.zeros((n_policies, n_policies))
         for i in range(n_policies):
@@ -388,7 +393,6 @@ def resolve_tp(config, temporal_pooler: str, temporal_memory):
         # FIXME: dangerous mutations here! We should work with copies
         base_config_tp['lower_sp_conf'] = base_config_tp['lower_sp_conf'] | config_tp
         base_config_tp['lower_sp_conf']['seed'] = seed
-        base_config_tp['upper_sp_conf']['seed'] = seed
         tp = SandwichTp(**base_config_tp)
     else:
         raise KeyError(f'Temporal Pooler type "{tp_type}" is not supported')
