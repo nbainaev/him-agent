@@ -258,13 +258,21 @@ class NaiveBayesTM:
             aKey=self._cells_for_segments(self.predicted_segments),
             leftMinusRight=True
         )
-        # choose the least active cells in bursting columns
+        # choose cells with the least amount of segments in bursting columns
         cells_candidates = getAllCellsInColumns(
             bursting_columns,
             self.cells_per_column
         )
         tiebreaker = self.rng.random(cells_candidates.size)
-        cells_scores = -self.theta[cells_candidates] + tiebreaker * _TIE_BREAKER_FACTOR
+
+        segments_in_use = np.flatnonzero(np.sum(self.receptive_fields, axis=-1))
+
+        score = np.zeros_like(self.theta)
+        if len(segments_in_use) > 0:
+            cells, counts = np.unique(self._cells_for_segments(segments_in_use), return_counts=True)
+            score[cells] = counts
+
+        cells_scores = -score[cells_candidates] + tiebreaker * _TIE_BREAKER_FACTOR
         cells_to_grow_segment = cells_candidates[
             argmaxMulti(
                 cells_scores,
