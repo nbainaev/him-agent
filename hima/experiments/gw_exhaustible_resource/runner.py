@@ -450,9 +450,9 @@ class GwExhaustibleResource(Runner):
 
         base_vectors = np.array([
             [1, 0],
-            [0, -1],
+            [0, 1],
             [-1, 0],
-            [0, 1]
+            [0, -1]
         ]) / 2
 
         fig = plt.figure(frameon=False)
@@ -482,7 +482,7 @@ class GwExhaustibleResource(Runner):
 
 def resolve_agent(name, **config):
     agent = None
-    if name == 'motiv':
+    if 'motiv' in name:
         from hima.agents.motivation.agent import Agent
         agent = Agent(**config)
     else:
