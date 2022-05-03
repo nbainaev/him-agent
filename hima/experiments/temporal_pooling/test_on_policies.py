@@ -23,6 +23,7 @@ from hima.experiments.temporal_pooling.data_generation import resolve_data_gener
 from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
 from hima.modules.htm.spatial_pooler import UnionTemporalPooler
 from hima.modules.htm.temporal_memory import DelayedFeedbackTM
+from hima.modules.htm.temporal_memory import ClassicApicalTemporalMemory
 
 
 # noinspection PyAttributeOutsideInit
@@ -371,7 +372,9 @@ class PoliciesExperiment(Runner):
 def resolve_tp(config, temporal_pooler: str, temporal_memory):
     base_config_tp = config['temporal_poolers'][temporal_pooler]
     seed = config['seed']
-    input_size = temporal_memory.columns * temporal_memory.cells_per_column
+    input_size = temporal_memory.columns * temporal_memory.cells_per_column if not \
+        isinstance(temporal_memory, ClassicApicalTemporalMemory)  \
+        else temporal_memory.columns
 
     config_tp = dict(
         inputDimensions=[input_size],

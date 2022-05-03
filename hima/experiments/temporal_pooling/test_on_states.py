@@ -7,6 +7,8 @@ import wandb
 from htm.bindings.sdr import SDR
 from wandb.sdk.wandb_run import Run
 
+from copy import copy
+
 from hima.common.config_utils import TConfig, extracted_type
 from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
@@ -64,7 +66,7 @@ class ObservationsExperiment(Runner):
             representations = self.train_epoch(observations)
         sim_matrix = similarity_matrix(representations)
         sns.heatmap(sim_matrix, vmin=0, vmax=1, cmap='plasma')
-        self.logger.summary['similarities'] = wandb.Image(plt.gca())
+        self.logger.log({'similarities': wandb.Image(plt.gca())})
         print('<==')
 
     def train_epoch(self, observations):
@@ -73,7 +75,9 @@ class ObservationsExperiment(Runner):
         for i, room_observations in enumerate(observations):
             self.temporal_pooler.reset()
             self.run_room(room_observations, i, learn=True)
-            representations.append(self.temporal_pooler.getUnionSDR())
+            sdr = SDR(self.temporal_pooler.getNumColumns())
+            sdr.sparse = self.temporal_pooler.getUnionSDR().sparse.copy()
+            representations.append(sdr)
         return representations
 
     def run_room(self, room_observations, room_id, learn=True):
@@ -85,8 +89,8 @@ class ObservationsExperiment(Runner):
                 learn=learn
             )
             self.compute_tp_step(
-                active_input=tm.get_active_cells(),
-                predicted_input=tm.get_correctly_predicted_cells(),
+                active_input=tm.get_active_columns(),
+                predicted_input=tm.get_correctly_predicted_columns(),
                 learn=learn
             )
             self.stats.on_step(
@@ -99,7 +103,7 @@ class ObservationsExperiment(Runner):
     def compute_tm_step(self, feedforward_input, learn=True):
         self.temporal_memory.compute(
             activeColumns=feedforward_input.sparse,
-            apicalInput=self.temporal_pooler.getUnionSDR().sparse,
+            apicalInput=[],  # self.temporal_pooler.getUnionSDR().sparse,
             learn=learn
         )
         # self.temporal_memory.activateDendrites(learn=learn)
