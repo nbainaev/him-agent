@@ -7,11 +7,11 @@
 import numpy as np
 from htm.advanced.support.numpy_helpers import setCompare, argmaxMulti, getAllCellsInColumns
 
-EPS = 1e-12
+EPS = 1e-24
 UINT_DTYPE = "uint32"
 REAL_DTYPE = "float32"
 REAL64_DTYPE = "float64"
-_TIE_BREAKER_FACTOR = 1e-6
+_TIE_BREAKER_FACTOR = 1e-24
 
 
 class NaiveBayesTM:
@@ -25,6 +25,9 @@ class NaiveBayesTM:
             w_punish,
             theta_lr,
             b_lr,
+            init_w=1,
+            init_theta=0,
+            init_b=0,
             seed=None
     ):
         # fixed parameters
@@ -42,36 +45,76 @@ class NaiveBayesTM:
 
         # discrete states
         self.active_cells = np.empty(0, dtype=UINT_DTYPE)
+        self.winner_cells = np.empty(0, dtype=UINT_DTYPE)
         self.predicted_cells = np.empty(0, dtype=UINT_DTYPE)
+        self.predicted_columns = np.empty(0, dtype=UINT_DTYPE)
         self.predicted_segments = np.empty(0, dtype=UINT_DTYPE)
         self.active_columns = np.empty(0, dtype=UINT_DTYPE)
 
         # probabilities
+        self.column_probs = np.zeros(
+            self.n_columns, dtype=REAL64_DTYPE
+        )
         self.cell_probs = np.zeros(
-            n_columns * cells_per_column, dtype=REAL64_DTYPE
+            self.n_columns * self.cells_per_column, dtype=REAL64_DTYPE
         )
         self.segment_probs = np.zeros(
             self.cell_probs.size * self.max_segments_per_cell, dtype=REAL64_DTYPE
         )
 
+        # initial values
+        self.init_w = init_w
+        self.init_theta = init_theta
+        self.init_b = init_b
         # learning parameters
         self.w = np.zeros(
-            (self.predicted_segments.size, self.cell_probs.size),
+            (self.segment_probs.size, self.cell_probs.size),
             dtype=REAL64_DTYPE
         )
         self.receptive_fields = np.zeros(
-            (self.predicted_segments.size, self.cell_probs.size),
-            dtype=REAL64_DTYPE
+            (self.segment_probs.size, self.cell_probs.size),
+            dtype="bool"
         )
-        self.theta = np.zeros(self.cell_probs.size, dtype=REAL64_DTYPE)
-        self.b = np.zeros(self.predicted_segments.size, dtype=REAL64_DTYPE)
+        self.theta = np.zeros(self.cell_probs.size, dtype=REAL64_DTYPE) + self.init_theta
+        self.b = np.zeros(self.segment_probs.size, dtype=REAL64_DTYPE) + self.init_b
 
+        # surprise (analog to anomaly in classical TM)
+        self.surprise = 0
+        self.anomaly = 0
+        self.confidence = 0
+
+        # init random generator
         self.rng = np.random.default_rng(seed)
 
     def set_active_columns(self, active_columns):
         self.active_columns = active_columns
 
+    def reset(self):
+        # discrete states
+        self.active_cells = np.empty(0, dtype=UINT_DTYPE)
+        self.winner_cells = np.empty(0, dtype=UINT_DTYPE)
+        self.predicted_cells = np.empty(0, dtype=UINT_DTYPE)
+        self.predicted_segments = np.empty(0, dtype=UINT_DTYPE)
+        self.active_columns = np.empty(0, dtype=UINT_DTYPE)
+
+        # probabilities
+        self.column_probs = np.zeros(
+            self.n_columns, dtype=REAL64_DTYPE
+        )
+        self.cell_probs = np.zeros(
+            self.n_columns * self.cells_per_column, dtype=REAL64_DTYPE
+        )
+        self.segment_probs = np.zeros(
+            self.cell_probs.size * self.max_segments_per_cell, dtype=REAL64_DTYPE
+        )
+
     def activate_cells(self, learn=True):
+        # compute surprise
+        inactive_columns = np.flatnonzero(np.in1d(np.arange(self.n_columns), self.active_columns, invert=True))
+        surprise = - np.sum(np.log(self.column_probs[self.active_columns]))
+        surprise += - np.sum(np.log(1 - self.column_probs[inactive_columns]))
+        self.surprise = surprise
+
         correct_predicted_cells, bursting_columns = setCompare(
             self.predicted_cells,
             self.active_columns,
@@ -81,17 +124,25 @@ class NaiveBayesTM:
             rightMinusLeft=True
         )
 
+        self.anomaly = len(bursting_columns) / len(self.active_columns)
+        self.confidence = len(self.predicted_columns) / len(self.active_columns)
+
         (true_positive_segments,
-        false_positive_segments,
-        new_active_segments,
-        winner_cells_in_bursting_columns) = self._calculate_learning(
+         false_positive_segments,
+         new_active_segments,
+         winner_cells_in_bursting_columns) = self._calculate_learning(
             bursting_columns,
             correct_predicted_cells
         )
 
-        active_cells = np.concatenate(
+        winner_cells = np.concatenate(
             [correct_predicted_cells,
                 winner_cells_in_bursting_columns]
+        )
+
+        active_cells = np.concatenate(
+            [correct_predicted_cells,
+                getAllCellsInColumns(bursting_columns, self.cells_per_column)]
         )
 
         if learn:
@@ -99,11 +150,12 @@ class NaiveBayesTM:
                 true_positive_segments,
                 false_positive_segments,
                 new_active_segments,
-                active_cells
+                winner_cells
             )
 
-        # update active cells
+        # update active and winner cells
         self.active_cells = active_cells
+        self.winner_cells = winner_cells
 
     def predict_cells(self):
         self.predicted_cells = np.unique(
@@ -111,6 +163,7 @@ class NaiveBayesTM:
                 self.predicted_segments
             )
         )
+        self.predicted_columns = np.unique(self._columns_for_cells(self.predicted_cells))
 
     def activate_dendrites(self, steps=1, use_probs=False):
         assert steps >= 1
@@ -122,16 +175,17 @@ class NaiveBayesTM:
             cell_probs[self.active_cells] = 1
 
         for step in range(steps):
+            w_relative = np.log(self.w/self.theta)
+            w_relative[:, cell_probs == 0] = 0
+            w_relative[~self.receptive_fields] = 0
             segment_logits = np.log(self.b) + np.dot(
-                np.log(self.w) - np.log(self.theta), cell_probs
+                w_relative, cell_probs
             )
 
             segment_probs = np.exp(segment_logits)
-            segment_probs[np.isnan(segment_probs)] = 0
+            segment_probs = np.clip(segment_probs, 0, 1)
 
-            cell_probs = 1 - np.exp(
-                np.sum(np.log(1 - segment_probs.reshape(self.cell_probs.size, -1)), axis=-1)
-            )
+            cell_probs = 1 - np.prod(1 - segment_probs.reshape(self.cell_probs.size, -1), axis=-1)
 
         self.predicted_segments = np.flatnonzero(
             np.random.random(segment_probs.size) < segment_probs
@@ -139,12 +193,15 @@ class NaiveBayesTM:
         self.segment_probs = segment_probs
         self.cell_probs = cell_probs
 
+        cell_probs = 1 - cell_probs.reshape((self.n_columns, -1))
+        self.column_probs = 1 - np.prod(cell_probs, axis=-1)
+
     def _update_weights(
             self,
             true_positive_segments,
             false_positive_segments,
             new_active_segments,
-            active_cells
+            winner_cells
     ):
         # update dendrites activity
         active_segments_dense = np.zeros_like(self.b)
@@ -156,31 +213,32 @@ class NaiveBayesTM:
 
         self.b = np.clip(self.b, 0, 1)
 
-        # update cells activity
-        active_cells_dense = np.zeros_like(self.theta)
-        active_cells_dense[active_cells] = 1
+        # update cells activity (should we use active_cells here?)
+        winner_cells_dense = np.zeros_like(self.theta)
+        winner_cells_dense[winner_cells] = 1
 
-        theta_deltas = active_cells_dense - self.theta
+        theta_deltas = winner_cells_dense - self.theta
         self.theta += self.theta_lr * theta_deltas
 
         self.theta = np.clip(self.theta, 0, 1)
 
         # update conditional probs
-        old_active_cells_dense = np.zeros_like(self.theta)
-        old_active_cells_dense[self.active_cells] = 1
+        old_winner_cells_dense = np.zeros_like(self.theta)
+        old_winner_cells_dense[self.winner_cells] = 1
 
         w_true_positive = self.w[true_positive_segments]
-        w_deltas_tpos = old_active_cells_dense - w_true_positive
+        w_deltas_tpos = old_winner_cells_dense - w_true_positive
         self.w[true_positive_segments] += self.w_lr * w_deltas_tpos
 
         w_false_positive = self.w[false_positive_segments]
-        w_deltas_fpos = -old_active_cells_dense * w_false_positive
+        w_deltas_fpos = -old_winner_cells_dense * w_false_positive
         self.w[false_positive_segments] += self.w_punish * w_deltas_fpos
 
         self.w = np.clip(self.w, 0, 1)
 
         # init new segments
-        self.w[new_active_segments] = active_cells_dense
+        self.w[new_active_segments] = old_winner_cells_dense * self.init_w
+        self.receptive_fields[new_active_segments] = old_winner_cells_dense
 
     def _calculate_learning(self, bursting_columns, correct_predicted_cells):
         true_positive_segments, false_positive_segments = setCompare(
@@ -245,9 +303,3 @@ class NaiveBayesTM:
     def _filter_segments_by_cell(self, segments, cells, invert=False):
         mask = np.isin(self._cells_for_segments(segments), cells, invert=invert)
         return segments[mask]
-
-
-if __name__ == '__main__':
-    tm = NaiveBayesTM(4, 3, 2, 5, 0.1, 0.1, 0.1)
-
-    tm.activate_dendrites()
