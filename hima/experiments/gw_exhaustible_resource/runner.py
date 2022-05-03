@@ -13,12 +13,51 @@ from functools import partial
 import imageio
 import matplotlib.pyplot as plt
 import wandb
+import numpy as np
 
 from hima.common.run_utils import Runner
 from hima.common.config_utils import TConfig
 from hima.envs.biogwlab.env import BioGwLabEnvironment
 from hima.envs.env import unwrap
 from hima.envs.biogwlab.environment import Environment
+from hima.envs.biogwlab.module import EntityType
+from hima.common.utils import isnone
+from hima.common.sdr import SparseSdr
+
+
+class GwAgentStateProvider:
+    env: Environment
+
+    def __init__(self, env: Environment):
+        self.env = env
+        self.origin = None
+
+    @property
+    def state(self):
+        return self.position, self.view_direction
+
+    @property
+    def position(self):
+        return self.env.agent.position
+
+    @property
+    def view_direction(self):
+        return self.env.agent.view_direction
+
+    def overwrite(self, position=None, view_direction=None):
+        if self.origin is None:
+            self.origin = self.state
+        self._set(position, view_direction)
+
+    def restore(self):
+        if self.origin is None:
+            raise ValueError('Nothing to restore')
+        self._set(*self.origin)
+        self.origin = None
+
+    def _set(self, position, view_direction):
+        self.env.agent.position = isnone(position, self.env.agent.position)
+        self.env.agent.view_direction = isnone(view_direction, self.env.agent.view_direction)
 
 
 class GwExhaustibleResource(Runner):
@@ -26,13 +65,10 @@ class GwExhaustibleResource(Runner):
         super().__init__(config, **config)
 
         self.gif_schedule = config['gif_schedule']
-        self.log_schedule = config['log_schedule']
         self.animation_fps = config['animation_fps']
 
-        seed = config['seed']
-        self._rng = random.Random(seed)
-
         self.scenario = config['scenario']
+        self._rng = random.Random(self.scenario['seed'])
         self.n_episodes = self.scenario['n_episodes']
         self.env_config = config['environment']
         self.environment: Environment = unwrap(BioGwLabEnvironment(**self.env_config))
@@ -131,7 +167,6 @@ class GwExhaustibleResource(Runner):
         self.logger.define_metric("task")
         self.logger.define_metric("main_metrics/steps_per_task", step_metric="task")
         self.logger.define_metric("main_metrics/t_*", step_metric="task")
-        # wandb.define_metric("maps/t_*", step_metric="task")
 
         self.logger.define_metric("goal")
         self.logger.define_metric("main_metrics/g_*", step_metric="goal")
@@ -210,6 +245,7 @@ class GwExhaustibleResource(Runner):
         )
 
     def log_task_complete(self):
+        self.log_agent()
         self.logger.log(
             {
                 'task': self.task,
@@ -364,24 +400,86 @@ class GwExhaustibleResource(Runner):
         map_image = self.environment.callmethod('render_rgb')
         if isinstance(map_image, list):
             map_image = map_image[0]
-        plt.imsave(os.path.join(
-            self.path_to_store_logs,
-            f'map_{self.env_config["seed"]}_{self.episode}.png'),
-            map_image.astype('uint8')
-        )
-        plt.close()
+        self.logger.log({'maps/map': wandb.Image(map_image)}, step=self.episode)
+
+    def get_all_observations(self) -> dict[tuple[int, int], SparseSdr]:
+        height, width = self.environment.shape
+        obstacle_mask = self.environment.aggregated_mask[EntityType.Obstacle]
+        position_provider = GwAgentStateProvider(self.environment)
+        encoding_scheme = {}
+
+        for i in range(height):
+            for j in range(width):
+                if obstacle_mask[i, j]:
+                    continue
+                position = i, j
+                position_provider.overwrite(position)
+                obs = self.environment.render()
+                encoding_scheme[position] = obs
+
+        position_provider.restore()
+        return encoding_scheme
+
+    def log_agent(self):
+        observations = self.get_all_observations()
+        value_map = np.zeros(self.environment.shape)
+        obstacle_mask = self.environment.aggregated_mask[EntityType.Obstacle]
+        value_map = np.ma.masked_where(obstacle_mask, value_map, False)
+        q_map = np.zeros(self.environment.shape)
+        q_map = np.ma.masked_where(obstacle_mask, q_map, False)
+        q_values = {}
+
+        for position, obs in observations.items():
+            value_map[position] = self.agent.get_amg_value(obs)
+            q_values[position] = self.agent.get_q_values(obs)
+            q_map[position] = np.max(q_values[position])
+
+        fig = plt.figure(frameon=False)
+        fig.set_size_inches(5, 5)
+        fig.set_dpi(300)
+        ax = plt.Axes(fig, [0., 0., 1., 1.])
+        ax.set_axis_off()
+        fig.add_axes(ax)
         self.logger.log({
-                'maps/map': wandb.Image(os.path.join(
-                    self.path_to_store_logs, f'map_{self.env_config["seed"]}_{self.episode}.png'
-                ))
-            },
-            step=self.episode
-        )
+            'maps/value_map': wandb.Image(ax.imshow(value_map))
+        }, step=self.episode)
+        plt.close(fig)
+
+        base_vectors = np.array([
+            [1, 0],
+            [0, 1],
+            [-1, 0],
+            [0, -1]
+        ]) / 2
+
+        fig = plt.figure(frameon=False)
+        fig.set_size_inches(10, 10)
+        fig.set_dpi(300)
+        ax = plt.Axes(fig, [0., 0., 1., 1.])
+        ax.set_axis_off()
+        fig.add_axes(ax)
+        ax.imshow(q_map)
+
+        for position, values in q_values.items():
+            y, x = position
+            d = values.reshape((-1, 1)) * base_vectors
+            m = np.argmax(values)
+            for dx, dy in d:
+                if dx > 1e-2 or dy > 1e-2:
+                    ax.arrow(x, y, dx, dy, width=0.05, color='red', length_includes_head=True)
+            ax.arrow(x, y, *(d[m]), width=0.05, color='black', length_includes_head=True)
+        fig.canvas.draw()
+        img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+        img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        plt.close('all')
+        self.logger.log({
+            'maps/q_map': wandb.Image(img)
+        }, step=self.episode)
 
 
 def resolve_agent(name, **config):
     agent = None
-    if name == 'motiv':
+    if 'motiv' in name:
         from hima.agents.motivation.agent import Agent
         agent = Agent(**config)
     else:

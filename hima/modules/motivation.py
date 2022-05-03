@@ -9,6 +9,7 @@ from hima.common.sdr import SparseSdr
 from hima.common.utils import update_exp_trace
 from htm.bindings.algorithms import SpatialPooler
 from htm.bindings.sdr import SDR
+from hima.common.utils import softmax
 
 
 class ValueNetwork:
@@ -163,19 +164,23 @@ class Policy(TDLambda):
     def __init__(
             self, seed: int, sdr_size: int, gamma: float,
             alpha: float, lambda_: float, with_reset: bool,
-            n_actions: int
+            n_actions: int, temperature: float
     ):
         super().__init__(seed, sdr_size * n_actions, gamma, alpha, lambda_, with_reset)
         self.n_actions = n_actions
         self.state_size = sdr_size
+        self.temperature = temperature
+        self._rng = np.random.default_rng(seed)
 
     def get_values(self, state: SparseSdr) -> np.ndarray:
-        values = [self.get_value(a * self.state_size + state) for a in range(self.n_actions)]
-        return np.array(values)
+        values = np.array([
+            self.get_value(a * self.state_size + state) for a in range(self.n_actions)
+        ])
+        return softmax(values, self.temperature)
 
     def compute(self, state: SparseSdr) -> int:
         values = self.get_values(state)
-        action = np.argmax(values)
+        action = self._rng.choice(self.n_actions, p=values)
         return action
 
 

@@ -28,7 +28,7 @@ class Agent:
             inputDimensions=[1, state_dim],
             seed=self.seed, **config['striatum']
         )
-        self.striatum_output_sdr_size = self.sma_striatum.output_sdr_size \
+        self.striatum_output_sdr_size = self.amg_striatum.output_sdr_size \
                                         + self.sma_striatum.output_sdr_size
 
         self.policy = Policy(
@@ -56,3 +56,16 @@ class Agent:
         sa = action * self.policy.state_size + sdr_str
         self.policy.update(sa, reward)
         return action
+
+    def get_amg_value(self, obs: SparseSdr) -> float:
+        return self.amg.get_value(obs)
+
+    def get_q_values(self, obs: SparseSdr) -> np.ndarray:
+        sdr_amg = self.amg_striatum.compute(self.amg.compute(obs), 0, False)
+        sdr_sma = self.sma_striatum.compute(obs, 0, False)
+        sdr_str = np.concatenate(
+            (
+                sdr_amg, self.amg_striatum.output_sdr_size + sdr_sma
+            )
+        )
+        return self.policy.get_values(sdr_str)
