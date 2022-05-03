@@ -67,10 +67,8 @@ class GwExhaustibleResource(Runner):
         self.gif_schedule = config['gif_schedule']
         self.animation_fps = config['animation_fps']
 
-        seed = config['seed']
-        self._rng = random.Random(seed)
-
         self.scenario = config['scenario']
+        self._rng = random.Random(self.scenario['seed'])
         self.n_episodes = self.scenario['n_episodes']
         self.env_config = config['environment']
         self.environment: Environment = unwrap(BioGwLabEnvironment(**self.env_config))
@@ -169,7 +167,6 @@ class GwExhaustibleResource(Runner):
         self.logger.define_metric("task")
         self.logger.define_metric("main_metrics/steps_per_task", step_metric="task")
         self.logger.define_metric("main_metrics/t_*", step_metric="task")
-        # wandb.define_metric("maps/t_*", step_metric="task")
 
         self.logger.define_metric("goal")
         self.logger.define_metric("main_metrics/g_*", step_metric="goal")
