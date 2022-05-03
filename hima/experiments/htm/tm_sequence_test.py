@@ -40,7 +40,7 @@ def main():
     numer_to_char = {value: key for key, value in char_to_number.items()}
 
     log = True
-    update_rate = 199
+    update_rate = 99
     bucket_size = 3
     seed = 6454
     encoder = IntBucketEncoder(len(char_to_number), bucket_size)
@@ -64,9 +64,9 @@ def main():
         w_punish=0.1,
         theta_lr=0.1,
         b_lr=0.1,
-        init_w=1,
-        init_theta=1,
-        init_b=1,
+        init_w=1.0,
+        init_theta=1.0,
+        init_b=1.0,
         seed=seed
     )
 
