@@ -61,6 +61,7 @@ def main():
         max_segments_per_cell=6,
         max_receptive_field_size=-1,
         w_lr=0.01,
+        w_punish=0.0,
         nu_lr=0.01,
         b_lr=0.01,
         init_w=1.0,

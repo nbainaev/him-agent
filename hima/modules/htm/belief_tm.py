@@ -22,6 +22,7 @@ class NaiveBayesTM:
             max_segments_per_cell,
             max_receptive_field_size=-1,
             w_lr=0.01,
+            w_punish=0.0,
             nu_lr=0.01,
             b_lr=0.01,
             init_w=1.0,
@@ -38,6 +39,7 @@ class NaiveBayesTM:
             self.max_receptive_field_size = n_columns * cells_per_column
         # learning rates
         self.w_lr = w_lr
+        self.w_punish = w_punish
         self.nu_lr = nu_lr
         self.b_lr = b_lr
 
@@ -124,6 +126,7 @@ class NaiveBayesTM:
         self.confidence = len(self.predicted_columns) / len(self.active_columns)
 
         (true_positive_segments,
+         false_positive_segments,
          new_active_segments,
          winner_cells_in_bursting_columns) = self._calculate_learning(
             bursting_columns,
@@ -143,6 +146,7 @@ class NaiveBayesTM:
         if learn:
             self._update_weights(
                 true_positive_segments,
+                false_positive_segments,
                 new_active_segments,
             )
 
@@ -204,6 +208,7 @@ class NaiveBayesTM:
     def _update_weights(
             self,
             true_positive_segments,
+            false_positive_segments,
             new_active_segments,
     ):
         # update dendrites activity
@@ -231,6 +236,13 @@ class NaiveBayesTM:
             self.w[true_positive_segments] += self.w_lr * w_deltas_tpos
             self.receptive_fields[true_positive_segments] = (self.receptive_fields[true_positive_segments] + old_winner_cells_dense).astype('bool')
 
+        if len(false_positive_segments) > 0:
+            w_false_positive = self.w[false_positive_segments]
+            w_deltas_fpos = -old_active_cells_dense * w_false_positive
+            w_deltas_fpos[~self.receptive_fields[false_positive_segments]] = 0
+
+            self.w[false_positive_segments] += self.w_punish * w_deltas_fpos
+
         nu_deltas = old_active_cells_dense - self.nu
         nu_deltas[~self.receptive_fields] = 0
         nu_deltas[true_positive_segments] = 0
@@ -253,10 +265,11 @@ class NaiveBayesTM:
         self.b[zero_segments] = 0
 
     def _calculate_learning(self, bursting_columns, correct_predicted_cells):
-        true_positive_segments = setCompare(
+        true_positive_segments, false_positive_segments = setCompare(
             self.predicted_segments,
             correct_predicted_cells,
-            aKey=self._cells_for_segments(self.predicted_segments)
+            aKey=self._cells_for_segments(self.predicted_segments),
+            leftMinusRight=True
         )
         # choose cells with the least amount of segments in bursting columns
         cells_candidates = getAllCellsInColumns(
@@ -291,6 +304,7 @@ class NaiveBayesTM:
         ]
 
         return (true_positive_segments.astype(UINT_DTYPE),
+                false_positive_segments.astype(UINT_DTYPE),
                 new_active_segments.astype(UINT_DTYPE),
                 cells_to_grow_segment.astype(UINT_DTYPE))
 
