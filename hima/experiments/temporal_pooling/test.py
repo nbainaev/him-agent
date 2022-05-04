@@ -420,16 +420,16 @@ def get_sdr_from_sparse(sparse_data, shape):
 
 def _run_tests():
     wandb.login()
-    np.random.seed(42)
+    np.random.seed(31)
 
-    row_data, data = generate_data(5, n_actions, n_states, randomness=0.7)
+    row_data, data = generate_data(5, n_actions, n_states, randomness=0.5)
     np.random.shuffle(data)
     # common_utp_one_seq(data)
     # custom_utp_one_seq(data)
     # only_custom_utp_test(row_data)
     # custom_utp_all_seq_5_epochs(data)
     # stp_all_seq_3_epochs(data)
-    # common_utp_all_seq_5_epochs(data)
+    common_utp_all_seq_5_epochs(data)
     # no_second_boosting(data)
     # no_history_learning_5_epochs(data)
     # no_history_learning_15_epochs(data)
@@ -442,9 +442,9 @@ def _run_tests():
     # custom_no_history_l_uncut(data)
     # custom_no_history_l(data)
 
-    unpick = pickle.load(open('2_rooms.pkl', 'rb'))
-    dataset = unpick['sparse']
-    states_seqs_test(dataset)
+    # unpick = pickle.load(open('2_rooms.pkl', 'rb'))
+    # dataset = unpick['sparse']
+    # states_seqs_test(dataset)
 
 
 if __name__ == '__main__':

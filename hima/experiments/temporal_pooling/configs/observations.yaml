@@ -9,8 +9,9 @@ generator:
 
 
 seed: &seed 1337
-temporal_pooler: ablation_utp
-epochs: 3
+temporal_pooler: sandwich_tp
+epochs: 5
+rotations_per_room: 10
 v1_output: &v1_output 180
 
 # FIXME: using &key/*key is error prone with sweeps overwriting
@@ -49,6 +50,40 @@ temporal_poolers:
     untemporal_learning: True
     union_learning: True
     history_learning: True
+
+  sandwich_tp:
+    _type_: SandwichTp
+    initial_pooling: 1.
+    pooling_decay: 0.05
+    lower_sp_conf:
+      columnDimensions: [ *tp_output_size ]
+      boostStrength: 0.
+      localAreaDensity: 0.01
+      globalInhibition: True
+      dutyCyclePeriod: 1000
+      minPctOverlapDutyCycle: 0.001
+      numActiveColumnsPerInhArea: 0
+      potentialPct: 0.5
+      stimulusThreshold: 3
+      synPermConnected: 0.5
+      synPermActiveInc: 0.1
+      synPermInactiveDec: 0.01
+      wrapAround: False
+    upper_sp_conf:
+      columnDimensions: [ *tp_output_size ]
+      boostStrength: 0.
+      localAreaDensity: 0.01
+      globalInhibition: True
+      dutyCyclePeriod: 1000
+      minPctOverlapDutyCycle: 0.001
+      numActiveColumnsPerInhArea: 0
+      potentialPct: 0.5
+      stimulusThreshold: 3
+      synPermConnected: 0.5
+      synPermActiveInc: 0.1
+      synPermInactiveDec: 0.01
+      wrapAround: False
+
 
 temporal_memory:
   n_columns: *v1_output

@@ -2712,7 +2712,16 @@ class ClassicApicalTemporalMemory(ApicalTiebreakSequenceMemory):
         sdr.sparse = super(ClassicApicalTemporalMemory, self).getActiveCells()
         return sdr
 
+    def get_active_columns(self) -> SDR:
+        sdr = SDR(self.columns)
+        active_cells = self.get_active_cells().sparse
+        sdr.sparse = np.unique(active_cells // self.cells_per_column)
+        return sdr
 
+    def get_correctly_predicted_columns(self) -> SDR:
+        sdr = SDR(self.columns)
+        sdr.sparse = np.unique(self.get_correctly_predicted_cells().sparse // self.cells_per_column)
+        return sdr
 
 
 

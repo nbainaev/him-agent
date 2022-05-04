@@ -22,7 +22,7 @@ output_columns = 4000
 output_union_sparsity = 0.01
 noise_tolerance_apical = 0.1
 learning_margin_apical = 0.2
-seed = 42
+seed = 31
 
 
 classic_tm_input_columns = 180

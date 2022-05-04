@@ -1,5 +1,5 @@
 _type_: tp.policy
-seed: 1337
+seed: 42
 project: temporal_pooling
 log: True    # wandb logging
 
@@ -33,13 +33,13 @@ state_encoders:
   bucket:
     _type_: int_bucket
     n_values: *n_states
-    bucket_size: 3
+    bucket_size: &state_bucket 3
 
 action_encoders:
   bucket:
     _type_: int_bucket
     n_values: *n_actions
-    bucket_size: 10
+    bucket_size: &action_bucket 10
 
 temporal_poolers:
   union_tp:
@@ -165,8 +165,8 @@ temporal_memory:
   predicted_segment_decrement_apical: 0.001
   max_segments_per_cell_apical: 32
   # basal context
-  activation_threshold_basal: 1.0
-  learning_threshold_basal: 1.0
+  activation_threshold_basal: *state_bucket # 1.0
+  learning_threshold_basal: *state_bucket # 1.0
   connected_threshold_basal: 0.5
   permanence_increment_basal: 0.1
   permanence_decrement_basal: 0.01

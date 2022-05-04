@@ -45,10 +45,12 @@ class ObservationsExperiment(Runner):
     def __init__(self, config: TConfig,
                  temporal_pooler: str,
                  epochs: int,
+                 rotations_per_room,
                  **kwargs):
         super().__init__(config, **config)
         self.temporal_pooler = temporal_pooler
         self.epochs = epochs
+        self.rotations_per_room = rotations_per_room
         print('==> Init')
         self.data_generator = resolve_data_generator(config)
         self.temporal_memory = ClassicApicalTemporalMemory(**config['apical_temporal_memory'])
@@ -74,7 +76,9 @@ class ObservationsExperiment(Runner):
 
         for i, room_observations in enumerate(observations):
             self.temporal_pooler.reset()
-            self.run_room(room_observations, i, learn=True)
+            for j in range(self.rotations_per_room):
+                self.run_room(room_observations, i, learn=True)
+
             sdr = SDR(self.temporal_pooler.getNumColumns())
             sdr.sparse = self.temporal_pooler.getUnionSDR().sparse.copy()
             representations.append(sdr)
