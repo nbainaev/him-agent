@@ -69,3 +69,8 @@ def tuple_similarity(t1: tuple[SparseSdr, ...], t2: tuple[SparseSdr, ...]) -> fl
 
 def entropy(x: np.ndarray) -> float:
     return -np.nansum(x * np.log(x))
+
+
+def mean_absolute_error(x: np.ndarray, y: np.ndarray) -> float:
+    # noinspection PyTypeChecker
+    return np.mean(np.abs(x - y))

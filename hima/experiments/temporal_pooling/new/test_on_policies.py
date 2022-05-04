@@ -79,7 +79,10 @@ class PoliciesExperiment(Runner):
         for epoch in range(self.epochs):
             self.train_epoch(policies)
 
-        self.log_summary(policies)
+        self.stats.on_finish(
+            policies=policies,
+            logger=self.logger
+        )
         print('<==')
 
     def train_epoch(self, policies):
@@ -115,44 +118,6 @@ class PoliciesExperiment(Runner):
                 logger=self.logger
             )
 
-    def log_summary(self, policies):
-        def centralize_sim_matrix(sim_matrix):
-            # mean row sim ==> diag
-            sim_matrix[diag_mask] = sim_matrix[non_diag_mask].mean(axis=-1)
-            # centralize
-            sim_matrix[diag_mask] -= sim_matrix[non_diag_mask].mean()
-
-        if not self.logger:
-            return
-
-        n_policies = len(policies)
-        diag_mask = np.identity(n_policies, dtype=bool)
-        non_diag_mask = np.logical_not(np.identity(n_policies))
-
-        input_similarity_matrix = self._get_policy_action_similarity(policies)
-        output_similarity_matrix = self._get_output_similarity_union(
-            self.stats.last_representations
-        )
-        centralize_sim_matrix(input_similarity_matrix)
-        centralize_sim_matrix(output_similarity_matrix)
-        diff = np.abs(input_similarity_matrix - output_similarity_matrix)
-        mae = np.mean(diff[non_diag_mask])
-        self.logger.summary['mae'] = mae
-        self.vis_similarity(
-            input_similarity_matrix, output_similarity_matrix, 'representations similarity'
-        )
-
-        input_similarity_matrix = self._get_input_similarity(policies)
-        output_similarity_matrix = self._get_output_similarity(self.stats.last_representations)
-        centralize_sim_matrix(input_similarity_matrix)
-        centralize_sim_matrix(output_similarity_matrix)
-        diff = np.abs(input_similarity_matrix - output_similarity_matrix)
-        mae = np.mean(diff[non_diag_mask])
-        self.logger.summary['mae_alt'] = mae
-        self.vis_similarity(
-            input_similarity_matrix, output_similarity_matrix, 'representations similarity alt'
-        )
-
     def compute_tm_step(
             self, feedforward_input: SparseSdr, basal_context: SparseSdr,
             apical_feedback: SparseSdr, learn: bool
@@ -176,101 +141,6 @@ class PoliciesExperiment(Runner):
         self._tp_predicted_input.sparse = predicted_input.copy()
 
         self.temporal_pooler.compute(self._tp_active_input, self._tp_predicted_input, learn)
-
-    def _get_policy_action_similarity(self, policies):
-        n_policies = len(policies)
-        similarity_matrix = np.zeros((n_policies, n_policies))
-
-        for i in range(n_policies):
-            for j in range(n_policies):
-
-                counter = 0
-                size = 0
-                for p1, p2 in zip(policies[i], policies[j]):
-                    _, a1 = p1
-                    _, a2 = p2
-
-                    size += 1
-                    # such comparison works only for bucket encoding
-                    if a1[0] == a2[0]:
-                        counter += 1
-
-                similarity_matrix[i, j] = safe_divide(counter, size)
-        return similarity_matrix
-
-    def _get_input_similarity(self, policies):
-        def elem_sim(x1, x2):
-            overlap = np.intersect1d(x1, x2, assume_unique=True).size
-            return safe_divide(overlap, x2.size)
-
-        def reduce_elementwise_similarity(similarities):
-            return np.mean(similarities)
-
-        n_policies = len(policies)
-        similarity_matrix = np.zeros((n_policies, n_policies))
-        for i in range(n_policies):
-            for j in range(n_policies):
-                if i == j:
-                    continue
-
-                similarities = []
-                for p1, p2 in zip(policies[i], policies[j]):
-                    p1_sim = [elem_sim(p1[k], p2[k]) for k in range(len(p1))]
-                    sim = reduce_elementwise_similarity(p1_sim)
-                    similarities.append(sim)
-
-                similarity_matrix[i, j] = reduce_elementwise_similarity(similarities)
-        return similarity_matrix
-
-    def _get_output_similarity_union(self, representations):
-        n_policies = len(representations.keys())
-        similarity_matrix = np.zeros((n_policies, n_policies))
-        for i in range(n_policies):
-            for j in range(n_policies):
-                if i == j:
-                    continue
-
-                repr1: set = representations[i]
-                repr2: set = representations[j]
-                similarity_matrix[i, j] = safe_divide(
-                    len(repr1 & repr2),
-                    len(repr2 | repr2)
-                )
-        return similarity_matrix
-
-    def _get_output_similarity(self, representations):
-        n_policies = len(representations.keys())
-        similarity_matrix = np.zeros((n_policies, n_policies))
-        for i in range(n_policies):
-            for j in range(n_policies):
-                if i == j:
-                    continue
-
-                repr1: set = representations[i]
-                repr2: set = representations[j]
-                similarity_matrix[i, j] = safe_divide(
-                    len(repr1 & repr2),
-                    len(repr2)
-                )
-        return similarity_matrix
-
-    def vis_similarity(self, input_similarity_matrix, output_similarity_matrix, title):
-        fig = plt.figure(figsize=(40, 10))
-        ax1 = fig.add_subplot(131)
-        ax1.set_title('output', size=40)
-        ax2 = fig.add_subplot(132)
-        ax2.set_title('input', size=40)
-        ax3 = fig.add_subplot(133)
-        ax3.set_title('diff', size=40)
-
-        sns.heatmap(output_similarity_matrix, vmin=-1, vmax=1, cmap='plasma', ax=ax1)
-        sns.heatmap(input_similarity_matrix, vmin=-1, vmax=1, cmap='plasma', ax=ax2)
-
-        sns.heatmap(
-            np.abs(output_similarity_matrix - input_similarity_matrix),
-            vmin=-1, vmax=1, cmap='plasma', ax=ax3, annot=True
-        )
-        self.logger.log({title: wandb.Image(ax1)})
 
 
 def resolve_tp(config, temporal_pooler: str, temporal_memory):

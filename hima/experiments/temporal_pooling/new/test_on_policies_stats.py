@@ -7,12 +7,19 @@
 from typing import Optional
 
 import numpy as np
+import wandb
+from matplotlib import pyplot as plt
+import seaborn as sns
+from wandb.sdk.wandb_run import Run
 
 from hima.common.sdr import SparseSdr, DenseSdr
 from hima.common.utils import safe_divide
 
 
 # noinspection PyAttributeOutsideInit
+from hima.experiments.temporal_pooling.metrics import mean_absolute_error
+
+
 class ExperimentStats:
     # current policy id
     policy_id: Optional[int]
@@ -103,3 +110,176 @@ class ExperimentStats:
         return {
             'tm/recall': recall
         }
+
+    def on_finish(self, policies, logger: Run):
+        if not logger:
+            return
+
+        to_log, to_sum = self._get_summary_old_actions(policies)
+        to_log2, to_sum2 = self._get_summary_new_sdrs(policies)
+
+        to_log = to_log | to_log2
+        to_sum = to_sum | to_sum2
+
+        logger.log(to_log)
+        for key, val in to_sum.items():
+            logger.summary[key] = val
+
+    def _get_summary_new_sdrs(self, policies):
+        n_policies = len(policies)
+        diag_mask = np.identity(n_policies, dtype=bool)
+
+        input_similarity_matrix = self._get_input_similarity(policies)
+        input_similarity_matrix = np.ma.array(input_similarity_matrix, mask=diag_mask)
+
+        output_similarity_matrix = self._get_output_similarity(self.last_representations)
+        output_similarity_matrix = np.ma.array(output_similarity_matrix, mask=diag_mask)
+
+        input_similarity_matrix = standardize_distr(input_similarity_matrix)
+        output_similarity_matrix = standardize_distr(output_similarity_matrix)
+
+        smae = mean_absolute_error(input_similarity_matrix, output_similarity_matrix)
+
+        representation_similarity_plot = self.plot_similarity_matrices(
+            input=input_similarity_matrix,
+            output=output_similarity_matrix,
+            diff=np.abs(output_similarity_matrix - input_similarity_matrix)
+        )
+        to_log = {
+            'representations_similarity_sdr': representation_similarity_plot,
+        }
+        to_sum = {
+            'standardized_mae_sdr': smae,
+        }
+        return to_log, to_sum
+
+    def _get_summary_old_actions(self, policies):
+        n_policies = len(policies)
+        non_diag_mask = np.logical_not(np.identity(n_policies))
+
+        input_similarity_matrix = self._get_policy_action_similarity(policies)
+        output_similarity_matrix = self._get_output_similarity_union(
+            self.last_representations
+        )
+        input_similarity_matrix[non_diag_mask] = standardize_distr(
+            input_similarity_matrix[non_diag_mask]
+        )
+        output_similarity_matrix[non_diag_mask] = standardize_distr(
+            output_similarity_matrix[non_diag_mask]
+        )
+
+        diag_mask = np.identity(n_policies, dtype=bool)
+        input_similarity_matrix = np.ma.array(input_similarity_matrix, mask=diag_mask)
+        output_similarity_matrix = np.ma.array(output_similarity_matrix, mask=diag_mask)
+
+        smae = mean_absolute_error(
+            input_similarity_matrix,
+            output_similarity_matrix
+        )
+
+        representation_similarity_plot = self.plot_similarity_matrices(
+            input=input_similarity_matrix,
+            output=output_similarity_matrix,
+            diff=np.abs(output_similarity_matrix - input_similarity_matrix)
+        )
+        to_log = {
+            'representations_similarity': representation_similarity_plot,
+        }
+        to_sum = {
+            'standardized_mae': smae,
+        }
+        return to_log, to_sum
+
+    def _get_policy_action_similarity(self, policies):
+        n_policies = len(policies)
+        similarity_matrix = np.zeros((n_policies, n_policies))
+
+        for i in range(n_policies):
+            for j in range(n_policies):
+
+                counter = 0
+                size = 0
+                for p1, p2 in zip(policies[i], policies[j]):
+                    _, a1 = p1
+                    _, a2 = p2
+
+                    size += 1
+                    # such comparison works only for bucket encoding
+                    if a1[0] == a2[0]:
+                        counter += 1
+
+                similarity_matrix[i, j] = safe_divide(counter, size)
+        return similarity_matrix
+
+    def _get_input_similarity(self, policies):
+        def elem_sim(x1, x2):
+            overlap = np.intersect1d(x1, x2, assume_unique=True).size
+            return safe_divide(overlap, x2.size)
+
+        def reduce_elementwise_similarity(similarities):
+            return np.mean(similarities)
+
+        n_policies = len(policies)
+        similarity_matrix = np.zeros((n_policies, n_policies))
+        for i in range(n_policies):
+            for j in range(n_policies):
+                if i == j:
+                    continue
+
+                similarities = []
+                for p1, p2 in zip(policies[i], policies[j]):
+                    p1_sim = [elem_sim(p1[k], p2[k]) for k in range(len(p1))]
+                    sim = reduce_elementwise_similarity(p1_sim)
+                    similarities.append(sim)
+
+                similarity_matrix[i, j] = reduce_elementwise_similarity(similarities)
+        return similarity_matrix
+
+    def _get_output_similarity_union(self, representations):
+        n_policies = len(representations.keys())
+        similarity_matrix = np.zeros((n_policies, n_policies))
+        for i in range(n_policies):
+            for j in range(n_policies):
+                if i == j:
+                    continue
+
+                repr1: set = representations[i]
+                repr2: set = representations[j]
+                similarity_matrix[i, j] = safe_divide(
+                    len(repr1 & repr2),
+                    len(repr2 | repr2)
+                )
+        return similarity_matrix
+
+    def _get_output_similarity(self, representations):
+        n_policies = len(representations.keys())
+        similarity_matrix = np.zeros((n_policies, n_policies))
+        for i in range(n_policies):
+            for j in range(n_policies):
+                if i == j:
+                    continue
+
+                repr1: set = representations[i]
+                repr2: set = representations[j]
+                similarity_matrix[i, j] = safe_divide(
+                    len(repr1 & repr2),
+                    len(repr2)
+                )
+        return similarity_matrix
+
+    def plot_similarity_matrices(self, **sim_matrices):
+        n = len(sim_matrices)
+        fig, axes = plt.subplots(
+            nrows=1, ncols=n, sharey='all'
+        )
+        fig = plt.figure(figsize=(5 * n, 5))
+
+        for ax, (name, sim_matrix) in zip(axes, sim_matrices.items()):
+            sns.heatmap(sim_matrix, vmin=-1, vmax=1, cmap='plasma', ax=ax)
+            ax.set_title(name, size=5)
+
+        return wandb.Image(fig)
+
+
+def standardize_distr(x: np.ndarray) -> np.ndarray:
+    return (x - np.mean(x)) / np.std(x)
