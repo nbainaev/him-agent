@@ -295,15 +295,20 @@ class ExperimentStats:
 
     def plot_similarity_matrices(self, **sim_matrices):
         n = len(sim_matrices)
+        heatmap_size = 6
         fig, axes = plt.subplots(
-            nrows=1, ncols=n, sharey='all'
+            nrows=1, ncols=n, sharey='all',
+            figsize=(heatmap_size * n, heatmap_size)
         )
-        heatmap_size = 15
-        fig = plt.figure(figsize=(heatmap_size * n, heatmap_size))
 
+        annot = False
+        i = 0
         for ax, (name, sim_matrix) in zip(axes, sim_matrices.items()):
-            sns.heatmap(sim_matrix, vmin=-1, vmax=1, cmap='plasma', ax=ax)
-            ax.set_title(name, size=heatmap_size)
+            if i == n - 1:
+                annot = True
+            sns.heatmap(sim_matrix, vmin=-1, vmax=1, cmap='plasma', ax=ax, annot=annot)
+            ax.set_title(name, size=10)
+            i += 1
 
         return wandb.Image(axes[0])
 
