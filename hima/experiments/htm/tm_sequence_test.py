@@ -40,9 +40,9 @@ def main():
     numer_to_char = {value: key for key, value in char_to_number.items()}
 
     log = True
-    update_rate = 99
-    bucket_size = 3
-    seed = 6454
+    update_rate = 100
+    bucket_size = 4
+    seed = 6989
     encoder = IntBucketEncoder(len(char_to_number), bucket_size)
 
     mpg = MarkovProcessGrammar(
@@ -57,15 +57,14 @@ def main():
     print(f'n_columns: {encoder.output_sdr_size}')
     tm = NaiveBayesTM(
         encoder.output_sdr_size,
-        cells_per_column=8,
+        cells_per_column=10,
         max_segments_per_cell=6,
         max_receptive_field_size=-1,
-        w_lr=0.1,
-        w_punish=0.1,
-        theta_lr=0.1,
-        b_lr=0.1,
+        w_lr=0.01,
+        nu_lr=0.01,
+        b_lr=0.01,
         init_w=1.0,
-        init_theta=1.0,
+        init_nu=0.0,
         init_b=1.0,
         seed=seed
     )
@@ -86,7 +85,7 @@ def main():
 
     hist_dist = np.zeros((8, 7))
 
-    for i in range(2000):
+    for i in range(1001):
         mpg.reset()
         tm.reset()
 
