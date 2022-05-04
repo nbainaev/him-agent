@@ -17,7 +17,7 @@ from hima.common.utils import safe_divide
 
 
 # noinspection PyAttributeOutsideInit
-from hima.experiments.temporal_pooling.metrics import mean_absolute_error, entropy
+from hima.experiments.temporal_pooling.metrics import mean_absolute_error, entropy, kl_div
 
 
 class ExperimentStats:
@@ -84,6 +84,7 @@ class ExperimentStats:
         to_sum = to_sum | to_sum2
 
         to_log |= self._get_final_representations()
+        to_log |= self._get_summary_old_actions_distr(policies)
 
         logger.log(to_log)
         for key, val in to_sum.items():
@@ -136,9 +137,9 @@ class ExperimentStats:
             len(curr_repr), cluster_size
         )
         cluster_distribution_active_coverage = cluster_distribution[curr_repr_lst].sum()
-        cluster_entropy = entropy(cluster_distribution)
+        cluster_entropy = self._cluster_entropy(cluster_distribution)
         cluster_entropy_active_coverage = safe_divide(
-            entropy(cluster_distribution[curr_repr_lst]),
+            self._cluster_entropy(cluster_distribution[curr_repr_lst]),
             cluster_entropy
         )
         sequence_metrics = {
@@ -150,6 +151,15 @@ class ExperimentStats:
             'tp/sequence/entropy_coverage': cluster_entropy_active_coverage,
         }
         return step_metrics | sequence_metrics
+
+    def _cluster_kl_div(self, x: np.ndarray, y: np.ndarray) -> float:
+        h = kl_div(x, y)
+        h /= self.tp_expected_active_size
+        h /= np.log(self.tp_output_sdr_size)
+        return h
+
+    def _cluster_entropy(self, x: np.ndarray) -> float:
+        return self._cluster_kl_div(x, x)
 
     def _get_tm_metrics(self, temporal_memory) -> dict:
         active_cells: np.ndarray = temporal_memory.get_active_cells()
@@ -203,8 +213,7 @@ class ExperimentStats:
 
         unnorm_representation_similarity_plot = self._plot_similarity_matrices(
             input=input_similarity_matrix,
-            output=output_similarity_matrix,
-            diff=np.abs(output_similarity_matrix - input_similarity_matrix)
+            output=output_similarity_matrix
         )
 
         input_similarity_matrix = standardize_distr(input_similarity_matrix)
@@ -225,6 +234,33 @@ class ExperimentStats:
             'standardized_mae': smae,
         }
         return to_log, to_sum
+
+    def _get_summary_old_actions_distr(self, policies):
+        n_policies = len(policies)
+        diag_mask = np.identity(n_policies, dtype=bool)
+
+        input_similarity_matrix = self._get_policy_action_similarity(policies)
+        input_similarity_matrix = np.ma.array(input_similarity_matrix, mask=diag_mask)
+
+        output_similarity_matrix = self._get_output_similarity_distr()
+        output_similarity_matrix = np.ma.array(output_similarity_matrix, mask=diag_mask)
+
+        unnorm_input_similarity_matrix = input_similarity_matrix
+        input_similarity_matrix = standardize_distr(input_similarity_matrix)
+
+        unnorm_output_similarity_matrix = output_similarity_matrix
+        output_similarity_matrix = standardize_distr(output_similarity_matrix)
+
+        representation_similarity_plot = self._plot_similarity_matrices(
+            raw_input_sim=unnorm_input_similarity_matrix,
+            raw_output_kl_div=unnorm_output_similarity_matrix,
+            input_sim=input_similarity_matrix,
+            output_kl_div=output_similarity_matrix
+        )
+        to_log = {
+            'representations_kl_div': representation_similarity_plot,
+        }
+        return to_log
 
     def _get_policy_action_similarity(self, policies):
         n_policies = len(policies)
@@ -301,6 +337,20 @@ class ExperimentStats:
                     len(repr1 & repr2),
                     len(repr2)
                 )
+        return similarity_matrix
+
+    def _get_output_similarity_distr(self):
+        n_policies = len(self.tp_output_distribution_counts.keys())
+        similarity_matrix = np.zeros((n_policies, n_policies))
+        for i in range(n_policies):
+            for j in range(n_policies):
+                if i == j:
+                    continue
+
+                distr1 = self.tp_output_distribution_counts[i] / self.tp_sequence_total_trials[i]
+                distr2 = self.tp_output_distribution_counts[j] / self.tp_sequence_total_trials[j]
+
+                similarity_matrix[i, j] = self._cluster_kl_div(distr1, distr2)
         return similarity_matrix
 
     def _plot_similarity_matrices(self, **sim_matrices):

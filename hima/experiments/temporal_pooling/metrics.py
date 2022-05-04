@@ -67,8 +67,12 @@ def tuple_similarity(t1: tuple[SparseSdr, ...], t2: tuple[SparseSdr, ...]) -> fl
     return sim
 
 
+def kl_div(x: np.ndarray, y: np.ndarray) -> float:
+    return -np.dot(x, np.ma.log(y))
+
+
 def entropy(x: np.ndarray) -> float:
-    return -np.sum(x * np.ma.log(x))
+    return kl_div(x, x)
 
 
 def mean_absolute_error(x: np.ndarray, y: np.ndarray) -> float:
