@@ -7,19 +7,18 @@ parameters:
   seed.:
     values: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29]
 
-  generator.policy_similarity:
+  generator..policy_similarity:
     values:
       - 0.1
-      - 0.25
       - 0.5
       - 0.75
 
   temporal_pooler.:
     values:
-      - union_sdr
-      - ablation_utp
-      - custom_utp
-#      - sandwich_tp
+      - union_tp
+#      - ablation_utp
+#      - custom_utp
+      - sandwich_tp
 
 command:
   - ${env}
