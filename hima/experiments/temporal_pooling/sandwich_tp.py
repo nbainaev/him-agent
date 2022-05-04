@@ -61,3 +61,11 @@ class SandwichTp:
         self._pooling_activations = np.zeros(self._pooling_activations.shape)
         self._unionSDR = SDR(self._unionSDR.dense.shape)
         self._unionSDR.dense = np.zeros(self._unionSDR.dense.shape)
+
+    @property
+    def output_sdr_size(self):
+        return self.upper_sp.getNumColumns()
+
+    @property
+    def n_active_bits(self):
+        return self._maxUnionCells
