@@ -191,27 +191,26 @@ class ExperimentStats:
 
     def _get_summary_old_actions(self, policies):
         n_policies = len(policies)
-        non_diag_mask = np.logical_not(np.identity(n_policies))
+        diag_mask = np.identity(n_policies, dtype=bool)
 
         input_similarity_matrix = self._get_policy_action_similarity(policies)
+        input_similarity_matrix = np.ma.array(input_similarity_matrix, mask=diag_mask)
+
         output_similarity_matrix = self._get_output_similarity_union(
             self.last_representations
         )
-        input_similarity_matrix[non_diag_mask] = standardize_distr(
-            input_similarity_matrix[non_diag_mask]
-        )
-        output_similarity_matrix[non_diag_mask] = standardize_distr(
-            output_similarity_matrix[non_diag_mask]
-        )
-
-        diag_mask = np.identity(n_policies, dtype=bool)
-        input_similarity_matrix = np.ma.array(input_similarity_matrix, mask=diag_mask)
         output_similarity_matrix = np.ma.array(output_similarity_matrix, mask=diag_mask)
 
-        smae = mean_absolute_error(
-            input_similarity_matrix,
-            output_similarity_matrix
+        unnorm_representation_similarity_plot = self._plot_similarity_matrices(
+            input=input_similarity_matrix,
+            output=output_similarity_matrix,
+            diff=np.abs(output_similarity_matrix - input_similarity_matrix)
         )
+
+        input_similarity_matrix = standardize_distr(input_similarity_matrix)
+        output_similarity_matrix = standardize_distr(output_similarity_matrix)
+
+        smae = mean_absolute_error(input_similarity_matrix, output_similarity_matrix)
 
         representation_similarity_plot = self._plot_similarity_matrices(
             input=input_similarity_matrix,
@@ -219,6 +218,7 @@ class ExperimentStats:
             diff=np.ma.abs(output_similarity_matrix - input_similarity_matrix)
         )
         to_log = {
+            'raw_representations_similarity': unnorm_representation_similarity_plot,
             'representations_similarity': representation_similarity_plot,
         }
         to_sum = {
