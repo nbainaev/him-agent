@@ -17,7 +17,7 @@ from hima.common.utils import safe_divide
 
 
 # noinspection PyAttributeOutsideInit
-from hima.experiments.temporal_pooling.metrics import mean_absolute_error
+from hima.experiments.temporal_pooling.metrics import mean_absolute_error, entropy
 
 
 class ExperimentStats:
@@ -29,13 +29,13 @@ class ExperimentStats:
 
     last_representations: dict[int, SparseSdr]
     tp_current_representation: set
-    tp_output_distribution: dict[int, DenseSdr]
+    tp_output_distribution_counts: dict[int, DenseSdr]
 
     def __init__(self, temporal_pooler):
         self.policy_id = None
         self.last_representations = {}
         self.tp_current_representation = set()
-        self.tp_output_distribution = {}
+        self.tp_output_distribution_counts = {}
         self.tp_output_sdr_size = temporal_pooler.output_sdr_size
         self.tp_expected_active_size = temporal_pooler.n_active_bits
 
@@ -46,7 +46,7 @@ class ExperimentStats:
         self.whole_active = None
         self.policy_repeat = 0
         self.intra_policy_step = 0
-        self.tp_output_distribution.setdefault(
+        self.tp_output_distribution_counts.setdefault(
             policy_id, np.empty(self.tp_output_sdr_size, dtype=int)
         ).fill(0)
 
@@ -77,29 +77,55 @@ class ExperimentStats:
         # noinspection PyTypeChecker
         self.last_representations[self.policy_id] = curr_repr
 
-        output_distribution = self.tp_output_distribution[self.policy_id]
-        output_distribution[curr_repr_lst] += 1
+        output_distribution_counts = self.tp_output_distribution_counts[self.policy_id]
+        output_distribution_counts[curr_repr_lst] += 1
+        cluster_size = np.count_nonzero(output_distribution_counts)
+        cluster_distribution = output_distribution_counts / output_distribution_counts.sum()
 
-        sparsity = safe_divide(
+        step_sparsity = safe_divide(
+            len(curr_repr), self.tp_output_sdr_size
+        )
+        step_relative_sparsity = safe_divide(
             len(curr_repr), self.tp_expected_active_size
         )
         new_cells_ratio = safe_divide(
             len(curr_repr - prev_repr), self.tp_expected_active_size
         )
-        cells_in_whole = safe_divide(
-            len(curr_repr), np.count_nonzero(output_distribution)
-        )
-        step_difference = safe_divide(
+        sym_diff_cells_ratio = safe_divide(
             len(curr_repr ^ prev_repr),
             len(curr_repr | prev_repr)
         )
-
-        return {
-            'tp/sparsity': sparsity,
-            'tp/new_cells': new_cells_ratio,
-            'tp/cells_in_whole': cells_in_whole,
-            'tp/step_diff': step_difference
+        step_metrics = {
+            'tp/step/sparsity': step_sparsity,
+            'tp/step/relative_sparsity': step_relative_sparsity,
+            'tp/step/new_cells_ratio': new_cells_ratio,
+            'tp/step/sym_diff_cells_ratio': sym_diff_cells_ratio,
         }
+
+        cluster_sparsity = safe_divide(
+            cluster_size, self.tp_output_sdr_size
+        )
+        cluster_relative_sparsity = safe_divide(
+            cluster_size, self.tp_expected_active_size
+        )
+        cluster_binary_active_coverage = safe_divide(
+            len(curr_repr), cluster_size
+        )
+        cluster_distribution_active_coverage = cluster_distribution[curr_repr_lst].sum()
+        cluster_entropy = entropy(cluster_distribution)
+        cluster_entropy_active_coverage = safe_divide(
+            entropy(cluster_distribution[curr_repr_lst]),
+            cluster_entropy
+        )
+        sequence_metrics = {
+            'tp/sequence/sparsity': cluster_sparsity,
+            'tp/sequence/relative_sparsity': cluster_relative_sparsity,
+            'tp/sequence/cluster_binary_coverage': cluster_binary_active_coverage,
+            'tp/sequence/cluster_distribution_coverage': cluster_distribution_active_coverage,
+            'tp/sequence/entropy': cluster_entropy,
+            'tp/sequence/entropy_coverage': cluster_entropy_active_coverage,
+        }
+        return step_metrics | sequence_metrics
 
     def _get_tm_metrics(self, temporal_memory) -> dict:
         active_cells: np.ndarray = temporal_memory.get_active_cells()
@@ -143,7 +169,7 @@ class ExperimentStats:
         representation_similarity_plot = self.plot_similarity_matrices(
             input=input_similarity_matrix,
             output=output_similarity_matrix,
-            diff=np.abs(output_similarity_matrix - input_similarity_matrix)
+            diff=np.ma.abs(output_similarity_matrix - input_similarity_matrix)
         )
         to_log = {
             'representations_similarity_sdr': representation_similarity_plot,
@@ -272,13 +298,14 @@ class ExperimentStats:
         fig, axes = plt.subplots(
             nrows=1, ncols=n, sharey='all'
         )
-        fig = plt.figure(figsize=(5 * n, 5))
+        heatmap_size = 15
+        fig = plt.figure(figsize=(heatmap_size * n, heatmap_size))
 
         for ax, (name, sim_matrix) in zip(axes, sim_matrices.items()):
             sns.heatmap(sim_matrix, vmin=-1, vmax=1, cmap='plasma', ax=ax)
-            ax.set_title(name, size=5)
+            ax.set_title(name, size=heatmap_size)
 
-        return wandb.Image(fig)
+        return wandb.Image(axes[0])
 
 
 def standardize_distr(x: np.ndarray) -> np.ndarray:
