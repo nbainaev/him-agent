@@ -8,7 +8,7 @@ from typing import Iterable, Union, Sequence
 
 import numpy as np
 
-SparseSdr = Union[Iterable[int], Sequence[int], np.ndarray[int]]
+SparseSdr = Union[Iterable[int], Sequence[int], np.ndarray]
 DenseSdr = np.ndarray
 
 
