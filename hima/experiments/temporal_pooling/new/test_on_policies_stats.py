@@ -312,13 +312,14 @@ class ExperimentStats:
         )
 
         for ax, (name, sim_matrix) in zip(axes, sim_matrices.items()):
+            vmin = 0 if np.min(sim_matrix) >= 0 else -1
             if isinstance(sim_matrix, np.ma.MaskedArray):
                 sns.heatmap(
                     sim_matrix, mask=sim_matrix.mask,
-                    vmin=-1, vmax=1, cmap='plasma', ax=ax, annot=True
+                    vmin=vmin, vmax=1, cmap='plasma', ax=ax, annot=True
                 )
             else:
-                sns.heatmap(sim_matrix, vmin=-1, vmax=1, cmap='plasma', ax=ax, annot=True)
+                sns.heatmap(sim_matrix, vmin=vmin, vmax=1, cmap='plasma', ax=ax, annot=True)
             ax.set_title(name, size=10)
 
         return wandb.Image(axes[0])
@@ -349,4 +350,4 @@ class ExperimentStats:
 
 
 def standardize_distr(x: np.ndarray) -> np.ndarray:
-    return (x - np.mean(x)) / np.std(x)
+    return (x - np.mean(x)) / (np.max(x) - np.min(x))
