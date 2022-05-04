@@ -183,7 +183,10 @@ class NaiveBayesTM:
                 likelihood_false = np.prod(synapse_probs_false, axis=-1, where=f)
 
                 norm = b*likelihood_true + (1-b)*likelihood_false
-                segment_probs[segments_in_use] = np.divide(b * likelihood_true, norm, where=(norm != 0))
+                segment_probs[segments_in_use] = np.divide(
+                    b * likelihood_true, norm,
+                    out=np.zeros_like(b, dtype=REAL64_DTYPE), where=(norm != 0)
+                )
 
                 cell_probs = 1 - np.prod(1 - segment_probs.reshape(cell_probs.size, -1), axis=-1)
         else:
