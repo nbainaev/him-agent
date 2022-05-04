@@ -30,6 +30,7 @@ class ExperimentStats:
     last_representations: dict[int, SparseSdr]
     tp_current_representation: set
     tp_output_distribution_counts: dict[int, DenseSdr]
+    tp_sequence_total_trials: dict[int, int]
 
     def __init__(self, temporal_pooler):
         self.policy_id = None
@@ -38,6 +39,7 @@ class ExperimentStats:
         self.tp_output_distribution_counts = {}
         self.tp_output_sdr_size = temporal_pooler.output_sdr_size
         self.tp_expected_active_size = temporal_pooler.n_active_bits
+        self.tp_sequence_total_trials = {}
 
     def on_policy_change(self, policy_id):
         self.policy_id = policy_id
@@ -46,9 +48,12 @@ class ExperimentStats:
         self.whole_active = None
         self.policy_repeat = 0
         self.intra_policy_step = 0
-        self.tp_output_distribution_counts.setdefault(
-            policy_id, np.empty(self.tp_output_sdr_size, dtype=int)
-        ).fill(0)
+
+        if policy_id not in self.tp_output_distribution_counts:
+            self.tp_output_distribution_counts[policy_id] = np.zeros(
+                self.tp_output_sdr_size, dtype=int
+            )
+            self.tp_sequence_total_trials[policy_id] = 0
 
     def on_policy_repeat(self):
         self.intra_policy_step = 0
@@ -68,6 +73,22 @@ class ExperimentStats:
 
         self.intra_policy_step += 1
 
+    def on_finish(self, policies, logger: Run):
+        if not logger:
+            return
+
+        to_log, to_sum = self._get_summary_old_actions(policies)
+        to_log2, to_sum2 = self._get_summary_new_sdrs(policies)
+
+        to_log = to_log | to_log2
+        to_sum = to_sum | to_sum2
+
+        to_log |= self._get_final_representations()
+
+        logger.log(to_log)
+        for key, val in to_sum.items():
+            logger.summary[key] = val
+
     # noinspection PyProtectedMember
     def _get_tp_metrics(self, temporal_pooler) -> dict:
         prev_repr = self.tp_current_representation
@@ -77,10 +98,13 @@ class ExperimentStats:
         # noinspection PyTypeChecker
         self.last_representations[self.policy_id] = curr_repr
 
+        self.tp_sequence_total_trials[self.policy_id] += 1
+        cluster_trials = self.tp_sequence_total_trials[self.policy_id]
+
         output_distribution_counts = self.tp_output_distribution_counts[self.policy_id]
         output_distribution_counts[curr_repr_lst] += 1
         cluster_size = np.count_nonzero(output_distribution_counts)
-        cluster_distribution = output_distribution_counts / output_distribution_counts.sum()
+        cluster_distribution = output_distribution_counts / cluster_trials
 
         step_sparsity = safe_divide(
             len(curr_repr), self.tp_output_sdr_size
@@ -137,20 +161,6 @@ class ExperimentStats:
             'tm/recall': recall
         }
 
-    def on_finish(self, policies, logger: Run):
-        if not logger:
-            return
-
-        to_log, to_sum = self._get_summary_old_actions(policies)
-        to_log2, to_sum2 = self._get_summary_new_sdrs(policies)
-
-        to_log = to_log | to_log2
-        to_sum = to_sum | to_sum2
-
-        logger.log(to_log)
-        for key, val in to_sum.items():
-            logger.summary[key] = val
-
     def _get_summary_new_sdrs(self, policies):
         n_policies = len(policies)
         diag_mask = np.identity(n_policies, dtype=bool)
@@ -166,7 +176,7 @@ class ExperimentStats:
 
         smae = mean_absolute_error(input_similarity_matrix, output_similarity_matrix)
 
-        representation_similarity_plot = self.plot_similarity_matrices(
+        representation_similarity_plot = self._plot_similarity_matrices(
             input=input_similarity_matrix,
             output=output_similarity_matrix,
             diff=np.ma.abs(output_similarity_matrix - input_similarity_matrix)
@@ -203,10 +213,10 @@ class ExperimentStats:
             output_similarity_matrix
         )
 
-        representation_similarity_plot = self.plot_similarity_matrices(
+        representation_similarity_plot = self._plot_similarity_matrices(
             input=input_similarity_matrix,
             output=output_similarity_matrix,
-            diff=np.abs(output_similarity_matrix - input_similarity_matrix)
+            diff=np.ma.abs(output_similarity_matrix - input_similarity_matrix)
         )
         to_log = {
             'representations_similarity': representation_similarity_plot,
@@ -293,7 +303,7 @@ class ExperimentStats:
                 )
         return similarity_matrix
 
-    def plot_similarity_matrices(self, **sim_matrices):
+    def _plot_similarity_matrices(self, **sim_matrices):
         n = len(sim_matrices)
         heatmap_size = 6
         fig, axes = plt.subplots(
@@ -301,16 +311,41 @@ class ExperimentStats:
             figsize=(heatmap_size * n, heatmap_size)
         )
 
-        annot = False
-        i = 0
         for ax, (name, sim_matrix) in zip(axes, sim_matrices.items()):
-            if i == n - 1:
-                annot = True
-            sns.heatmap(sim_matrix, vmin=-1, vmax=1, cmap='plasma', ax=ax, annot=annot)
+            if isinstance(sim_matrix, np.ma.MaskedArray):
+                sns.heatmap(
+                    sim_matrix, mask=sim_matrix.mask,
+                    vmin=-1, vmax=1, cmap='plasma', ax=ax, annot=True
+                )
+            else:
+                sns.heatmap(sim_matrix, vmin=-1, vmax=1, cmap='plasma', ax=ax, annot=True)
             ax.set_title(name, size=10)
-            i += 1
 
         return wandb.Image(axes[0])
+
+    def _get_final_representations(self):
+        n_clusters = len(self.last_representations)
+        representations = np.zeros((n_clusters, self.tp_output_sdr_size), dtype=float)
+        distributions = np.zeros_like(representations)
+
+        for i, policy_id in enumerate(self.last_representations.keys()):
+            repr = self.last_representations[policy_id]
+            distr = self.tp_output_distribution_counts[policy_id]
+            trials = self.tp_sequence_total_trials[policy_id]
+
+            representations[i, list(repr)] = 1.
+            distributions[i] = distr / trials
+
+        fig, ax1 = plt.subplots(1, 1, figsize=(16, 8))
+        sns.heatmap(representations, vmin=0, vmax=1, cmap='plasma')
+
+        fig, ax2 = plt.subplots(1, 1, figsize=(16, 8))
+        sns.heatmap(distributions, vmin=0, vmax=1, cmap='plasma', ax=ax2)
+
+        return {
+            'representations': wandb.Image(ax1),
+            'distributions': wandb.Image(ax2)
+        }
 
 
 def standardize_distr(x: np.ndarray) -> np.ndarray:
