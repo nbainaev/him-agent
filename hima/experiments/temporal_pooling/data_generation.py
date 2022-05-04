@@ -16,6 +16,8 @@ from hima.common.config_utils import extracted_type
 from animal_ai_v1_pickle import collect_data
 import pickle
 
+from hima.common.utils import clip
+
 
 class Policy:
     id: int
@@ -37,13 +39,16 @@ class SyntheticGenerator:
     n_actions: int
 
     policy_similarity: float
+    policy_similarity_std: float
     _rng: Generator
 
     def __init__(
             self, config: dict,
             n_states: int, n_actions: int,
             state_encoder: str, action_encoder: str,
-            policy_similarity: float, seed: int
+            policy_similarity: float,
+            seed: int,
+            policy_similarity_std: float = 0.
     ):
         self.n_states = n_states
         self.n_actions = n_actions
@@ -51,6 +56,7 @@ class SyntheticGenerator:
         self.action_encoder = resolve_encoder(config, action_encoder, 'action_encoders')
 
         self.policy_similarity = policy_similarity
+        self.policy_similarity_std = policy_similarity_std
         self._rng = np.random.default_rng(seed)
 
     def generate_policies(self, n_policies) -> list[Policy]:
@@ -60,22 +66,29 @@ class SyntheticGenerator:
         base_policy = rng.integers(0, high=n_actions, size=(1, n_states))
         policies = base_policy.repeat(n_policies, axis=0)
 
-        n_states_to_change = int(n_states * (1 - self.policy_similarity))
         # to-change indices
-        indices = np.vstack([
-            rng.choice(n_states, n_states_to_change, replace=False)
-            for _ in range(n_policies - 1)
-        ])
+        for i in range(n_policies - 1):
+            if self.policy_similarity_std < 1e-5:
+                sim = self.policy_similarity
+            else:
+                sim = rng.normal(self.policy_similarity, scale=self.policy_similarity_std)
+                sim = clip(sim, 0, 1)
 
-        # re-sample actions — from reduced action space (note n_actions-1)
-        new_actions = rng.integers(0, n_actions - 1, (n_policies - 1, n_states_to_change))
-        old_actions = policies[0][indices]
-        # that's how we exclude origin action: |0|1|2| -> |0|.|2|3| — action 1 is excluded
-        mask = new_actions >= old_actions
-        new_actions[mask] += 1
+            n_states_to_change = int(n_states * (1 - sim))
+            if n_states_to_change == 0:
+                continue
+            indices = rng.choice(n_states, n_states_to_change, replace=False)
 
-        # replace origin actions for specified state indices with new actions
-        np.put_along_axis(policies[1:], indices, new_actions, axis=1)
+            # re-sample actions — from reduced action space (note n_actions-1)
+            new_actions = rng.integers(0, n_actions - 1, n_states_to_change)
+            old_actions = policies[0][indices]
+
+            # that's how we exclude origin action: |0|1|2| -> |0|.|2|3| — action 1 is excluded
+            mask = new_actions >= old_actions
+            new_actions[mask] += 1
+
+            # replace origin actions for specified state indices with new actions
+            policies[i+1, indices] = new_actions
 
         states_encoding = [self.state_encoder.encode(s) for s in range(n_states)]
         action_encoding = [self.action_encoder.encode(a) for a in range(n_actions)]

@@ -14,7 +14,7 @@ from wandb.sdk.wandb_run import Run
 
 from hima.common.config_utils import TConfig, extracted_type
 from hima.common.run_utils import Runner
-from hima.common.sdr import SparseSdr
+from hima.common.sdr import SparseSdr, DenseSdr
 from hima.common.utils import safe_divide, ensure_absolute_number
 from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
 from hima.experiments.temporal_pooling.custom_utp import CustomUtp
@@ -28,15 +28,20 @@ from hima.modules.htm.temporal_memory import ClassicApicalTemporalMemory
 
 # noinspection PyAttributeOutsideInit
 class ExperimentStats:
+    # current policy id
+    policy_id: Optional[int]
+
     tp_expected_active_size: int
     tp_output_sdr_size: int
 
+    last_representations: dict[int, SparseSdr]
+    tp_current_representation: set
+    tp_output_distribution: dict[int, DenseSdr]
+
     def __init__(self, temporal_pooler):
-        self.policy_id: Optional[int] = None
+        self.policy_id = None
         self.last_representations = {}
         self.tp_current_representation = set()
-        # self.tp_prev_policy_union = tp.getUnionSDR().copy()
-        # self.tp_prev_union = tp.getUnionSDR().copy()
         self.tp_output_distribution = {}
         self.tp_output_sdr_size = temporal_pooler.output_sdr_size
         self.tp_expected_active_size = temporal_pooler.n_active_bits
@@ -44,7 +49,6 @@ class ExperimentStats:
     def on_policy_change(self, policy_id, temporal_pooler):
         # self.tp_prev_policy_union = self.tp_prev_union.copy()
         self.tp_prev_union = set(temporal_pooler.getUnionSDR().sparse)
-
         self.policy_id = policy_id
         self.window_size = 1
         self.window_error = 0
@@ -134,7 +138,7 @@ class PoliciesExperiment(Runner):
 
     def __init__(
             self, config: TConfig, n_policies: int, epochs: int, policy_repeats: int,
-            steps_per_policy: int, temporal_pooler: str, **kwargs
+            steps_per_policy: int, temporal_pooler: str, **_
     ):
         super().__init__(config, **config)
 
@@ -286,7 +290,7 @@ class PoliciesExperiment(Runner):
                     size += 1
                     # such comparison works only for bucket encoding
                     if a1[0] == a2[0]:
-                        counter +=1
+                        counter += 1
 
                 similarity_matrix[i, j] = safe_divide(counter, size)
         return similarity_matrix

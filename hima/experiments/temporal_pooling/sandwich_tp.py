@@ -70,8 +70,8 @@ class SandwichTp:
 
     @property
     def output_sdr_size(self):
-        return self._unionSDR.size
+        return self.upper_sp.getNumColumns()
 
     @property
     def n_active_bits(self):
-        return self.upper_sp.getLocalAreaDensity()*self.output_sdr_size
+        return self._maxUnionCells

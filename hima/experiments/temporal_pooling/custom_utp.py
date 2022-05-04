@@ -75,17 +75,13 @@ class CustomUtp:
         self.history_learning_enabled = history_learning_enabled
         self.limit_union_cells = limit_union_cells
 
-        # TODO: it smells, rename it at least
-        # Fix: I renamed, this var was necessary for cutting activations
-        self._max_union_cells = self.cells_in_union
-
     @property
     def output_sdr_size(self):
-        return self.getNumColumns()
+        return np.prod(self._shape)
 
     @property
     def n_active_bits(self):
-        return self._maxUnionCells
+        return self.cells_in_union
 
     def set_receptive_fields(self):
         for cell in self.receptive_fields:

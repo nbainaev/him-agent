@@ -44,9 +44,9 @@ def representation_similarity(representation_1, representation_2):
 
 
 def sdrs_similarity(sdr1: SDR, sdr2: SDR):
-    inversection = np.intersect1d(sdr1.sparse, sdr2.sparse).shape[0]
+    intersection = np.intersect1d(sdr1.sparse, sdr2.sparse).shape[0]
     union = np.union1d(sdr1.sparse, sdr2.sparse).shape[0]
-    return safe_divide(inversection, union, 1)
+    return safe_divide(intersection, union, 1)
 
 
 def similarity_mae(pure, representational):
@@ -67,6 +67,14 @@ def tuple_similarity(t1: tuple[SparseSdr, ...], t2: tuple[SparseSdr, ...]) -> fl
     return sim
 
 
-def entropy(x: np.ndarray) -> float:
-    return -np.nansum(x * np.log(x))
+def kl_div(x: np.ndarray, y: np.ndarray) -> float:
+    return -np.dot(x, np.ma.log(y))
 
+
+def entropy(x: np.ndarray) -> float:
+    return kl_div(x, x)
+
+
+def mean_absolute_error(x: np.ndarray, y: np.ndarray) -> float:
+    # noinspection PyTypeChecker
+    return np.mean(np.abs(x - y))
