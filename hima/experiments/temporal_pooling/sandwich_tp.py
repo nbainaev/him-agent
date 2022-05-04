@@ -49,15 +49,29 @@ class SandwichTp:
         self.upper_sp.compute(sdr_for_upper, learn=learn, output=self._unionSDR)
 
     def getUnionSDR(self):
-        res = SDR(self._pooling_activations.shape)
-        res.dense = self._pooling_activations != 0
-        return res
-        # return self._unionSDR
+        # ---- middle layer --------
+
+        # res = SDR(self._pooling_activations.shape)
+        # res.dense = self._pooling_activations != 0
+        # return res
+        # --------------------------
+        return self._unionSDR
 
     def getNumInputs(self):
         return self.lower_sp.getNumInputs()
+
+    def getNumColumns(self):
+        return self.upper_sp.getNumColumns()
 
     def reset(self):
         self._pooling_activations = np.zeros(self._pooling_activations.shape)
         self._unionSDR = SDR(self._unionSDR.dense.shape)
         self._unionSDR.dense = np.zeros(self._unionSDR.dense.shape)
+
+    @property
+    def output_sdr_size(self):
+        return self._unionSDR.size
+
+    @property
+    def n_active_bits(self):
+        return self.upper_sp.getLocalAreaDensity()*self.output_sdr_size
