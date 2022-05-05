@@ -1,0 +1,10 @@
+log: True
+project_name: 'mpg_tm_test'
+epochs: 1001
+update_rate: 100
+bucket_size: 4
+seed: 6989
+
+tm_type: 'classic'
+tm_conf: 'configs/tm/classic_tm_default.yaml'
+mpg_conf: 'configs/mpg/mpg_default.yaml'

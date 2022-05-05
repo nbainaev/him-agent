@@ -13,6 +13,7 @@ class MarkovProcessGrammar:
             n_states,
             transition_probs,
             transition_letters,
+            alphabet,
             initial_state,
             terminal_state,
             autoreset=False,
@@ -20,6 +21,8 @@ class MarkovProcessGrammar:
     ):
         self.transition_probs = transition_probs
         self.transition_letters = transition_letters
+        self.alphabet = alphabet
+        self.char_to_num = {x: i for i, x in enumerate(alphabet)}
 
         self.states = np.arange(n_states)
         self.initial_state = initial_state
