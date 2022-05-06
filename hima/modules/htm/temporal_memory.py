@@ -178,6 +178,9 @@ class GeneralFeedbackTM:
     def get_active_cells(self):
         return self.active_cells.sparse - self.local_range[0]
 
+    def get_active_cells_context(self):
+        return self.active_cells_context.sparse - self.context_range[0]
+
     def get_winner_cells(self):
         return self.winner_cells.sparse - self.local_range[0]
 

@@ -558,7 +558,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             cell_probs = self.cell_probs
         else:
             cell_probs = np.zeros_like(self.cell_probs)
-            cell_probs[self.get_active_cells()] = 1
+            cell_probs[self.get_active_cells_context()] = 1
 
         segment_probs = np.zeros_like(self.b)
         segments_in_use = np.flatnonzero(np.sum(self.receptive_fields, axis=-1))
@@ -581,7 +581,17 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
                     out=np.zeros_like(b, dtype=REAL64_DTYPE), where=(norm != 0)
                 )
 
-                cell_probs = 1 - np.prod(1 - segment_probs.reshape(cell_probs.size, -1), axis=-1)
+                cells_for_segments = self.basal_connections.mapSegmentsToCells(segments_in_use) - self.local_range[0]
+
+                sorter = np.argsort(cells_for_segments, kind="mergesort")
+                cells_for_segments = cells_for_segments[sorter]
+                segments_in_use = segments_in_use[sorter]
+
+                cells_with_segments, indices = np.unique(cells_for_segments, return_index=True)
+                not_active_prob = np.multiply.reduceat(1 - segment_probs[segments_in_use], indices)
+
+                cell_probs = np.zeros_like(self.cell_probs)
+                cell_probs[cells_with_segments] = 1 - not_active_prob
         else:
             cell_probs = np.zeros_like(self.cell_probs)
 
