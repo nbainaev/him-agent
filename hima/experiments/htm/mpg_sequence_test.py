@@ -257,28 +257,30 @@ def run_hybrid_naive_bayes_tm(config, mpg, encoder, logger):
                 word.append(letter)
             else:
                 break
-
+            # set winner cells from previous step
             tm.set_active_context_cells(tm.get_winner_cells())
             tm.set_active_columns(encoder.encode(mpg.char_to_num[letter]))
             tm.activate_cells(learn=True)
 
             surprise.append(min(200.0, tm.surprise))
-            anomaly.append(tm.anomaly)
-            confidence.append(tm.confidence)
+            anomaly.append(tm.anomaly[-1])
+
+            conf = len(tm.get_predicted_columns()) / len(tm.get_active_columns())
+            confidence.append(conf)
 
             tm.set_active_context_cells(tm.get_active_cells())
             tm.activate_basal_dendrites(learn=True)
             tm.predict_cells()
             tm.predict_columns()
 
-            letter_dist = np.prod(
+            letter_dist = np.mean(
                 tm.column_probs.reshape((-1, config['run']['bucket_size'])).T, axis=0
             )
             density[mpg.current_state] += lr * (letter_dist - density[mpg.current_state])
 
             pred_columns_dense = np.zeros(tm.columns)
             pred_columns_dense[tm.get_predicted_columns()] = 1
-            predicted_letters = np.prod(
+            predicted_letters = np.mean(
                 pred_columns_dense.reshape((-1, config['run']['bucket_size'])).T, axis=0
             )
             hist_dist[mpg.current_state] += lr * (predicted_letters - hist_dist[mpg.current_state])
