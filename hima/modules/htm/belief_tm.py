@@ -417,6 +417,14 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
                 :param learn: if true, connections will learn patterns from previous step
                 :return:
                 """
+        # compute surprise
+        inactive_columns = np.flatnonzero(
+            np.in1d(np.arange(self.columns), self.get_active_columns(), invert=True)
+        )
+        surprise = - np.sum(np.log(self.column_probs[self.get_active_columns()]))
+        surprise += - np.sum(np.log(1 - self.column_probs[inactive_columns]))
+        self.surprise = surprise
+
         # Calculate active cells
         correct_predicted_cells, bursting_columns = setCompare(
             self.predicted_cells.sparse, self.active_columns.sparse,
@@ -516,7 +524,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
                 new_apical_segments = np.empty(0)
 
             self._update_receptive_fields(
-                np.union1d(
+                np.concatenate(
                     [new_basal_segments,
                      learning_active_basal_segments,
                      learning_matching_basal_segments]
@@ -550,7 +558,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             cell_probs = self.cell_probs
         else:
             cell_probs = np.zeros_like(self.cell_probs)
-            cell_probs[self.active_cells] = 1
+            cell_probs[self.get_active_cells()] = 1
 
         segment_probs = np.zeros_like(self.b)
         segments_in_use = np.flatnonzero(np.sum(self.receptive_fields, axis=-1))
@@ -629,11 +637,8 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         self.b = np.clip(self.b, 0, 1)
 
         # update conditional probs
-        old_winner_cells_dense = np.zeros_like(self.cell_probs)
-        old_winner_cells_dense[self.winner_cells] = 1
-
         old_active_cells_dense = np.zeros_like(self.cell_probs)
-        old_active_cells_dense[self.active_cells] = 1
+        old_active_cells_dense[self.get_active_cells()] = 1
 
         if len(true_positive_segments) > 0:
             w_true_positive = self.w[true_positive_segments]
@@ -651,7 +656,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         self.nu = np.clip(self.nu, 0, 1)
 
         # init new segments
-        if len(self.winner_cells) > 0:
+        if len(new_active_segments) > 0:
             self.w[new_active_segments] = self.init_w
             self.nu[new_active_segments] = self.init_nu
             self.b[new_active_segments] = self.init_b
@@ -661,7 +666,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             segments = range(self.basal_connections.segmentFlatListLength())
 
         for segment in segments:
-            cells = self.basal_connections.presynapticCellsForSegment(segment)
+            cells = np.array(self.basal_connections.presynapticCellsForSegment(segment)) - self.context_range[0]
             cells_dense = np.zeros_like(self.cell_probs, dtype='bool')
             cells_dense[cells] = 1
             self.receptive_fields[segment] = cells_dense

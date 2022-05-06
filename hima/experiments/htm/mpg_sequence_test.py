@@ -7,7 +7,7 @@
 import numpy as np
 from hima.envs.mpg import MarkovProcessGrammar
 from hima.common.sdr_encoders import IntBucketEncoder
-from hima.modules.htm.belief_tm import NaiveBayesTM
+from hima.modules.htm.belief_tm import NaiveBayesTM, HybridNaiveBayesTM
 from hima.modules.htm.temporal_memory import ClassicTemporalMemory
 from htm.bindings.sdr import SDR
 
@@ -51,6 +51,8 @@ def main(config_path):
         run_naive_bayes(config, mpg, encoder, logger)
     elif config['run']['tm_type'] == 'classic':
         run_classic_tm(config, mpg, encoder, logger)
+    elif config['run']['tm_type'] == 'hybrid_naive_bayes':
+        run_hybrid_naive_bayes_tm(config, mpg, encoder, logger)
 
 
 def run_naive_bayes(config, mpg, encoder, logger):
@@ -114,18 +116,19 @@ def run_naive_bayes(config, mpg, encoder, logger):
                     else:
                         return ''
 
-                fig, ax = plt.subplots(2, sharex=True)
-                ax[0].xaxis.set_major_formatter(format_fn)
-                ax[0].xaxis.set_major_locator(MaxNLocator(integer=True))
+                fig, ax1 = plt.subplots()
+                ax1.xaxis.set_major_formatter(format_fn)
+                ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
+                ax1.set_ylim(0, 1)
                 for x in range(density.shape[0]):
-                    ax[0].plot(density[x], label=f'state{x}', linewidth=2, marker='o')
-                ax[0].grid()
+                    ax1.plot(density[x], label=f'state{x}', linewidth=2, marker='o')
+                ax1.grid()
 
-                ax[1].xaxis.set_major_formatter(format_fn)
-                ax[1].xaxis.set_major_locator(MaxNLocator(integer=True))
-                for x in range(hist_dist.shape[0]):
-                    ax[1].plot(hist_dist[x], linewidth=2, marker='o')
-                ax[1].grid()
+                # ax2.xaxis.set_major_formatter(format_fn)
+                # ax2.xaxis.set_major_locator(MaxNLocator(integer=True))
+                # for x in range(hist_dist.shape[0]):
+                #     ax2.plot(hist_dist[x], linewidth=2, marker='o')
+                # ax2.grid()
 
                 fig.legend(loc=7)
 
@@ -204,9 +207,112 @@ def run_classic_tm(config, mpg, encoder, logger):
 
                 ax.xaxis.set_major_formatter(format_fn)
                 ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                ax.set_ylim(0, 1)
                 for x in range(hist_dist.shape[0]):
                     ax.plot(hist_dist[x], label=f'state_{x}', linewidth=2, marker='o')
                 ax.grid()
+
+                fig.legend(loc=7)
+
+                logger.log({f'letter_predictions': wandb.Image(fig)}, step=i)
+
+                plt.close(fig)
+
+    ...
+
+
+def run_hybrid_naive_bayes_tm(config, mpg, encoder, logger):
+    activation_threshold = int(config['run']['bucket_size']*config['tm'].pop('activation_threshold'))
+    learning_threshold = int(config['run']['bucket_size']*config['tm'].pop('learning_threshold'))
+
+    tm = HybridNaiveBayesTM(
+        columns=encoder.output_sdr_size,
+        context_cells=encoder.output_sdr_size * config['tm']['cells_per_column'],
+        feedback_cells=0,
+        activation_threshold_basal=activation_threshold,
+        learning_threshold_basal=learning_threshold,
+        activation_threshold_apical=1,
+        learning_threshold_apical=1,
+        seed=config['run']['seed'],
+        **config['tm']
+    )
+
+    density = np.zeros((8, 7))
+    hist_dist = np.zeros((8, 7))
+    lr = 0.02
+
+    for i in range(config['run']['epochs']):
+        mpg.reset()
+        tm.reset()
+
+        word = []
+        anomaly = []
+        confidence = []
+        surprise = []
+
+        while True:
+            letter = mpg.next_state()
+
+            if letter:
+                word.append(letter)
+            else:
+                break
+
+            tm.set_active_context_cells(tm.get_winner_cells())
+            tm.set_active_columns(encoder.encode(mpg.char_to_num[letter]))
+            tm.activate_cells(learn=True)
+
+            surprise.append(min(200.0, tm.surprise))
+            anomaly.append(tm.anomaly)
+            confidence.append(tm.confidence)
+
+            tm.set_active_context_cells(tm.get_active_cells())
+            tm.activate_basal_dendrites(learn=True)
+            tm.predict_cells()
+            tm.predict_columns()
+
+            letter_dist = np.prod(
+                tm.column_probs.reshape((-1, config['run']['bucket_size'])).T, axis=0
+            )
+            density[mpg.current_state] += lr * (letter_dist - density[mpg.current_state])
+
+            pred_columns_dense = np.zeros(tm.columns)
+            pred_columns_dense[tm.get_predicted_columns()] = 1
+            predicted_letters = np.prod(
+                pred_columns_dense.reshape((-1, config['run']['bucket_size'])).T, axis=0
+            )
+            hist_dist[mpg.current_state] += lr * (predicted_letters - hist_dist[mpg.current_state])
+
+        if logger is not None:
+            logger.log(
+                {
+                    'surprise': np.array(surprise)[1:].mean(),
+                    'anomaly': np.array(anomaly)[1:].mean(),
+                    'confidence': np.array(confidence)[1:].mean()
+                }, step=i
+            )
+
+            if i % config['run']['update_rate'] == 0:
+                def format_fn(tick_val, tick_pos):
+                    if int(tick_val) in range(len(mpg.alphabet)):
+                        return mpg.alphabet[int(tick_val)]
+                    else:
+                        return ''
+
+                fig, (ax1, ax2) = plt.subplots(2, sharex=True)
+                ax1.xaxis.set_major_formatter(format_fn)
+                ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
+                ax1.set_ylim(0, 1)
+                for x in range(density.shape[0]):
+                    ax1.plot(density[x], label=f'state{x}', linewidth=2, marker='o')
+                ax1.grid()
+
+                ax2.xaxis.set_major_formatter(format_fn)
+                ax2.xaxis.set_major_locator(MaxNLocator(integer=True))
+                ax2.set_ylim(0, 1)
+                for x in range(hist_dist.shape[0]):
+                    ax2.plot(hist_dist[x], linewidth=2, marker='o')
+                ax2.grid()
 
                 fig.legend(loc=7)
 

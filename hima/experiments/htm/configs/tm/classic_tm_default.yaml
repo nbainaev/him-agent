@@ -8,4 +8,4 @@ max_synapses_per_segment: 1.2
 predictedSegmentDecrement: .001
 permanenceIncrement: .1
 permanenceDecrement: .05
-maxSegmentsPerCell: 12
+maxSegmentsPerCell: 6

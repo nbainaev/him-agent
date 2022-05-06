@@ -1,0 +1,19 @@
+w_lr: 0.01
+nu_lr: 0.01
+b_lr: 0.01
+init_w: 1.0
+init_nu: 0.0
+init_b: 1.0
+
+cells_per_column: 10
+activation_threshold: .8
+learning_threshold: .65
+connected_threshold_basal: 0.5
+permanence_increment_basal: 0.1
+permanence_decrement_basal: 0.01
+initial_permanence_basal: 0.4
+predicted_segment_decrement_basal: 0.001
+sample_size_basal: -1
+max_synapses_per_segment_basal: -1
+max_segments_per_cell_basal: 6
+prune_zero_synapses: True
