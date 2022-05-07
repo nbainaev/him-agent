@@ -524,11 +524,11 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
                 new_apical_segments = np.empty(0)
 
             self._update_receptive_fields(
-                np.concatenate(
-                    [new_basal_segments,
-                     learning_active_basal_segments,
-                     learning_matching_basal_segments]
-                )
+                # np.concatenate(
+                #     [new_basal_segments,
+                #      learning_active_basal_segments,
+                #      learning_matching_basal_segments]
+                # )
             )
             self._update_weights(
                 learning_active_basal_segments,
@@ -561,6 +561,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             cell_probs[self.get_active_cells_context()] = 1
 
         segment_probs = np.zeros_like(self.b)
+        # non-zero segments' id
         segments_in_use = np.flatnonzero(np.sum(self.receptive_fields, axis=-1))
         if len(segments_in_use) > 0:
             w = self.w[segments_in_use]
@@ -569,7 +570,9 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             f = self.receptive_fields[segments_in_use]
 
             for step in range(steps):
+                # p(s|d=1)
                 synapse_probs_true = np.power((1 - w), 1 - cell_probs) * np.power(w, cell_probs)
+                # p(s|d=0)
                 synapse_probs_false = np.power((1 - nu), 1 - cell_probs) * np.power(nu, cell_probs)
 
                 likelihood_true = np.prod(synapse_probs_true, axis=-1, where=f)
@@ -588,6 +591,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
                 segments_in_use = segments_in_use[sorter]
 
                 cells_with_segments, indices = np.unique(cells_for_segments, return_index=True)
+
                 not_active_prob = np.multiply.reduceat(1 - segment_probs[segments_in_use], indices)
 
                 cell_probs = np.zeros_like(self.cell_probs)
@@ -673,10 +677,21 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
 
     def _update_receptive_fields(self, segments=None):
         if segments is None:
-            segments = range(self.basal_connections.segmentFlatListLength())
-
-        for segment in segments:
-            cells = np.array(self.basal_connections.presynapticCellsForSegment(segment)) - self.context_range[0]
-            cells_dense = np.zeros_like(self.cell_probs, dtype='bool')
-            cells_dense[cells] = 1
-            self.receptive_fields[segment] = cells_dense
+            self.receptive_fields = np.zeros(
+                (self.segment_probs.size, self.cell_probs.size),
+                dtype="bool"
+            )
+            for cell in range(*self.local_range):
+                cell_segments = self.basal_connections.segmentsForCell(cell)
+                for segment in cell_segments:
+                    cells = np.array(self.basal_connections.presynapticCellsForSegment(segment)) - \
+                            self.context_range[0]
+                    cells_dense = np.zeros_like(self.cell_probs, dtype='bool')
+                    cells_dense[cells] = 1
+                    self.receptive_fields[segment] = cells_dense
+        else:
+            for segment in segments:
+                cells = np.array(self.basal_connections.presynapticCellsForSegment(segment)) - self.context_range[0]
+                cells_dense = np.zeros_like(self.cell_probs, dtype='bool')
+                cells_dense[cells] = 1
+                self.receptive_fields[segment] = cells_dense
