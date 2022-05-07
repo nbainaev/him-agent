@@ -357,6 +357,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             init_w=1.0,
             init_nu=0.0,
             init_b=1.0,
+            full_learning=False,
             **kwargs
     ):
         super(HybridNaiveBayesTM, self).__init__(**kwargs)
@@ -381,6 +382,8 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         self.init_w = init_w
         self.init_nu = init_nu
         self.init_b = init_b
+
+        self.full_learning = full_learning
         # learning parameters
         self.w = np.zeros(
             (self.segment_probs.size, self.cell_probs.size), dtype=REAL64_DTYPE
@@ -523,16 +526,11 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             else:
                 new_apical_segments = np.empty(0)
 
-            self._update_receptive_fields(
-                # np.concatenate(
-                #     [new_basal_segments,
-                #      learning_active_basal_segments,
-                #      learning_matching_basal_segments]
-                # )
-            )
+            self._update_receptive_fields()
             self._update_weights(
                 new_winner_cells,
-                new_basal_segments
+                new_basal_segments,
+                basal_segments_to_punish
             )
 
         self.active_cells.sparse = np.unique(new_active_cells.astype('uint32'))
@@ -640,6 +638,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             self,
             new_winner_cells,
             new_active_segments,
+            false_positive_segments
     ):
         # non-zero segments' id
         segments_in_use = np.flatnonzero(np.sum(self.receptive_fields, axis=-1))
@@ -665,16 +664,24 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         old_active_cells_dense[self.get_active_cells()] = 1
 
         if len(active_segments) > 0:
-            w_true_positive = self.w[active_segments]
-            w_deltas_tpos = old_active_cells_dense - w_true_positive
-            w_deltas_tpos[~self.receptive_fields[active_segments]] = 0
+            w_active = self.w[active_segments]
+            w_deltas = old_active_cells_dense - w_active
+            w_deltas[~self.receptive_fields[active_segments]] = 0
 
-            self.w[active_segments] += self.w_lr * w_deltas_tpos
+            self.w[active_segments] += self.w_lr * w_deltas
 
-        nu_deltas = old_active_cells_dense - self.nu
-        nu_deltas[~self.receptive_fields] = 0
-        nu_deltas[active_segments] = 0
-        self.nu += self.nu_lr * nu_deltas
+        if self.full_learning:
+            nu_deltas = old_active_cells_dense - self.nu
+            nu_deltas[~self.receptive_fields] = 0
+            nu_deltas[active_segments] = 0
+            self.nu += self.nu_lr * nu_deltas
+        else:
+            if len(false_positive_segments) > 0:
+                nu_false_positive = self.nu[false_positive_segments]
+                nu_deltas = old_active_cells_dense - nu_false_positive
+                nu_deltas[~self.receptive_fields[false_positive_segments]] = 0
+
+                self.nu[false_positive_segments] += self.nu_lr * nu_deltas
 
         self.w = np.clip(self.w, 0, 1)
         self.nu = np.clip(self.nu, 0, 1)

@@ -1,9 +1,10 @@
-w_lr: 0.01
-nu_lr: 0.01
-b_lr: 0.01
+w_lr: 0.001
+nu_lr: 0.001
+b_lr: 0.001
 init_w: 1.0
 init_nu: 0.0
 init_b: 1.0
+full_learning: True
 
 cells_per_column: 10
 activation_threshold: .8
