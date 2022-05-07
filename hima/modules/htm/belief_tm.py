@@ -183,7 +183,7 @@ class NaiveBayesTM:
         segments_in_use = np.flatnonzero(np.sum(self.receptive_fields, axis=-1))
         if len(segments_in_use) > 0:
             w = self.w[segments_in_use]
-            nu = self.w[segments_in_use]
+            nu = self.nu[segments_in_use]
             b = self.b[segments_in_use]
             f = self.receptive_fields[segments_in_use]
 
@@ -531,7 +531,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
                 # )
             )
             self._update_weights(
-                learning_active_basal_segments,
+                new_winner_cells,
                 new_basal_segments
             )
 
@@ -565,7 +565,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         segments_in_use = np.flatnonzero(np.sum(self.receptive_fields, axis=-1))
         if len(segments_in_use) > 0:
             w = self.w[segments_in_use]
-            nu = self.w[segments_in_use]
+            nu = self.nu[segments_in_use]
             b = self.b[segments_in_use]
             f = self.receptive_fields[segments_in_use]
 
@@ -638,12 +638,22 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
 
     def _update_weights(
             self,
-            true_positive_segments,
+            new_winner_cells,
             new_active_segments,
     ):
+        # non-zero segments' id
+        segments_in_use = np.flatnonzero(np.sum(self.receptive_fields, axis=-1))
+
+        active_segments = self.basal_connections.filterSegmentsByCell(segments_in_use, new_winner_cells)
+
+        # init new segments
+        if len(new_active_segments) > 0:
+            self.w[new_active_segments] = self.init_w
+            self.nu[new_active_segments] = self.init_nu
+            self.b[new_active_segments] = self.init_b
         # update dendrites activity
         active_segments_dense = np.zeros_like(self.b)
-        active_segments_dense[true_positive_segments] = 1
+        active_segments_dense[active_segments] = 1
 
         b_deltas = active_segments_dense - self.b
         self.b += self.b_lr * b_deltas
@@ -654,26 +664,20 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         old_active_cells_dense = np.zeros_like(self.cell_probs)
         old_active_cells_dense[self.get_active_cells()] = 1
 
-        if len(true_positive_segments) > 0:
-            w_true_positive = self.w[true_positive_segments]
+        if len(active_segments) > 0:
+            w_true_positive = self.w[active_segments]
             w_deltas_tpos = old_active_cells_dense - w_true_positive
-            w_deltas_tpos[~self.receptive_fields[true_positive_segments]] = 0
+            w_deltas_tpos[~self.receptive_fields[active_segments]] = 0
 
-            self.w[true_positive_segments] += self.w_lr * w_deltas_tpos
+            self.w[active_segments] += self.w_lr * w_deltas_tpos
 
         nu_deltas = old_active_cells_dense - self.nu
         nu_deltas[~self.receptive_fields] = 0
-        nu_deltas[true_positive_segments] = 0
+        nu_deltas[active_segments] = 0
         self.nu += self.nu_lr * nu_deltas
 
         self.w = np.clip(self.w, 0, 1)
         self.nu = np.clip(self.nu, 0, 1)
-
-        # init new segments
-        if len(new_active_segments) > 0:
-            self.w[new_active_segments] = self.init_w
-            self.nu[new_active_segments] = self.init_nu
-            self.b[new_active_segments] = self.init_b
 
     def _update_receptive_fields(self, segments=None):
         if segments is None:
