@@ -113,7 +113,7 @@ class ExperimentStats:
         step_relative_sparsity = safe_divide(
             len(curr_repr), self.tp_expected_active_size
         )
-        new_cells_ratio = safe_divide(
+        new_cells_relative_ratio = safe_divide(
             len(curr_repr - prev_repr), self.tp_expected_active_size
         )
         sym_diff_cells_ratio = safe_divide(
@@ -123,7 +123,7 @@ class ExperimentStats:
         step_metrics = {
             'tp/step/sparsity': step_sparsity,
             'tp/step/relative_sparsity': step_relative_sparsity,
-            'tp/step/new_cells_ratio': new_cells_ratio,
+            'tp/step/new_cells_relative_ratio': new_cells_relative_ratio,
             'tp/step/sym_diff_cells_ratio': sym_diff_cells_ratio,
         }
 
@@ -137,6 +137,8 @@ class ExperimentStats:
             len(curr_repr), cluster_size
         )
         cluster_distribution_active_coverage = cluster_distribution[curr_repr_lst].sum()
+        cluster_distribution_active_coverage /= self.tp_expected_active_size
+
         cluster_entropy = self._cluster_entropy(cluster_distribution)
         cluster_entropy_active_coverage = safe_divide(
             self._cluster_entropy(cluster_distribution[curr_repr_lst]),
