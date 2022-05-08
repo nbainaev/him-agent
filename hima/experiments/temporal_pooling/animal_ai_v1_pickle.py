@@ -106,11 +106,11 @@ if __name__ == '__main__':
         room_conf_paths = [sys.argv[1]]
     else:
         room_conf_paths = [
-            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/1g.yml',
-            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/hunger-neq-reward.yml',
-            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/01-23-01.yml',
-            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/02-27-03.yml',
-            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/synergytmaze1.yml',
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/different_points/l.yml',
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/different_points/r.yml',
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/different_points/u.yml',
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/different_points/d.yml',
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/different_points/center.yml'
 
         ]
 
@@ -143,5 +143,5 @@ if __name__ == '__main__':
         })
         rooms_observations.append(converted)
 
-    with open('room2_obs_v1.pkl', 'wb') as f:
+    with open('distance.pkl', 'wb') as f:
         dump(rooms_observations, f)

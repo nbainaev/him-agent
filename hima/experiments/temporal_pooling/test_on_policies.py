@@ -122,6 +122,25 @@ class ExperimentStats:
         }
 
 
+def similarity_cmp(input_similarity_matrix, output_similarity_matrix):
+    fig = plt.figure(figsize=(40, 10))
+    ax1 = fig.add_subplot(131)
+    ax1.set_title('output', size=40)
+    ax2 = fig.add_subplot(132)
+    ax2.set_title('input', size=40)
+    ax3 = fig.add_subplot(133)
+    ax3.set_title('diff', size=40)
+
+    sns.heatmap(output_similarity_matrix, vmin=0, vmax=1, cmap='plasma', ax=ax1)
+    sns.heatmap(input_similarity_matrix, vmin=0, vmax=1, cmap='plasma', ax=ax2)
+
+    sns.heatmap(
+        np.abs(output_similarity_matrix - input_similarity_matrix),
+        vmin=0, vmax=1, cmap='plasma', ax=ax3, annot=True
+    )
+    return plt.gca()
+
+
 class PoliciesExperiment(Runner):
     config: TConfig
     logger: Optional[Run]
@@ -355,22 +374,7 @@ class PoliciesExperiment(Runner):
         return similarity_matrix
 
     def vis_similarity(self, input_similarity_matrix, output_similarity_matrix, title):
-        fig = plt.figure(figsize=(40, 10))
-        ax1 = fig.add_subplot(131)
-        ax1.set_title('output', size=40)
-        ax2 = fig.add_subplot(132)
-        ax2.set_title('input', size=40)
-        ax3 = fig.add_subplot(133)
-        ax3.set_title('diff', size=40)
-
-        sns.heatmap(output_similarity_matrix, vmin=-1, vmax=1, cmap='plasma', ax=ax1)
-        sns.heatmap(input_similarity_matrix, vmin=-1, vmax=1, cmap='plasma', ax=ax2)
-
-        sns.heatmap(
-            np.abs(output_similarity_matrix - input_similarity_matrix),
-            vmin=-1, vmax=1, cmap='plasma', ax=ax3, annot=True
-        )
-        self.logger.log({title: wandb.Image(ax1)})
+        self.logger.log({title: wandb.Image(similarity_cmp(input_similarity_matrix, output_similarity_matrix))})
 
 
 def resolve_tp(config, temporal_pooler: str, temporal_memory):

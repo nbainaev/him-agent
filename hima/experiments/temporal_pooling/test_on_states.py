@@ -26,8 +26,7 @@ from hima.experiments.temporal_pooling.test_on_policies import resolve_tp
 
 from hima.experiments.temporal_pooling.metrics import sdrs_similarity
 
-from hima.experiments.temporal_pooling.test_on_policies import ExperimentStats
-
+from hima.experiments.temporal_pooling.test_on_policies import ExperimentStats, similarity_cmp
 
 def similarity_matrix(representations: list):
     matrix = np.empty((len(representations), len(representations)))
@@ -67,9 +66,19 @@ class ObservationsExperiment(Runner):
         for epoch in range(self.epochs):
             representations = self.train_epoch(observations)
         sim_matrix = similarity_matrix(representations)
-        sns.heatmap(sim_matrix, vmin=0, vmax=1, cmap='plasma')
-        self.logger.log({'similarities': wandb.Image(plt.gca())})
+        self.log_summary(self.data_generator.true_similarities(), sim_matrix)
         print('<==')
+
+    def log_summary(self, input_similarity_matrix, output_similarity_matrix):
+        non_diag_mask = np.logical_not(np.identity(input_similarity_matrix.shape[0]))
+        diff = np.abs(input_similarity_matrix - output_similarity_matrix)
+        mae = np.mean(diff[non_diag_mask])
+        self.logger.summary['mae'] = mae
+
+        self.logger.log({
+            'similarities': wandb.Image(similarity_cmp(input_similarity_matrix, output_similarity_matrix))
+        })
+
 
     def train_epoch(self, observations):
         representations = []
@@ -110,6 +119,7 @@ class ObservationsExperiment(Runner):
             apicalInput=[],  # self.temporal_pooler.getUnionSDR().sparse,
             learn=learn
         )
+
         # self.temporal_memory.activateDendrites(learn=learn)
 
     def compute_tp_step(self, active_input, predicted_input, learn=True):

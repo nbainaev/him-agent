@@ -116,6 +116,16 @@ class AAIRotationsGenerator:
     def generate_data(self):
         return self.rooms_v1_outputs
 
+    @staticmethod
+    def true_similarities() -> np.ndarray:
+        return np.asarray(
+            [[1, 0.91, 0.94, 0.94, 0.625],
+             [0.91, 1, 0.94, 0.94, 0.68],
+             [0.94, 0.94, 1, 0.91, 0.69],
+             [0.94, 0.94, 0.91, 1, 0.62],
+             [0.625, 0.68, 0.69, 0.62, 1]]
+        )
+
 
 class PolicySelector:
     n_policies: int
