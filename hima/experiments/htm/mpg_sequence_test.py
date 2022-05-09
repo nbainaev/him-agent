@@ -62,10 +62,9 @@ def run_naive_bayes(config, mpg, encoder, logger):
         **config['tm']
     )
 
-    density = np.zeros((8, 7))
+    density = np.zeros((len(mpg.states), len(mpg.alphabet)))
+    hist_dist = np.zeros((len(mpg.states), len(mpg.alphabet)))
     lr = 0.02
-
-    hist_dist = np.zeros((8, 7))
 
     for i in range(config['run']['epochs']):
         mpg.reset()
@@ -147,7 +146,7 @@ def run_classic_tm(config, mpg, encoder, logger):
         **config['tm']
     )
 
-    hist_dist = np.zeros((8, 7))
+    hist_dist = np.zeros((len(mpg.states), len(mpg.alphabet)))
     lr = 0.02
 
     for i in range(config['run']['epochs']):
@@ -237,8 +236,8 @@ def run_hybrid_naive_bayes_tm(config, mpg, encoder, logger):
         **config['tm']
     )
 
-    density = np.zeros((8, 7))
-    hist_dist = np.zeros((8, 7))
+    density = np.zeros((len(mpg.states), len(mpg.alphabet)))
+    hist_dist = np.zeros((len(mpg.states), len(mpg.alphabet)))
     lr = 0.02
 
     for i in range(config['run']['epochs']):
