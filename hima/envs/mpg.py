@@ -19,7 +19,14 @@ class MarkovProcessGrammar:
             autoreset=False,
             seed=None
     ):
-        self.transition_probs = transition_probs
+        transition_probs = np.array(transition_probs)
+        norm = transition_probs.sum(axis=-1).reshape(-1, 1)
+        norm_transition_probs = np.divide(
+            transition_probs, norm,
+            where=(norm != 0),
+            out=np.zeros_like(transition_probs)
+        )
+        self.transition_probs = norm_transition_probs
         self.transition_letters = transition_letters
         self.alphabet = alphabet
         self.char_to_num = {x: i for i, x in enumerate(alphabet)}
