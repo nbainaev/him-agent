@@ -550,7 +550,12 @@ class GeneralFeedbackTM:
         # Matching
         matching_segments = np.flatnonzero(num_potential >= learning_threshold)
 
-        return active_segments, matching_segments, predictive_cells, num_potential
+        return (
+            active_segments.astype(UINT_DTYPE),
+            matching_segments.astype(UINT_DTYPE),
+            predictive_cells.astype(UINT_DTYPE),
+            num_potential
+        )
 
     def _columns_for_cells(self, cells):
         """
