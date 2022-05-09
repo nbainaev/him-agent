@@ -94,12 +94,12 @@ def run_naive_bayes(config, mpg, encoder, logger):
             tm.activate_dendrites()
             tm.predict_cells()
 
-            letter_dist = np.prod(tm.column_probs.reshape((-1, config['run']['bucket_size'])).T, axis=0)
+            letter_dist = np.mean(tm.column_probs.reshape((-1, config['run']['bucket_size'])).T, axis=0)
             density[mpg.current_state] += lr * (letter_dist - density[mpg.current_state])
 
             pred_columns_dense = np.zeros(tm.n_columns)
             pred_columns_dense[tm.predicted_columns] = 1
-            predicted_letters = np.prod(pred_columns_dense.reshape((-1, config['run']['bucket_size'])).T, axis=0)
+            predicted_letters = np.mean(pred_columns_dense.reshape((-1, config['run']['bucket_size'])).T, axis=0)
             hist_dist[mpg.current_state] += lr * (predicted_letters - hist_dist[mpg.current_state])
 
         if logger is not None:
@@ -187,7 +187,7 @@ def run_classic_tm(config, mpg, encoder, logger):
             else:
                 predicted_columns = np.empty(0)
 
-            predicted_letters = np.prod(pred_columns_dense.reshape((-1, config['run']['bucket_size'])).T, axis=0)
+            predicted_letters = np.mean(pred_columns_dense.reshape((-1, config['run']['bucket_size'])).T, axis=0)
             hist_dist[mpg.current_state] += lr * (predicted_letters - hist_dist[mpg.current_state])
 
         if logger is not None:
