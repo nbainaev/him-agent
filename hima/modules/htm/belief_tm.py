@@ -354,9 +354,11 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             w_lr=0.01,
             nu_lr=0.01,
             b_lr=0.01,
-            init_w=1.0,
-            init_nu=0.0,
-            init_b=1.0,
+            beta_lr=0.01,
+            init_w=0.5,
+            init_nu=0.5,
+            init_b=0.5,
+            init_beta=0.5,
             full_learning=False,
             **kwargs
     ):
@@ -366,6 +368,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         self.w_lr = w_lr
         self.nu_lr = nu_lr
         self.b_lr = b_lr
+        self.beta_lr = beta_lr
 
         # probabilities
         self.column_probs = np.zeros(
@@ -382,6 +385,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         self.init_w = init_w
         self.init_nu = init_nu
         self.init_b = init_b
+        self.init_beta = init_beta
 
         self.full_learning = full_learning
         # learning parameters
@@ -396,6 +400,8 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             dtype="bool"
         )
         self.b = np.zeros(self.segment_probs.size, dtype=REAL64_DTYPE)
+
+        self.beta = np.zeros(self.segment_probs.size, dtype=REAL64_DTYPE) + self.init_beta
 
         # surprise (analog to anomaly in classical TM)
         self.surprise = 0
@@ -530,6 +536,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             self._update_weights(
                 new_winner_cells,
                 new_basal_segments,
+                learning_active_basal_segments,
                 basal_segments_to_punish
             )
 
@@ -565,6 +572,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             w = self.w[segments_in_use]
             nu = self.nu[segments_in_use]
             b = self.b[segments_in_use]
+            beta = self.beta[segments_in_use]
             f = self.receptive_fields[segments_in_use]
 
             for step in range(steps):
@@ -590,7 +598,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
 
                 cells_with_segments, indices = np.unique(cells_for_segments, return_index=True)
 
-                not_active_prob = np.multiply.reduceat(1 - segment_probs[segments_in_use], indices)
+                not_active_prob = np.multiply.reduceat(np.power((1 - beta), segment_probs[segments_in_use]), indices)
 
                 cell_probs = np.zeros_like(self.cell_probs)
                 cell_probs[cells_with_segments] = 1 - not_active_prob
@@ -638,6 +646,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             self,
             new_winner_cells,
             new_active_segments,
+            true_positive_segments,
             false_positive_segments
     ):
         # non-zero segments' id
@@ -650,6 +659,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             self.w[new_active_segments] = self.init_w
             self.nu[new_active_segments] = self.init_nu
             self.b[new_active_segments] = self.init_b
+            self.beta[new_active_segments] = self.init_beta
         # update dendrites activity
         active_segments_dense = np.zeros_like(self.b)
         active_segments_dense[active_segments] = 1
@@ -658,6 +668,14 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         self.b += self.b_lr * b_deltas
 
         self.b = np.clip(self.b, 0, 1)
+
+        # update segment reliability
+        if len(true_positive_segments) > 0:
+            self.beta[true_positive_segments] += self.beta_lr * (1 - self.beta[true_positive_segments])
+        if len(false_positive_segments) > 0:
+            self.beta[false_positive_segments] -= self.beta_lr * self.beta[false_positive_segments]
+
+        self.beta = np.clip(self.beta, 0, 1)
 
         # update conditional probs
         old_active_cells_dense = np.zeros_like(self.cell_probs)
