@@ -595,6 +595,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
                 sorter = np.argsort(cells_for_segments, kind="mergesort")
                 cells_for_segments = cells_for_segments[sorter]
                 segments_in_use = segments_in_use[sorter]
+                beta = beta[sorter]
 
                 cells_with_segments, indices = np.unique(cells_for_segments, return_index=True)
 
