@@ -91,8 +91,12 @@ def parse_arg(arg: Union[str, tuple[str, Any]]) -> TConfigOverrideKV:
 
         # "--key" --> "key"
         key_path = key_path.removeprefix('--')
+
+        # parse value represented as str
+        value = parse_str(value)
     else:
         # tuple ("key", value) from wandb config of the sweep single run
+        # we assume that the value is already passed correctly parsed
         key_path, value = arg
 
     # We parse key tokens as they can represent array indices
@@ -102,7 +106,6 @@ def parse_arg(arg: Union[str, tuple[str, Any]]) -> TConfigOverrideKV:
         for key_token in key_path.split('.')
         if key_token
     ]
-    value = parse_str(value)
 
     return key_path, value
 
