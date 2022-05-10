@@ -115,19 +115,22 @@ def run_naive_bayes(config, mpg, encoder, logger):
                     else:
                         return ''
 
-                fig, ax1 = plt.subplots()
+                fig, (ax1, ax2) = plt.subplots(2, sharex=True)
                 ax1.xaxis.set_major_formatter(format_fn)
                 ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
                 ax1.set_ylim(0, 1)
+                ax1.set_title('prob distribution')
                 for x in range(density.shape[0]):
                     ax1.plot(density[x], label=f'state{x}', linewidth=2, marker='o')
                 ax1.grid()
 
-                # ax2.xaxis.set_major_formatter(format_fn)
-                # ax2.xaxis.set_major_locator(MaxNLocator(integer=True))
-                # for x in range(hist_dist.shape[0]):
-                #     ax2.plot(hist_dist[x], linewidth=2, marker='o')
-                # ax2.grid()
+                ax2.xaxis.set_major_formatter(format_fn)
+                ax2.xaxis.set_major_locator(MaxNLocator(integer=True))
+                ax2.set_ylim(0, 1)
+                ax2.set_title('sample distribution')
+                for x in range(hist_dist.shape[0]):
+                    ax2.plot(hist_dist[x], linewidth=2, marker='o')
+                ax2.grid()
 
                 fig.legend(loc=7)
 
