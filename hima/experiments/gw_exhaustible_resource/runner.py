@@ -25,6 +25,31 @@ from hima.common.utils import isnone
 from hima.common.sdr import SparseSdr
 
 
+def draw_masked_observation(concatenated_observation: np.ndarray, sdr_sizes: list[tuple[str, int]]):
+    n_sdrs = len(sdr_sizes)
+    fig, ax = plt.subplots(1, n_sdrs, figsize=(n_sdrs, 2))
+    fig.set_dpi(200)
+    start = 0
+    obs = concatenated_observation
+    vmin = np.min(obs)
+    vmax = np.max(obs)
+    for i, (name, sdr_size) in enumerate(sdr_sizes):
+        # all sdrs should be initially squares
+        size = int(np.sqrt(sdr_size))
+        finish = start + sdr_size
+        ax[i].set_axis_off()
+        ax[i].imshow(obs[start: finish].reshape((size, size)), vmin=vmin, vmax=vmax)
+        ax[i].set_title(name)
+        start = finish
+    fig.suptitle(f'Max: {vmax: .2e}; Min: {vmin: .2e}')
+    plt.tight_layout()
+    fig.canvas.draw()
+    img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    plt.close(fig)
+    return img
+
+
 class GwAgentStateProvider:
     env: Environment
 
@@ -471,10 +496,20 @@ class GwExhaustibleResource(Runner):
         fig.canvas.draw()
         img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
         img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-        plt.close('all')
+        plt.close(fig)
         self.logger.log({
             'maps/q_map': wandb.Image(img)
         }, step=self.episode)
+
+        amg_obs = draw_masked_observation(
+            self.agent.amg.value_network.cell_value,
+            self.environment.renderer.rendering_sdr_sizes
+        )
+        self.logger.log(
+            {
+                'maps/amg': wandb.Image(amg_obs)
+            }, step=self.episode
+        )
 
 
 def resolve_agent(name, **config):
