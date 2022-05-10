@@ -26,6 +26,7 @@ class Renderer:
 
         # delayed initialization on the first render call
         self.channels_concatenator = None
+        self.rendering_sdr_sizes = None
 
     def render(self, position, view_direction, entities: Iterable[Entity]):
         view_clip = self.make_view_clip(position, view_direction)
@@ -45,6 +46,18 @@ class Renderer:
 
         if self.channels_concatenator is None:
             self.channels_concatenator = SdrConcatenator(list(sdr_sizes))
+
+        if self.rendering_sdr_sizes is None:
+            self.rendering_sdr_sizes = []
+            for entity in entities:
+                if not entity.rendering:
+                    continue
+                layer_with_sdr_size = entity.render(view_clip)
+                if isinstance(layer_with_sdr_size, list):
+                    for layer_with_size in layer_with_sdr_size:
+                        self.rendering_sdr_sizes.append((entity.name, layer_with_size[1]))
+                elif layer_with_sdr_size[1]:
+                    self.rendering_sdr_sizes.append((entity.name, layer_with_sdr_size[1]))
 
         observation = self.channels_concatenator.concatenate(*layers)
         return observation
