@@ -24,12 +24,13 @@ class NaiveBayesTM:
             max_segments_per_cell,
             max_receptive_field_size=-1,
             w_lr=0.01,
-            w_punish=0.0,
             nu_lr=0.01,
             b_lr=0.01,
-            init_w=1.0,
-            init_nu=0.0,
-            init_b=1.0,
+            beta_lr=0.01,
+            init_w=0.5,
+            init_nu=0.5,
+            init_b=0.5,
+            init_beta=0.5,
             seed=None
     ):
         # fixed parameters
@@ -39,11 +40,12 @@ class NaiveBayesTM:
 
         if max_receptive_field_size == -1:
             self.max_receptive_field_size = n_columns * cells_per_column
+
         # learning rates
         self.w_lr = w_lr
-        self.w_punish = w_punish
         self.nu_lr = nu_lr
         self.b_lr = b_lr
+        self.beta_lr = beta_lr
 
         # discrete states
         self.active_cells = np.empty(0, dtype=UINT_DTYPE)
@@ -68,6 +70,8 @@ class NaiveBayesTM:
         self.init_w = init_w
         self.init_nu = init_nu
         self.init_b = init_b
+        self.init_beta = init_beta
+
         # learning parameters
         self.w = np.zeros(
             (self.segment_probs.size, self.cell_probs.size), dtype=REAL64_DTYPE
@@ -80,6 +84,8 @@ class NaiveBayesTM:
             dtype="bool"
         )
         self.b = np.zeros(self.segment_probs.size, dtype=REAL64_DTYPE)
+
+        self.beta = np.zeros(self.segment_probs.size, dtype=REAL64_DTYPE) + self.init_beta
 
         # surprise (analog to anomaly in classical TM)
         self.surprise = 0
@@ -153,9 +159,9 @@ class NaiveBayesTM:
 
         if learn:
             self._update_weights(
+                new_active_segments,
                 true_positive_segments,
                 false_positive_segments,
-                new_active_segments,
             )
 
         # update active and winner cells
@@ -180,15 +186,23 @@ class NaiveBayesTM:
             cell_probs[self.active_cells] = 1
 
         segment_probs = np.zeros_like(self.b)
+        # non-zero segments' id
         segments_in_use = np.flatnonzero(np.sum(self.receptive_fields, axis=-1))
         if len(segments_in_use) > 0:
             w = self.w[segments_in_use]
             nu = self.nu[segments_in_use]
             b = self.b[segments_in_use]
+            beta = self.beta[segments_in_use]
             f = self.receptive_fields[segments_in_use]
+            cells_with_segments, indices = np.unique(
+                self._cells_for_segments(segments_in_use),
+                return_index=True
+            )
 
             for step in range(steps):
+                # p(s|d=1)
                 synapse_probs_true = np.power((1 - w), 1 - cell_probs) * np.power(w, cell_probs)
+                # p(s|d=0)
                 synapse_probs_false = np.power((1 - nu), 1 - cell_probs) * np.power(nu, cell_probs)
 
                 likelihood_true = np.prod(synapse_probs_true, axis=-1, where=f)
@@ -200,7 +214,11 @@ class NaiveBayesTM:
                     out=np.zeros_like(b, dtype=REAL64_DTYPE), where=(norm != 0)
                 )
 
-                cell_probs = 1 - np.prod(1 - segment_probs.reshape(cell_probs.size, -1), axis=-1)
+                not_active_prob = np.power((1 - beta), segment_probs[segments_in_use])
+                not_active_prob = np.multiply.reduceat(not_active_prob, indices)
+
+                cell_probs = np.zeros_like(self.cell_probs)
+                cell_probs[cells_with_segments] = 1 - not_active_prob
         else:
             cell_probs = np.zeros_like(self.cell_probs)
 
@@ -215,27 +233,43 @@ class NaiveBayesTM:
 
     def _update_weights(
             self,
-            true_positive_segments,
-            false_positive_segments,
             new_active_segments,
+            true_positive_segments,
+            false_positive_segments
     ):
-        # update dendrites activity
         active_segments_dense = np.zeros_like(self.b)
         active_segments_dense[true_positive_segments] = 1
-        # active_segments_dense[new_active_segments] = 1
 
-        b_deltas = active_segments_dense - self.b
-        self.b += self.b_lr * b_deltas
-
-        self.b = np.clip(self.b, 0, 1)
-
-        # update conditional probs
         old_winner_cells_dense = np.zeros_like(self.cell_probs)
         old_winner_cells_dense[self.winner_cells] = 1
 
         old_active_cells_dense = np.zeros_like(self.cell_probs)
         old_active_cells_dense[self.active_cells] = 1
 
+        # init new segments
+        if len(new_active_segments) > 0:
+            self.w[new_active_segments] = self.init_w
+            self.nu[new_active_segments] = self.init_nu
+            self.b[new_active_segments] = self.init_b
+            self.beta[new_active_segments] = self.init_beta
+            self.receptive_fields[new_active_segments] = old_winner_cells_dense
+
+        # update dendrites activity
+        b_deltas = active_segments_dense - self.b
+        self.b += self.b_lr * b_deltas
+
+        self.b = np.clip(self.b, 0, 1)
+
+        # update segment reliability
+        if len(true_positive_segments) > 0:
+            self.beta[true_positive_segments] += self.beta_lr * (
+                        1 - self.beta[true_positive_segments])
+        if len(false_positive_segments) > 0:
+            self.beta[false_positive_segments] -= self.beta_lr * self.beta[false_positive_segments]
+
+        self.beta = np.clip(self.beta, 0, 1)
+
+        # update conditional probs
         if len(true_positive_segments) > 0:
             w_true_positive = self.w[true_positive_segments]
             w_deltas_tpos = old_active_cells_dense - w_true_positive
@@ -247,13 +281,6 @@ class NaiveBayesTM:
                 'bool'
             )
 
-        if len(false_positive_segments) > 0:
-            w_false_positive = self.w[false_positive_segments]
-            w_deltas_fpos = -old_active_cells_dense * w_false_positive
-            w_deltas_fpos[~self.receptive_fields[false_positive_segments]] = 0
-
-            self.w[false_positive_segments] += self.w_punish * w_deltas_fpos
-
         nu_deltas = old_active_cells_dense - self.nu
         nu_deltas[~self.receptive_fields] = 0
         nu_deltas[true_positive_segments] = 0
@@ -262,15 +289,9 @@ class NaiveBayesTM:
         self.w = np.clip(self.w, 0, 1)
         self.nu = np.clip(self.nu, 0, 1)
 
-        # init new segments
-        if len(self.winner_cells) > 0:
-            self.w[new_active_segments] = self.init_w
-            self.nu[new_active_segments] = self.init_nu
-            self.b[new_active_segments] = self.init_b
-            self.receptive_fields[new_active_segments] = old_winner_cells_dense
-
         # prune zero synapses
         self.receptive_fields[self.w < EPS] = 0
+
         # reset zero segments
         zero_segments = np.flatnonzero(np.sum(self.receptive_fields, axis=-1) == 0)
         self.b[zero_segments] = 0
@@ -652,7 +673,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
     ):
         # non-zero segments' id
         segments_in_use = np.flatnonzero(np.sum(self.receptive_fields, axis=-1))
-
+        # TODO should it be only matched and active segments?
         active_segments = self.basal_connections.filterSegmentsByCell(segments_in_use, new_winner_cells)
 
         # init new segments
