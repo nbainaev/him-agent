@@ -4,12 +4,13 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from typing import Any, Sequence
+from typing import Any, Sequence, Union
 
 import numpy as np
+from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
-from hima.common.utils import isnone
+from hima.common.utils import isnone, ensure_absolute_number
 
 
 class IntBucketEncoder:
@@ -89,23 +90,26 @@ class IntRandomEncoder:
 
     _encoding_map: np.array
 
-    def __init__(self, n_values: int, total_bits: int, sparsity: float, seed: int):
+    def __init__(
+            self, n_values: int, total_bits: int, n_active_bits: Union[int, float], seed: int
+    ):
         """
         Initializes encoder.
 
         :param n_values: defines a range [0, n_values) of values that can be encoded
         :param total_bits: total number of bits in a resulted SDR
-        :param sparsity: sparsity level of resulted SDR
+        :param n_active_bits: int number of resulted SDR active bits or its [float] sparsity level
         :param seed: random seed for random encoding scheme generation
         """
+        n_active_bits = ensure_absolute_number(n_active_bits, total_bits)
+
         self.output_sdr_size = total_bits
-
-        value_bits = int(total_bits * sparsity)
-        rng_generator = np.random.default_rng(seed=seed)
-
-        self._encoding_map = np.empty(shape=(n_values, value_bits), dtype=np.int)
-        for x in range(n_values):
-            self._encoding_map[x, :] = rng_generator.choice(total_bits, size=value_bits, replace=False)
+        self._encoding_map = self._make_encoding_map(
+            n_values=n_values,
+            total_bits=total_bits,
+            n_active_bits=n_active_bits,
+            seed=seed
+        )
 
     @property
     def n_values(self) -> int:
@@ -118,6 +122,14 @@ class IntRandomEncoder:
     def encode(self, x: int) -> SparseSdr:
         """Encodes value x to sparse SDR format using random overlapping encoding."""
         return self._encoding_map[x]
+
+    @staticmethod
+    def _make_encoding_map(n_values, total_bits, n_active_bits, seed: int) -> np.ndarray:
+        rng = np.random.default_rng(seed=seed)
+        encoding_map = np.empty(shape=(n_values, n_active_bits), dtype=np.int)
+        for x in range(n_values):
+            encoding_map[x, :] = rng.choice(total_bits, size=n_active_bits, replace=False)
+        return encoding_map
 
 
 class IntArrayEncoder:
