@@ -2694,15 +2694,6 @@ class ClassicTemporalMemory(HtmTemporalMemory):
         return self.columns
 
 
-def abs_or_relative(value: Union[int, float], base: int):
-    if isinstance(value, int):
-        return value
-    elif isinstance(value, float):
-        return int(base * value)
-    else:
-        ValueError(value)
-
-
 class ClassicApicalTemporalMemory(ApicalTiebreakSequenceMemory):
     columns: int
     cells_per_column: int
@@ -2733,8 +2724,3 @@ class ClassicApicalTemporalMemory(ApicalTiebreakSequenceMemory):
         sdr = SDR(self.columns)
         sdr.sparse = np.unique(self.get_correctly_predicted_cells().sparse // self.cells_per_column)
         return sdr
-
-
-
-if __name__ == '__main__':
-    pass
