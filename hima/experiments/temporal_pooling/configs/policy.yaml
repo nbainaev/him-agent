@@ -44,7 +44,7 @@ action_encoders:
     _type_: int_random
     n_values: *n_actions
     total_bits: 40
-    sparsity: 0.25
+    n_active_bits: 10
 
 temporal_poolers:
   union_tp:
