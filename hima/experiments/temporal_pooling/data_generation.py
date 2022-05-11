@@ -10,7 +10,7 @@ import numpy as np
 from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
-from hima.common.sdr_encoders import IntBucketEncoder
+from hima.common.sdr_encoders import IntBucketEncoder, IntRandomEncoder
 from hima.common.config_utils import extracted_type
 
 from animal_ai_v1_pickle import collect_data
@@ -190,6 +190,9 @@ def resolve_encoder(config: dict, key, registry_key: str):
 
     if encoder_type == 'int_bucket':
         return IntBucketEncoder(**encoder_config)
+    if encoder_type == 'int_random':
+        seed = config['seed']
+        return IntRandomEncoder(seed=seed, **encoder_config)
     else:
         raise KeyError(f'{encoder_type} is not supported')
 

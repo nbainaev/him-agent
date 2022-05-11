@@ -25,7 +25,7 @@ generator:
   n_states: *n_states
   n_actions: &n_actions 4
   state_encoder: bucket
-  action_encoder: bucket
+  action_encoder: random
   policy_similarity: 0.5
   policy_similarity_std: 0.35
 
@@ -39,7 +39,12 @@ action_encoders:
   bucket:
     _type_: int_bucket
     n_values: *n_actions
-    bucket_size: &action_bucket 10
+    bucket_size: 10
+  random:
+    _type_: int_random
+    n_values: *n_actions
+    total_bits: 40
+    sparsity: 0.25
 
 temporal_poolers:
   union_tp:
