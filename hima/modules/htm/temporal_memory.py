@@ -4,17 +4,20 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from typing import Union
 from htm.algorithms import TemporalMemory as HtmTemporalMemory
 from htm.advanced.algorithms.apical_tiebreak_temporal_memory import ApicalTiebreakSequenceMemory
 from htm.bindings.algorithms import ANMode
-from functools import reduce
-from hima.modules.htm.connections import Connections
+from htm.bindings.math import Random
 from htm.bindings.sdr import SDR
 from htm.advanced.support.numpy_helpers import setCompare, argmaxMulti, getAllCellsInColumns
+
+from hima.modules.htm.connections import Connections
+from hima.modules.htm.utils import abs_or_relative
+
+from typing import Union
 import numpy as np
-from htm.bindings.math import Random
 from math import exp
+from functools import reduce
 
 EPS = 1e-12
 UINT_DTYPE = "uint32"
@@ -174,6 +177,9 @@ class GeneralFeedbackTM:
 
     def get_active_cells(self):
         return self.active_cells.sparse - self.local_range[0]
+
+    def get_active_cells_context(self):
+        return self.active_cells_context.sparse - self.context_range[0]
 
     def get_winner_cells(self):
         return self.winner_cells.sparse - self.local_range[0]
@@ -544,7 +550,12 @@ class GeneralFeedbackTM:
         # Matching
         matching_segments = np.flatnonzero(num_potential >= learning_threshold)
 
-        return active_segments, matching_segments, predictive_cells, num_potential
+        return (
+            active_segments.astype(UINT_DTYPE),
+            matching_segments.astype(UINT_DTYPE),
+            predictive_cells.astype(UINT_DTYPE),
+            num_potential
+        )
 
     def _columns_for_cells(self, cells):
         """
