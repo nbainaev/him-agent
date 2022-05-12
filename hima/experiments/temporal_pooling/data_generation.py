@@ -17,6 +17,21 @@ from animal_ai_v1_pickle import collect_data
 import pickle
 
 from hima.common.utils import clip
+from hima.experiments.temporal_pooling.metrics import sdrs_similarity
+
+
+def v1_output_similarity(output1, output2):
+    """
+    Corresponding elements of output compared as sets
+
+    @return: mean of similarities
+    """
+    n = len(output1)
+    assert len(output1) == len(output2)
+    sim = 0
+    for i in range(n):
+        sim += sdrs_similarity(output1[i], output2[i])
+    return sim/n
 
 
 class Policy:
@@ -125,6 +140,13 @@ class AAIRotationsGenerator:
              [0.94, 0.94, 0.91, 1, 0.62],
              [0.625, 0.68, 0.69, 0.62, 1]]
         )
+
+    def v1_similarities(self):
+        sim_matrix = np.empty((len(self.rooms_v1_outputs),len(self.rooms_v1_outputs)))
+        for i, obs1 in enumerate(self.rooms_v1_outputs):
+            for j, obs2 in enumerate(self.rooms_v1_outputs):
+                sim_matrix[i][j] = v1_output_similarity(obs1, obs2)
+        return sim_matrix
 
 
 class PolicySelector:

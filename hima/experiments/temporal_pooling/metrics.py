@@ -43,10 +43,14 @@ def representation_similarity(representation_1, representation_2):
     return overlap / union
 
 
-def sdrs_similarity(sdr1: SDR, sdr2: SDR):
-    intersection = np.intersect1d(sdr1.sparse, sdr2.sparse).shape[0]
-    union = np.union1d(sdr1.sparse, sdr2.sparse).shape[0]
+def symetric_similarity(arr1: np.ndarray, arr2: np.ndarray):
+    intersection = np.intersect1d(arr1, arr2).shape[0]
+    union = np.union1d(arr1, arr2).shape[0]
     return safe_divide(intersection, union, 1)
+
+
+def sdrs_similarity(sdr1: SDR, sdr2: SDR):
+    return symetric_similarity(sdr1.sparse, sdr2.sparse)
 
 
 def similarity_mae(pure, representational):

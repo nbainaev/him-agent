@@ -24,7 +24,7 @@ from hima.modules.htm.temporal_memory import ClassicTemporalMemory
 from hima.modules.htm.temporal_memory import ClassicApicalTemporalMemory
 from hima.experiments.temporal_pooling.test_on_policies import resolve_tp
 
-from hima.experiments.temporal_pooling.metrics import sdrs_similarity
+from hima.experiments.temporal_pooling.metrics import sdrs_similarity, symetric_similarity
 
 from hima.experiments.temporal_pooling.test_on_policies import ExperimentStats, similarity_cmp
 
@@ -64,9 +64,11 @@ class ObservationsExperiment(Runner):
         print('==> Run')
         representations = []
         for epoch in range(self.epochs):
+            if epoch == self.epochs - 1:
+                a = 1
             representations = self.train_epoch(observations)
         sim_matrix = similarity_matrix(representations)
-        self.log_summary(self.data_generator.true_similarities(), sim_matrix)
+        self.log_summary(self.data_generator.v1_similarities(), sim_matrix)
         print('<==')
 
     def log_summary(self, input_similarity_matrix, output_similarity_matrix):
@@ -84,6 +86,9 @@ class ObservationsExperiment(Runner):
         representations = []
 
         for i, room_observations in enumerate(observations):
+            if i == (len(observations) - 1):
+                a = 1
+
             self.temporal_pooler.reset()
             for j in range(self.rotations_per_room):
                 self.run_room(room_observations, i, learn=True)
@@ -96,6 +101,8 @@ class ObservationsExperiment(Runner):
     def run_room(self, room_observations, room_id, learn=True):
         tm, tp = self.temporal_memory, self.temporal_pooler
 
+        i = 0
+
         for observation in room_observations:
             self.compute_tm_step(
                 feedforward_input=observation,
@@ -106,12 +113,16 @@ class ObservationsExperiment(Runner):
                 predicted_input=tm.get_correctly_predicted_columns(),
                 learn=learn
             )
+            if i == len(room_observations) - 1:
+                a = 1
             self.stats.on_step(
                 policy_id=room_id,
                 temporal_memory=self.temporal_memory,
                 temporal_pooler=self.temporal_pooler,
                 logger=self.logger
             )
+            i += 1
+
 
     def compute_tm_step(self, feedforward_input, learn=True):
         self.temporal_memory.compute(
@@ -124,3 +135,5 @@ class ObservationsExperiment(Runner):
 
     def compute_tp_step(self, active_input, predicted_input, learn=True):
         self.temporal_pooler.compute(active_input, predicted_input, learn)
+
+
