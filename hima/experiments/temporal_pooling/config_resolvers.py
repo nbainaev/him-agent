@@ -6,11 +6,7 @@
 
 from hima.common.config_utils import extracted_type
 from hima.common.utils import ensure_absolute_number
-from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
-from hima.experiments.temporal_pooling.custom_utp import CustomUtp
-from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
-from hima.modules.htm.spatial_pooler import UnionTemporalPooler
-from hima.modules.htm.temporal_memory import DelayedFeedbackTM, ClassicApicalTemporalMemory
+from hima.modules.htm.temporal_memory import ClassicApicalTemporalMemory, DelayedFeedbackTM
 
 
 def resolve_tp(config, temporal_pooler: str, temporal_memory):
@@ -27,17 +23,21 @@ def resolve_tp(config, temporal_pooler: str, temporal_memory):
 
     base_config_tp, tp_type = extracted_type(base_config_tp)
     if tp_type == 'UnionTp':
+        from hima.modules.htm.spatial_pooler import UnionTemporalPooler
         config_tp = base_config_tp | config_tp
         tp = UnionTemporalPooler(seed=seed, **config_tp)
     elif tp_type == 'AblationUtp':
+        from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
         config_tp = base_config_tp | config_tp
         tp = AblationUtp(seed=seed, **config_tp)
     elif tp_type == 'CustomUtp':
+        from hima.experiments.temporal_pooling.custom_utp import CustomUtp
         config_tp = base_config_tp | config_tp
         del config_tp['potentialRadius']
         tp = CustomUtp(seed=seed, **config_tp)
     elif tp_type == 'SandwichTp':
         # FIXME: dangerous mutations here! We should work with copies
+        from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
         base_config_tp['lower_sp_conf'] = base_config_tp['lower_sp_conf'] | config_tp
         base_config_tp['lower_sp_conf']['seed'] = seed
         base_config_tp['upper_sp_conf']['seed'] = seed
