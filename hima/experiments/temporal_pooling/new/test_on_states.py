@@ -4,35 +4,20 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from typing import Optional
-
-import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
 import wandb
 from htm.bindings.sdr import SDR
-from wandb.sdk.wandb_run import Run
 
-from copy import copy
-
-from hima.common.config_utils import TConfig, extracted_type
+from hima.common.config_utils import TConfig
 from hima.common.run_utils import Runner
-from hima.common.sdr import SparseSdr
-from hima.common.utils import safe_divide, ensure_absolute_number
-from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
-from hima.experiments.temporal_pooling.custom_utp import CustomUtp
-from hima.experiments.temporal_pooling.data_generation import resolve_data_generator
-
-from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
-from hima.modules.htm.spatial_pooler import UnionTemporalPooler
-from hima.modules.htm.temporal_memory import DelayedFeedbackTM
-from hima.modules.htm.temporal_memory import ClassicTemporalMemory
-from hima.modules.htm.temporal_memory import ClassicApicalTemporalMemory
-from hima.experiments.temporal_pooling.test_on_policies import resolve_tp
-
+from hima.experiments.temporal_pooling.config_resolvers import resolve_data_generator
 from hima.experiments.temporal_pooling.metrics import sdrs_similarity
+from hima.experiments.temporal_pooling.test_on_policies import (
+    resolve_tp, ExperimentStats,
+    similarity_cmp
+)
+from hima.modules.htm.temporal_memory import ClassicApicalTemporalMemory
 
-from hima.experiments.temporal_pooling.test_on_policies import ExperimentStats, similarity_cmp
 
 def similarity_matrix(representations: list):
     matrix = np.empty((len(representations), len(representations)))
@@ -59,7 +44,9 @@ class ObservationsExperiment(Runner):
         print('==> Init')
         self.data_generator = resolve_data_generator(config)
         self.temporal_memory = ClassicApicalTemporalMemory(**config['apical_temporal_memory'])
-        self.temporal_pooler = resolve_tp(config, temporal_pooler, temporal_memory=self.temporal_memory)
+        self.temporal_pooler = resolve_tp(
+            config, temporal_pooler, temporal_memory=self.temporal_memory
+        )
 
         self.stats = ExperimentStats(self.temporal_pooler)
 

@@ -5,25 +5,17 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from typing import Optional
 
-import matplotlib.pyplot as plt
-import numpy as np
-import seaborn as sns
-import wandb
 from htm.bindings.sdr import SDR
 from wandb.sdk.wandb_run import Run
 
-from hima.common.config_utils import TConfig, extracted_type
+from hima.common.config_utils import TConfig
 from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
-from hima.common.utils import safe_divide, ensure_absolute_number
-from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
-from hima.experiments.temporal_pooling.custom_utp import CustomUtp
-from hima.experiments.temporal_pooling.data_generation import resolve_data_generator
+from hima.experiments.temporal_pooling.config_resolvers import (
+    resolve_tp, resolve_tm,
+    resolve_data_generator
+)
 from hima.experiments.temporal_pooling.new.test_on_policies_stats import ExperimentStats
-
-from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
-from hima.modules.htm.spatial_pooler import UnionTemporalPooler
-from hima.modules.htm.temporal_memory import DelayedFeedbackTM
 
 
 class PoliciesExperiment(Runner):
@@ -143,77 +135,3 @@ class PoliciesExperiment(Runner):
         self.temporal_pooler.compute(self._tp_active_input, self._tp_predicted_input, learn)
 
 
-def resolve_tp(config, temporal_pooler: str, temporal_memory):
-    base_config_tp = config['temporal_poolers'][temporal_pooler]
-    seed = config['seed']
-    input_size = temporal_memory.columns * temporal_memory.cells_per_column
-
-    config_tp = dict(
-        inputDimensions=[input_size],
-        potentialRadius=input_size,
-    )
-
-    base_config_tp, tp_type = extracted_type(base_config_tp)
-    if tp_type == 'UnionTp':
-        config_tp = base_config_tp | config_tp
-        tp = UnionTemporalPooler(seed=seed, **config_tp)
-    elif tp_type == 'AblationUtp':
-        config_tp = base_config_tp | config_tp
-        tp = AblationUtp(seed=seed, **config_tp)
-    elif tp_type == 'CustomUtp':
-        config_tp = base_config_tp | config_tp
-        del config_tp['potentialRadius']
-        tp = CustomUtp(seed=seed, **config_tp)
-    elif tp_type == 'SandwichTp':
-        # FIXME: dangerous mutations here! We should work with copies
-        base_config_tp['lower_sp_conf'] = base_config_tp['lower_sp_conf'] | config_tp
-        base_config_tp['lower_sp_conf']['seed'] = seed
-        base_config_tp['upper_sp_conf']['seed'] = seed
-        tp = SandwichTp(**base_config_tp)
-    else:
-        raise KeyError(f'Temporal Pooler type "{tp_type}" is not supported')
-    return tp
-
-
-def resolve_tm(config, action_encoder, state_encoder):
-    base_config_tm = config['temporal_memory']
-    seed = config['seed']
-
-    # apical feedback
-    apical_feedback_cells = base_config_tm['feedback_cells']
-    apical_active_bits = ensure_absolute_number(
-        base_config_tm['sample_size_apical'],
-        baseline=apical_feedback_cells
-    )
-    activation_threshold_apical = ensure_absolute_number(
-        base_config_tm['activation_threshold_apical'],
-        baseline=apical_active_bits
-    )
-    learning_threshold_apical = ensure_absolute_number(
-        base_config_tm['learning_threshold_apical'],
-        baseline=apical_active_bits
-    )
-
-    # basal context
-    basal_active_bits = state_encoder.n_active_bits
-
-    config_tm = dict(
-        columns=action_encoder.output_sdr_size,
-
-        feedback_cells=apical_feedback_cells,
-        sample_size_apical=apical_active_bits,
-        activation_threshold_apical=activation_threshold_apical,
-        learning_threshold_apical=learning_threshold_apical,
-        max_synapses_per_segment_apical=apical_active_bits,
-
-        context_cells=state_encoder.output_sdr_size,
-        sample_size_basal=basal_active_bits,
-        activation_threshold_basal=basal_active_bits,
-        learning_threshold_basal=basal_active_bits,
-        max_synapses_per_segment_basal=basal_active_bits,
-    )
-
-    # it's necessary as we shadow some "relative" values with the "absolute" values
-    config_tm = base_config_tm | config_tm
-    tm = DelayedFeedbackTM(seed=seed, **config_tm)
-    return tm

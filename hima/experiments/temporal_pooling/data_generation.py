@@ -10,13 +10,11 @@ import numpy as np
 from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
-from hima.common.sdr_encoders import IntBucketEncoder, IntRandomEncoder
-from hima.common.config_utils import extracted_type
 
-from animal_ai_v1_pickle import collect_data
 import pickle
 
 from hima.common.utils import clip
+from hima.experiments.temporal_pooling.config_resolvers import resolve_encoder
 from hima.experiments.temporal_pooling.metrics import sdrs_similarity
 
 
@@ -170,31 +168,6 @@ class PolicySelector:
             return iter(rng.permutation(self.n_policies))
         else:
             raise KeyError(f'{self.regime} is not supported')
-
-
-def resolve_data_generator(config: dict):
-    seed = config['seed']
-    generator_config, generator_type = extracted_type(config['generator'])
-
-    if generator_type == 'synthetic':
-        return SyntheticGenerator(config, seed=seed, **generator_config)
-    elif generator_type == 'aai_rotation':
-        return AAIRotationsGenerator(config)
-    else:
-        raise KeyError(f'{generator_type} is not supported')
-
-
-def resolve_encoder(config: dict, key, registry_key: str):
-    registry = config[registry_key]
-    encoder_config, encoder_type = extracted_type(registry[key])
-
-    if encoder_type == 'int_bucket':
-        return IntBucketEncoder(**encoder_config)
-    if encoder_type == 'int_random':
-        seed = config['seed']
-        return IntRandomEncoder(seed=seed, **encoder_config)
-    else:
-        raise KeyError(f'{encoder_type} is not supported')
 
 
 def generate_data(n, n_actions, n_states, randomness=1.0, seed=0):
