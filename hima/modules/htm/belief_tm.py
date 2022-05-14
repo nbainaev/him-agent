@@ -586,10 +586,21 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             cell_probs = np.zeros_like(self.cell_probs)
             cell_probs[self.get_active_cells_context()] = 1
 
-        segment_probs = np.zeros_like(self.b)
         # non-zero segments' id
         segments_in_use = np.flatnonzero(np.sum(self.receptive_fields, axis=-1))
+        segment_probs = np.zeros_like(segments_in_use)
+
         if len(segments_in_use) > 0:
+            cells_for_segments = self.basal_connections.mapSegmentsToCells(segments_in_use) - \
+                                 self.local_range[0]
+
+            sorter = np.argsort(cells_for_segments, kind="mergesort")
+
+            cells_for_segments = cells_for_segments[sorter]
+            cells_with_segments, indices = np.unique(cells_for_segments, return_index=True)
+
+            segments_in_use = segments_in_use[sorter]
+
             w = self.w[segments_in_use]
             nu = self.nu[segments_in_use]
             b = self.b[segments_in_use]
@@ -606,28 +617,22 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
                 likelihood_false = np.prod(synapse_probs_false, axis=-1, where=f)
 
                 norm = b * likelihood_true + (1 - b) * likelihood_false
-                segment_probs[segments_in_use] = np.divide(
+                segment_probs = np.divide(
                     b * likelihood_true, norm,
                     out=np.zeros_like(b, dtype=REAL64_DTYPE), where=(norm != 0)
                 )
 
-                cells_for_segments = self.basal_connections.mapSegmentsToCells(segments_in_use) - self.local_range[0]
-
-                sorter = np.argsort(cells_for_segments, kind="mergesort")
-                cells_for_segments = cells_for_segments[sorter]
-                segments_in_use = segments_in_use[sorter]
-                beta = beta[sorter]
-
-                cells_with_segments, indices = np.unique(cells_for_segments, return_index=True)
-
-                not_active_prob = np.multiply.reduceat(np.power((1 - beta), segment_probs[segments_in_use]), indices)
+                not_active_prob = np.multiply.reduceat(np.power((1 - beta), segment_probs), indices)
 
                 cell_probs = np.zeros_like(self.cell_probs)
                 cell_probs[cells_with_segments] = 1 - not_active_prob
         else:
             cell_probs = np.zeros_like(self.cell_probs)
 
-        self.segment_probs = segment_probs
+        self.segment_probs = np.zeros_like(self.b)
+        if len(segments_in_use) > 0:
+            self.segment_probs[segments_in_use] = segment_probs
+
         self.cell_probs = cell_probs
 
         cell_probs = 1 - cell_probs.reshape((self.columns, -1))
