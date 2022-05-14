@@ -10,6 +10,7 @@ from hima.common.sdr_encoders import IntBucketEncoder
 from hima.modules.htm.belief_tm import NaiveBayesTM, HybridNaiveBayesTM
 from hima.modules.htm.temporal_memory import ClassicTemporalMemory
 from htm.bindings.sdr import SDR
+import pickle
 
 import wandb
 import matplotlib.pyplot as plt
@@ -324,7 +325,17 @@ def run_hybrid_naive_bayes_tm(config, mpg, encoder, logger):
 
                 plt.close(fig)
 
-    ...
+    if logger is not None:
+        name = logger.name
+    else:
+        name = np.random.bytes(32)
+
+    np.save(f'logs/density_{name}.npy', density)
+    np.save(f'logs/hist_dist_{name}.npy', hist_dist)
+
+    if config['run']['save_model']:
+        with open(f"logs/model_env_{name}_{config['run']['epochs']}.pkl", 'wb') as file:
+            pickle.dump((tm, mpg, encoder), file)
 
 
 if __name__ == '__main__':

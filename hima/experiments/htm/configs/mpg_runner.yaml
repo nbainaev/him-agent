@@ -1,10 +1,11 @@
-log: False
+log: True
+save_model: True
 project_name: 'mpg_tm_test'
 epochs: 1001
 update_rate: 100
 bucket_size: 4
-seed: 6989
+seed: 43212
 
 tm_type: 'hybrid_naive_bayes'
 tm_conf: 'configs/tm/hybrid_naive_bayes_default.yaml'
-mpg_conf: 'configs/mpg/mpg_default.yaml'
+mpg_conf: 'configs/mpg/mpg_3.yaml'
