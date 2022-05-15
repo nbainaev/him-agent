@@ -28,7 +28,7 @@ class Sds:
     Sparse Distributed Space parameters.
 
     Short notation helps to correctly define SDS with minimal number of params. In each case
-    we want to specify only a sufficient part of all params and just let the others to be
+    we want to specify only a sufficient subset of all params and just let the others be
     inducted.
 
     Here's all supported notations:
@@ -37,6 +37,9 @@ class Sds:
         c) ((20, 20), 0.02) — shape and sparsity
         d) ((20, 20), 10) — shape and active SDR size
         e) (0.02, 10) — sparsity and active SDR size
+
+    The same is correct for keyword-only __init__ arguments — you only need to specify
+    the sufficient subset.
     """
 
     shape: tuple[int, ...]
