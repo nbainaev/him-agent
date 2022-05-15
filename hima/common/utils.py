@@ -158,7 +158,7 @@ def ensure_absolute_number(abs_or_relative: Union[int, float], baseline: int) ->
 
 
 def ensure_relative_number(abs_or_relative: Union[int, float], baseline: int) -> float:
-    """See `ensure_absolute_number` - this method is the opposite to it."""
+    """See `ensure_absolute_number` - this method is the opposite of it."""
 
     if isinstance(abs_or_relative, float):
         relative = abs_or_relative

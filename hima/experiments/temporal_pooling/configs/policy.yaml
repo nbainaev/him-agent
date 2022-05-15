@@ -5,20 +5,31 @@ log: True    # wandb logging
 
 # FIXME: using &key/*key is error prone with sweeps overwriting
 .shared_params:
-  n_states: &n_states 30
-  tp_output_size: &tp_output_size 4000
-#  n_states: &n_states 10
-#  tp_output_size: &tp_output_size 400
+#  n_states: &n_states 30
+#  tp_output_size: &tp_output_size 4000
+  n_states: &n_states 10
+  tp_output_size: &tp_output_size 400
 
-n_policies: 8
-epochs: 4
-policy_repeats: 20
-#n_policies: 3
-#epochs: 2
-#policy_repeats: 4
-steps_per_policy: *n_states
+setup: simple
 policy_selection_rule: ordered
 temporal_pooler: union_tp
+
+experiment_setups:
+  simple:
+    n_policies: 3
+    n_states: 10
+    n_actions: 4
+    steps_per_policy: ...
+    policy_repeats: 3
+    epochs: 2
+
+  full:
+    n_policies: 8
+    n_states: 30
+    n_actions: 4
+    steps_per_policy: ...
+    policy_repeats: 20
+    epochs: 4
 
 generator:
   _type_: synthetic
@@ -32,8 +43,12 @@ generator:
 state_encoders:
   bucket:
     _type_: int_bucket
-    n_values: *n_states
-    bucket_size: &state_bucket 3
+    n_values: ???
+    bucket_size: &state_bucket 10
+  random:
+    _type_: int_random
+    n_values: ???
+    sds: [0.04, 10]
 
 action_encoders:
   bucket:
@@ -43,8 +58,7 @@ action_encoders:
   random:
     _type_: int_random
     n_values: *n_actions
-    total_bits: 40
-    n_active_bits: 10
+    sds: [40, 10]
 
 temporal_poolers:
   union_tp:
