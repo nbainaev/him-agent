@@ -18,13 +18,15 @@ from hima.common.utils import ensure_list
 
 # Register config-related conventional constants here. Start them with `_` as non-importable!
 _TYPE_KEY = '_type_'
-_TO_BE_INDUCED_VALUE = 'TBI'
+_TO_BE_NONE_VALUE = '...'
+_TO_BE_INDUCED_VALUE = '???'
 
 
 TConfig = dict[str, Any]
 TConfigOverrideKV = tuple[list, Any]
 
 
+# ==================== config dict slicing ====================
 def filtered(d: TConfig, keys_to_remove: Iterable[str], depth: int) -> TConfig:
     """
     Return a shallow copy of the provided dictionary without the items
@@ -69,6 +71,24 @@ def extracted_type(config: TConfig) -> tuple[TConfig, Optional[str]]:
     return extracted(config, _TYPE_KEY)
 
 
+# ==================== config dict value induction ====================
+def resolve_value(value, key, induction_registry):
+    if value == _TO_BE_NONE_VALUE:
+        return None
+    elif value == _TO_BE_INDUCED_VALUE:
+        return induction_registry[key]
+
+    return value
+
+
+def resolve_init_params(config, **induction_registry):
+    return {
+        k: resolve_value(config[k], k, induction_registry)
+        for k in config
+    }
+
+
+# ==================== config dict compilation and values parsing ====================
 def override_config(
         config: TConfig,
         overrides: Union[TConfigOverrideKV, list[TConfigOverrideKV]]

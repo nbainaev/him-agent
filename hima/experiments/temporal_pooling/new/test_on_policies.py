@@ -11,60 +11,79 @@ from wandb.sdk.wandb_run import Run
 from hima.common.config_utils import TConfig
 from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
+from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.config_resolvers import (
     resolve_tp, resolve_tm,
-    resolve_data_generator
+    resolve_data_generator, resolve_run_setup
 )
 from hima.experiments.temporal_pooling.new.test_on_policies_stats import ExperimentStats
+
+
+class RunSetup:
+    n_policies: int
+    n_states: int
+    n_actions: int
+    steps_per_policy: int
+    policy_repeats: int
+    epochs: int
+
+    def __init__(
+            self, n_policies: int, n_states: int, n_actions: int,
+            steps_per_policy: Optional[int], policy_repeats: int, epochs: int
+    ):
+        self.n_policies = n_policies
+        self.n_states = n_states
+        self.n_actions = n_actions
+        self.steps_per_policy = isnone(steps_per_policy, self.n_states)
+        self.epochs = epochs
+        self.policy_repeats = policy_repeats
 
 
 class PoliciesExperiment(Runner):
     config: TConfig
     logger: Optional[Run]
 
-    n_policies: int
-    epochs: int
-    policy_repeats: int
-    steps_per_policy: int
-
+    seed: int
+    run_setup: RunSetup
     stats: ExperimentStats
 
     _tp_active_input: SDR
     _tp_predicted_input: SDR
 
     def __init__(
-            self, config: TConfig, n_policies: int, epochs: int, policy_repeats: int,
-            steps_per_policy: int, temporal_pooler: str, **_
+            self, config: TConfig, run_setup, seed: int,
+            policy_selection_rule: str, temporal_pooler: str, **_
     ):
         super().__init__(config, **config)
-
-        self.n_policies = n_policies
-        self.epochs = epochs
-        self.policy_repeats = policy_repeats
-        # --------------------------------------
-        self.steps_per_policy = steps_per_policy
-        # ---- is this field really needed? ----
+        self.seed = seed
+        self.run_setup = resolve_run_setup(config, run_setup)
 
         print('==> Init')
-        self.data_generator = resolve_data_generator(config)
-        self.temporal_memory = resolve_tm(
-            self.config,
-            action_encoder=self.data_generator.action_encoder,
-            state_encoder=self.data_generator.state_encoder
+        self.data_generator = resolve_data_generator(
+            config,
+            n_states=self.run_setup.n_states,
+            n_actions=self.run_setup.n_actions,
+            seed=self.seed
         )
-        self.temporal_pooler = resolve_tp(
-            self.config, temporal_pooler,
-            temporal_memory=self.temporal_memory
-        )
-        self.stats = ExperimentStats(self.temporal_pooler)
-
-        # pre-allocated SDR
-        tp_input_size = self.temporal_pooler.getNumInputs()
-        self._tp_active_input = SDR(tp_input_size)
-        self._tp_predicted_input = SDR(tp_input_size)
+        # self.temporal_memory = resolve_tm(
+        #     self.config,
+        #     action_encoder=self.data_generator.action_encoder,
+        #     state_encoder=self.data_generator.state_encoder
+        # )
+        # self.temporal_pooler = resolve_tp(
+        #     self.config, temporal_pooler,
+        #     temporal_memory=self.temporal_memory
+        # )
+        # self.stats = ExperimentStats(self.temporal_pooler)
+        #
+        # # pre-allocated SDR
+        # tp_input_size = self.temporal_pooler.getNumInputs()
+        # self._tp_active_input = SDR(tp_input_size)
+        # self._tp_predicted_input = SDR(tp_input_size)
 
     def run(self):
         print('==> Generate policies')
+        return
         policies = self.data_generator.generate_policies(self.n_policies)
 
         print('==> Run')

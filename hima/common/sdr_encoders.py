@@ -9,7 +9,8 @@ from typing import Any, Sequence
 import numpy as np
 from numpy.random import Generator
 
-from hima.common.sdr import SparseSdr, Sds
+from hima.common.sdr import SparseSdr
+from hima.common.sds import Sds
 from hima.common.utils import isnone
 
 
@@ -99,7 +100,10 @@ class IntRandomEncoder:
     _encoding_map: np.array
 
     def __init__(
-            self, n_values: int, seed: int, sds: tuple
+            self, n_values: int, seed: int,
+            sds: tuple = None,
+            space_compression: float = None,
+            active_size: int = None
     ):
         """
         Initializes encoder.
@@ -109,6 +113,10 @@ class IntRandomEncoder:
         :param n_active_bits: int number of resulted SDR active bits or its [float] sparsity level
         :param seed: random seed for random encoding scheme generation
         """
+
+        if sds is None:
+            sds_size = int(n_values * active_size * space_compression)
+            sds = (sds_size, active_size)
 
         self.output_sds = Sds(sds)
         self._encoding_map = self._make_encoding_map(

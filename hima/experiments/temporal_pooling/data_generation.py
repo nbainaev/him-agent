@@ -13,6 +13,7 @@ from hima.common.sdr import SparseSdr
 
 import pickle
 
+from hima.common.sds import Sds
 from hima.common.utils import clip
 from hima.experiments.temporal_pooling.config_resolvers import resolve_encoder
 from hima.experiments.temporal_pooling.metrics import sdrs_similarity
@@ -36,8 +37,8 @@ class Policy:
     id: int
     _policy: np.ndarray
 
-    def __init__(self, id: int, policy, seed=None):
-        self.id = id
+    def __init__(self, id_: int, policy, seed=None):
+        self.id = id_
         self._policy = policy
 
     def __iter__(self) -> Iterator[tuple[SparseSdr, SparseSdr]]:
@@ -51,13 +52,16 @@ class SyntheticGenerator:
     n_states: int
     n_actions: int
 
+    states_sds: Sds
+    actions_sds: Sds
+
     policy_similarity: float
     policy_similarity_std: float
     _rng: Generator
 
     def __init__(
             self, config: dict,
-            n_states: int, n_actions: int,
+            n_states: int, n_actions: int, active_size: int,
             state_encoder: str, action_encoder: str,
             policy_similarity: float,
             seed: int,
@@ -65,8 +69,21 @@ class SyntheticGenerator:
     ):
         self.n_states = n_states
         self.n_actions = n_actions
-        self.state_encoder = resolve_encoder(config, state_encoder, 'state_encoders')
-        self.action_encoder = resolve_encoder(config, action_encoder, 'action_encoders')
+        self.state_encoder = resolve_encoder(
+            config, state_encoder, 'encoders',
+            n_values=self.n_states,
+            active_size=active_size,
+            seed=seed
+        )
+        self.states_sds = self.state_encoder.output_sds
+
+        self.action_encoder = resolve_encoder(
+            config, action_encoder, 'encoders',
+            n_values=self.n_actions,
+            active_size=active_size,
+            seed=seed
+        )
+        self.actions_sds = self.action_encoder.output_sds
 
         self.policy_similarity = policy_similarity
         self.policy_similarity_std = policy_similarity_std
@@ -115,7 +132,7 @@ class SyntheticGenerator:
                 a = action_encoding[action]
                 policy.append((s, a))
 
-            encoded_policies.append(Policy(id=i_policy, policy=policy))
+            encoded_policies.append(Policy(id_=i_policy, policy=policy))
 
         return encoded_policies
 
