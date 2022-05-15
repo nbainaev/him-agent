@@ -391,6 +391,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         self.b_lr = b_lr
         self.beta_lr = beta_lr
 
+        self.segments_in_use = np.empty(0, dtype=UINT_DTYPE)
         # probabilities
         self.column_probs = np.zeros(
             self.columns, dtype=REAL64_DTYPE
@@ -577,7 +578,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         self.anomaly.append(anomaly)
         self.anomaly.pop(0)
 
-    def predict_columns(self, steps=1, use_probs=False):
+    def predict_columns(self, steps=1, use_probs=False, update_segments=True):
         assert steps >= 1
 
         if use_probs:
@@ -586,26 +587,22 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             cell_probs = np.zeros_like(self.cell_probs)
             cell_probs[self.get_active_cells_context()] = 1
 
-        # non-zero segments' id
-        segments_in_use = np.flatnonzero(np.sum(self.receptive_fields, axis=-1))
-        segment_probs = np.zeros_like(segments_in_use)
+        if update_segments:
+            self._update_segments_in_use(sort=True)
 
-        if len(segments_in_use) > 0:
-            cells_for_segments = self.basal_connections.mapSegmentsToCells(segments_in_use) - \
+        segment_probs = np.zeros_like(self.segments_in_use)
+
+        if len(self.segments_in_use) > 0:
+            cells_for_segments = self.basal_connections.mapSegmentsToCells(self.segments_in_use) - \
                                  self.local_range[0]
 
-            sorter = np.argsort(cells_for_segments, kind="mergesort")
-
-            cells_for_segments = cells_for_segments[sorter]
             cells_with_segments, indices = np.unique(cells_for_segments, return_index=True)
 
-            segments_in_use = segments_in_use[sorter]
-
-            w = self.w[segments_in_use]
-            nu = self.nu[segments_in_use]
-            b = self.b[segments_in_use]
-            beta = self.beta[segments_in_use]
-            f = self.receptive_fields[segments_in_use]
+            w = self.w[self.segments_in_use]
+            nu = self.nu[self.segments_in_use]
+            b = self.b[self.segments_in_use]
+            beta = self.beta[self.segments_in_use]
+            f = self.receptive_fields[self.segments_in_use]
 
             for step in range(steps):
                 # p(s|d=1)
@@ -630,13 +627,27 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             cell_probs = np.zeros_like(self.cell_probs)
 
         self.segment_probs = np.zeros_like(self.b)
-        if len(segments_in_use) > 0:
-            self.segment_probs[segments_in_use] = segment_probs
+        if len(self.segments_in_use) > 0:
+            self.segment_probs[self.segments_in_use] = segment_probs
 
         self.cell_probs = cell_probs
 
         cell_probs = 1 - cell_probs.reshape((self.columns, -1))
         self.column_probs = 1 - np.prod(cell_probs, axis=-1)
+
+    def _update_segments_in_use(self, sort=True):
+        # non-zero segments' id
+        segments_in_use = np.flatnonzero(np.sum(self.receptive_fields, axis=-1))
+
+        if sort and (len(segments_in_use) > 0):
+            cells_for_segments = self.basal_connections.mapSegmentsToCells(segments_in_use) - \
+                                 self.local_range[0]
+
+            sorter = np.argsort(cells_for_segments)
+
+            segments_in_use = segments_in_use[sorter]
+
+            self.segments_in_use = segments_in_use
 
     def _learn_on_new_segments(
             self, connections: Connections, new_segment_cells, growth_candidates, sample_size,
