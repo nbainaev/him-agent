@@ -24,7 +24,21 @@ def dense_to_sparse(dense_vector: DenseSdr) -> SparseSdr:
 
 
 class Sds:
-    """Sparse Distributed Space parameters"""
+    """
+    Sparse Distributed Space parameters.
+
+    Short notation helps to correctly define SDS with minimal number of params. In each case
+    we want to specify only a sufficient part of all params and just let the others to be
+    inducted.
+
+    Here's all supported notations:
+        a) (100, 0.02) — the total size and sparsity
+        b) (100, 10) — the total size and active SDR size
+        c) ((20, 20), 0.02) — shape and sparsity
+        d) ((20, 20), 10) — shape and active SDR size
+        e) (0.02, 10) — sparsity and active SDR size
+    """
+
     shape: tuple[int, ...]
     size: int
     sparsity: float
