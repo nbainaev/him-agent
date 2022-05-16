@@ -502,7 +502,7 @@ class GwExhaustibleResource(Runner):
         }, step=self.episode)
 
         amg_obs = draw_masked_observation(
-            self.agent.amg.value_network.cell_value,
+            self.agent.amg.get_masked_values(),
             self.environment.renderer.rendering_sdr_sizes
         )
         self.logger.log(

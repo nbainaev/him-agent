@@ -21,7 +21,7 @@ class Agent:
         )
 
         self.amg_striatum = StriatumBlock(
-            inputDimensions=self.amg.out_sdr_shape,
+            inputDimensions=[1, self.amg.sdr_size],
             seed=self.seed, **config['striatum']
         )
         self.sma_striatum = StriatumBlock(
