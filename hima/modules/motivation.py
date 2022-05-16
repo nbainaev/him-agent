@@ -137,26 +137,32 @@ class Amygdala(TDLambda):
     def __init__(
             self, seed: int, sdr_size: int, gamma: float,
             alpha: float, lambda_: float, with_reset: bool,
-            bucket_shape: tuple[int, int], n_buckets: int,
-            min_cut_fraction: float = 0.05
+            filter_factor: float = 0.2
     ):
         super().__init__(seed, sdr_size, gamma, alpha, lambda_, with_reset)
-        self.min_cut_fraction = min_cut_fraction
-        self.encoder = Unit2DEncoder(n_buckets, bucket_shape)
-        self.out_sdr_shape = self.encoder.sdr_shape
-        self.out_sdr_size = self.encoder.sdr_size
+        self.filter_factor = filter_factor
 
     def compute(self, sdr: SparseSdr) -> SparseSdr:
-        value = self.get_value(sdr)
-        output = self.encoder.compute(value)
+        mask = self.get_mask()
+        output = np.intersect1d(sdr, mask)
+        return output
+
+    def get_mask(self) -> SparseSdr:
+        values = self.value_network.cell_value
+        threshold = np.quantile(values, 1 - self.filter_factor)
+        mask = np.flatnonzero(values > threshold)
+        return mask
+
+    def get_masked_values(self):
+        output = np.zeros_like(self.value_network.cell_value)
+        mask = self.get_mask()
+        output[mask] = self.value_network.cell_value[mask]
         return output
 
     def get_value(self, sdr: SparseSdr) -> float:
-        min_ = np.quantile(self.value_network.cell_value, self.min_cut_fraction)
+        min_ = np.min(self.value_network.cell_value)
         max_ = np.max(self.value_network.cell_value)
         value = (self.value_network.value(sdr) - min_) / (max_ - min_)
-        if value < 0:
-            value = 0
         return value
 
 
