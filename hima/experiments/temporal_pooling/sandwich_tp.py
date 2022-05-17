@@ -10,17 +10,17 @@ from htm.bindings.sdr import SDR
 
 
 class SandwichTp:
-    def __init__(self, **kwargs):
+    def __init__(self, seed: int, **kwargs):
         self.initial_pooling = kwargs['initial_pooling']
         self.pooling_decay = kwargs['pooling_decay']
-        self.lower_sp = SpatialPooler(**kwargs['lower_sp_conf'])
+        self.lower_sp = SpatialPooler(seed=seed, **kwargs['lower_sp_conf'])
         if not kwargs['upper_sp_conf'].get('inputDimensions', None):
             # FIXME: dangerous kwargs['upper_sp_conf'] mutation here! We should work with its copy
             upper_sp_input_size = self.lower_sp.getNumColumns()
             kwargs['upper_sp_conf']['inputDimensions'] = [upper_sp_input_size]
             kwargs['upper_sp_conf']['potentialRadius'] = upper_sp_input_size
 
-        self.upper_sp = SpatialPooler(**kwargs['upper_sp_conf'])
+        self.upper_sp = SpatialPooler(seed=seed, **kwargs['upper_sp_conf'])
 
         self._unionSDR = SDR(kwargs['upper_sp_conf']['columnDimensions'])
         self._unionSDR.dense = np.zeros(kwargs['upper_sp_conf']['columnDimensions'])

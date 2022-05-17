@@ -4,68 +4,161 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from hima.common.config_utils import extracted_type, resolve_init_params, extracted
-from hima.common.utils import ensure_absolute_number
-from hima.modules.htm.temporal_memory import ClassicApicalTemporalMemory, DelayedFeedbackTM
+from hima.common.config_utils import (
+    extracted_type, resolve_init_params, extracted,
+    resolve_absolute_quantity
+)
+from hima.common.sds import Sds
+from hima.modules.htm.temporal_memory import DelayedFeedbackTM
 
 
-def resolve_tp(config, temporal_pooler: str, temporal_memory):
-    base_config_tp = config['temporal_poolers'][temporal_pooler]
-    seed = config['seed']
-    input_size = temporal_memory.columns * temporal_memory.cells_per_column if not \
-        isinstance(temporal_memory, ClassicApicalTemporalMemory)  \
-        else temporal_memory.columns
+def resolve_tp(config, temporal_pooler: str, feedforward_sds: Sds, output_sds: Sds, seed: int):
+    tp_config = config['temporal_poolers'][temporal_pooler]
+    tp_config, tp_type = extracted_type(tp_config)
 
-    config_tp = dict(
-        inputDimensions=[input_size],
-        potentialRadius=input_size,
-    )
-
-    base_config_tp, tp_type = extracted_type(base_config_tp)
     if tp_type == 'UnionTp':
         from hima.modules.htm.spatial_pooler import UnionTemporalPooler
-        config_tp = base_config_tp | config_tp
-        tp = UnionTemporalPooler(seed=seed, **config_tp)
+        tp_config = resolve_init_params(
+            tp_config,
+            inputDimensions=feedforward_sds.shape, localAreaDensity=output_sds.sparsity,
+            columnDimensions=output_sds.shape, maxUnionActivity=output_sds.active_size,
+            potentialRadius=feedforward_sds.size, seed=seed
+        )
+        tp = UnionTemporalPooler(**tp_config)
+
     elif tp_type == 'AblationUtp':
         from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
-        config_tp = base_config_tp | config_tp
-        tp = AblationUtp(seed=seed, **config_tp)
+        tp_config = resolve_init_params(
+            tp_config,
+            inputDimensions=feedforward_sds.shape, localAreaDensity=output_sds.sparsity,
+            columnDimensions=output_sds.shape, maxUnionActivity=output_sds.active_size,
+            potentialRadius=feedforward_sds.size, seed=seed
+        )
+        tp = AblationUtp(seed=seed, **tp_config)
+
     elif tp_type == 'CustomUtp':
         from hima.experiments.temporal_pooling.custom_utp import CustomUtp
-        config_tp = base_config_tp | config_tp
-        del config_tp['potentialRadius']
-        tp = CustomUtp(seed=seed, **config_tp)
+        tp_config = resolve_init_params(
+            tp_config,
+            inputDimensions=feedforward_sds.shape,
+            columnDimensions=output_sds.shape, union_sdr_sparsity=output_sds.active_size,
+            seed=seed
+        )
+        tp = CustomUtp(seed=seed, **tp_config)
+
     elif tp_type == 'SandwichTp':
-        # FIXME: dangerous mutations here! We should work with copies
         from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
-        base_config_tp['lower_sp_conf'] = base_config_tp['lower_sp_conf'] | config_tp
-        base_config_tp['lower_sp_conf']['seed'] = seed
-        base_config_tp['upper_sp_conf']['seed'] = seed
-        tp = SandwichTp(**base_config_tp)
+        tp_config = resolve_init_params(tp_config, seed=seed)
+        tp_config['lower_sp_conf'] = resolve_init_params(
+            tp_config['lower_sp_conf'],
+            inputDimensions=feedforward_sds.shape,
+            columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
+            potentialRadius=feedforward_sds.size
+        )
+        tp_config['upper_sp_conf'] = resolve_init_params(
+            tp_config['upper_sp_conf'],
+            inputDimensions=output_sds.shape,
+            columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
+            potentialRadius=output_sds.size
+        )
+        tp = SandwichTp(**tp_config)
+
     else:
         raise KeyError(f'Temporal Pooler type "{tp_type}" is not supported')
-    return tp
+
+    from hima.experiments.temporal_pooling.new.test_on_policies import TemporalPoolerBlock
+    tp_block = TemporalPoolerBlock(feedforward_sds=feedforward_sds, output_sds=output_sds, tp=tp)
+    return tp_block
 
 
-def resolve_tm(config, action_encoder, state_encoder):
-    return make_context_tm(config, action_encoder, state_encoder)
+def resolve_context_tm(
+        tm_config, ff_sds: Sds, bc_sds: Sds, seed: int
+):
+    # resolve only what is available already
+    tm_config = resolve_init_params(
+        tm_config, raise_if_not_resolved=False,
+        ff_sds=ff_sds, bc_sds=bc_sds, seed=seed
+    )
+    tm_config, ff_sds, bc_sds, bc_config = extracted(tm_config, 'ff_sds', 'bc_sds', 'basal_context')
+
+    # resolve quantities based on FF and BC SDS settings
+    tm_config = resolve_init_params(
+        tm_config, raise_if_not_resolved=False,
+        columns=ff_sds.size, context_cells=bc_sds.size,
+    )
+
+    # append extracted and resolved BC config
+    tm_config |= resolve_tm_connections_region(bc_config, bc_sds, '_basal')
+
+    from hima.experiments.temporal_pooling.new.test_on_policies import ContextTemporalMemoryBlock
+    return ContextTemporalMemoryBlock(
+        ff_sds=ff_sds, bc_sds=bc_sds, **tm_config
+    )
 
 
-def make_context_tm(config, action_encoder, state_encoder):
+def resolve_context_tm_apical_feedback(fb_sds: Sds, tm_block):
+    tm_config = tm_block.tm_config
+
+    # resolve FB SDS setting
+    tm_config = resolve_init_params(
+        tm_config, raise_if_not_resolved=False,
+        fb_sds=fb_sds
+    )
+    tm_config, fb_sds, fb_config = extracted(tm_config, 'fb_sds', 'apical_feedback')
+
+    # resolve quantities based on FB SDS settings; implicitly asserts all other fields are resolved
+    tm_config = resolve_init_params(tm_config, feedback_cells=fb_sds.size)
+
+    # append extracted and resolved FB config
+    tm_config |= resolve_tm_connections_region(fb_config, fb_sds, '_apical')
+
+    tm_block.set_apical_feedback(fb_sds=fb_sds, resolved_tm_config=tm_config)
+
+
+def resolve_tm_connections_region(connections_config, sds, suffix):
+    sample_size = sds.active_size
+    activation_threshold = resolve_absolute_quantity(
+        connections_config['activation_threshold'],
+        baseline=sds.size
+    )
+    learning_threshold = resolve_absolute_quantity(
+        connections_config['learning_threshold'],
+        baseline=sds.size
+    )
+    max_synapses_per_segment = resolve_absolute_quantity(
+        connections_config['max_synapses_per_segment'],
+        baseline=sds.active_size
+    )
+    induced_config = dict(
+        sample_size=sample_size, activation_threshold=activation_threshold,
+        learning_threshold=learning_threshold,
+        max_synapses_per_segment=max_synapses_per_segment
+    )
+    connections_config = connections_config | induced_config
+    return {
+        f'{k}{suffix}': connections_config[k]
+        for k in connections_config
+    }
+
+
+def resolve_context_tm_2(
+        config, action_encoder, state_encoder,
+
+):
     base_config_tm = config['temporal_memory']
     seed = config['seed']
 
     # apical feedback
     apical_feedback_cells = base_config_tm['feedback_cells']
-    apical_active_bits = ensure_absolute_number(
+    apical_active_bits = resolve_absolute_quantity(
         base_config_tm['sample_size_apical'],
         baseline=apical_feedback_cells
     )
-    activation_threshold_apical = ensure_absolute_number(
+    activation_threshold_apical = resolve_absolute_quantity(
         base_config_tm['activation_threshold_apical'],
         baseline=apical_active_bits
     )
-    learning_threshold_apical = ensure_absolute_number(
+    learning_threshold_apical = resolve_absolute_quantity(
         base_config_tm['learning_threshold_apical'],
         baseline=apical_active_bits
     )
@@ -76,17 +169,17 @@ def make_context_tm(config, action_encoder, state_encoder):
     config_tm = dict(
         columns=action_encoder.output_sdr_size,
 
-        feedback_cells=apical_feedback_cells,
-        sample_size_apical=apical_active_bits,
-        activation_threshold_apical=activation_threshold_apical,
-        learning_threshold_apical=learning_threshold_apical,
-        max_synapses_per_segment_apical=apical_active_bits,
-
         context_cells=state_encoder.output_sdr_size,
         sample_size_basal=basal_active_bits,
         activation_threshold_basal=basal_active_bits,
         learning_threshold_basal=basal_active_bits,
         max_synapses_per_segment_basal=basal_active_bits,
+
+        feedback_cells=apical_feedback_cells,
+        sample_size_apical=apical_active_bits,
+        activation_threshold_apical=activation_threshold_apical,
+        learning_threshold_apical=learning_threshold_apical,
+        max_synapses_per_segment_apical=apical_active_bits,
     )
 
     # it's necessary as we shadow some "relative" values with the "absolute" values

@@ -2,19 +2,15 @@ _type_: tp.policy
 project: temporal_pooling
 log: True    # wandb logging
 
-# FIXME: using &key/*key is error prone with sweeps overwriting
-.shared_params:
-#  n_states: &n_states 30
-#  tp_output_size: &tp_output_size 4000
-  n_states: &n_states 10
-  n_actions: &n_actions 4
-  tp_output_size: &tp_output_size 400
-  state_bucket: &state_bucket 10
-
 run_setup: simple
 policy_selection_rule: ordered
 temporal_pooler: union_tp
 seed: 42
+
+pipeline:
+  - generator
+  - temporal_memory
+  - temporal_pooler
 
 run_setups:
   simple:
@@ -24,6 +20,7 @@ run_setups:
     steps_per_policy: ...
     policy_repeats: 3
     epochs: 2
+    tp_output_sds: [400, 10]
 
   full:
     n_policies: 8
@@ -32,6 +29,7 @@ run_setups:
     steps_per_policy: ...
     policy_repeats: 20
     epochs: 4
+    tp_output_sds: [2000, 40]
 
 generator:
   _type_: synthetic
@@ -60,9 +58,18 @@ encoders:
 temporal_poolers:
   union_tp:
     _type_: UnionTp
-    columnDimensions: [*tp_output_size]
-    localAreaDensity: 0.01
-    maxUnionActivity: &tp_output_sparsity 0.01
+    seed: ???
+    # input
+    inputDimensions: ???
+    potentialRadius: ???
+    potentialPct: 0.5
+    globalInhibition: True
+    # intermediate
+    localAreaDensity: ???
+    # output
+    columnDimensions: ???
+    maxUnionActivity: ???
+
     activeOverlapWeight: 1
     predictedActiveOverlapWeight: 2
     exciteFunctionType: Logistic
@@ -73,11 +80,9 @@ temporal_poolers:
     historyLength: 20
     minHistory: 3
     boostStrength: 0.0
-    globalInhibition: True
     dutyCyclePeriod: 1000
     minPctOverlapDutyCycle: 0.001
     numActiveColumnsPerInhArea: 0
-    potentialPct: 0.5
     stimulusThreshold: 3
     synPermConnected: 0.5
     synPermActiveInc: 0.1
@@ -86,9 +91,18 @@ temporal_poolers:
 
   ablation_utp:
     _type_: AblationUtp
-    columnDimensions: [*tp_output_size]
-    localAreaDensity: 0.01
-    maxUnionActivity: 0.01
+    seed: ???
+    # input
+    inputDimensions: ???
+    potentialRadius: ???
+    potentialPct: 0.5
+    globalInhibition: True
+    # intermediate
+    localAreaDensity: ???
+    # output
+    columnDimensions: ???
+    maxUnionActivity: ???
+
     activeOverlapWeight: 1
     predictedActiveOverlapWeight: 2
     exciteFunctionType: Logistic
@@ -99,11 +113,9 @@ temporal_poolers:
     historyLength: 20
     minHistory: 3
     boostStrength: 0.0
-    globalInhibition: True
     dutyCyclePeriod: 1000
     minPctOverlapDutyCycle: 0.001
     numActiveColumnsPerInhArea: 0
-    potentialPct: 0.5
     stimulusThreshold: 3
     synPermConnected: 0.5
     synPermActiveInc: 0.1
@@ -118,44 +130,61 @@ temporal_poolers:
 
   custom_utp:
     _type_: CustomUtp
-    inputDimensions: ...
-    columnDimensions: [*tp_output_size]
+    seed: ???
+    # input
+    inputDimensions: ???
+    # intermediate
+    sparsity: 0.004
+    # output
+    columnDimensions: ???
+    union_sdr_sparsity: ???
+
+    potentialRadius: ???
     initial_pooling: 0.5
     pooling_decay: 0.1
     permanence_inc: 0.1
     permanence_dec: 0.01
-    sparsity: 0.004
     active_weight: 0.5
     predicted_weight: 2.0
     receptive_field_sparsity: 0.5
     activation_threshold: 0.6
     history_length: 20
-    union_sdr_sparsity: 0.01
     prev_perm_inc: 0.05
 
   sandwich_tp:
     _type_: SandwichTp
+    seed: ???
     initial_pooling: 1.
     pooling_decay: 0.05
     lower_sp_conf:
-      columnDimensions: [*tp_output_size]
-      boostStrength: 0.
-      localAreaDensity: 0.01
+      # input
+      inputDimensions: ???
+      potentialRadius: ???
+      potentialPct: 0.5
       globalInhibition: True
+      # output
+      columnDimensions: ???
+      localAreaDensity: ???
+
+      boostStrength: 0.
       dutyCyclePeriod: 1000
       minPctOverlapDutyCycle: 0.001
       numActiveColumnsPerInhArea: 0
-      potentialPct: 0.5
       stimulusThreshold: 3
       synPermConnected: 0.5
       synPermActiveInc: 0.1
       synPermInactiveDec: 0.01
       wrapAround: False
     upper_sp_conf:
-      columnDimensions: [*tp_output_size]
-      boostStrength: 0.
-      localAreaDensity: 0.01
+      # input: lower output
+      inputDimensions: ???
+      # output
+      columnDimensions: ???
+      localAreaDensity: ???
+
+      potentialRadius: ???
       globalInhibition: True
+      boostStrength: 0.
       dutyCyclePeriod: 1000
       minPctOverlapDutyCycle: 0.001
       numActiveColumnsPerInhArea: 0
@@ -168,30 +197,40 @@ temporal_poolers:
 
 
 temporal_memory:
+  ff_sds: ???
+  columns: ???
   cells_per_column: 16
-  # apical feedback
-  feedback_cells: *tp_output_size
-  sample_size_apical: *tp_output_sparsity
-  activation_threshold_apical: 0.9
-  learning_threshold_apical: 0.8
-  connected_threshold_apical: 0.5
-  permanence_increment_apical: 0.1
-  permanence_decrement_apical: 0.01
-  initial_permanence_apical: 0.4
-  predicted_segment_decrement_apical: 0.001
-  max_segments_per_cell_apical: 32
-  # basal context
-  activation_threshold_basal: *state_bucket # 1.0
-  learning_threshold_basal: *state_bucket # 1.0
-  connected_threshold_basal: 0.5
-  permanence_increment_basal: 0.1
-  permanence_decrement_basal: 0.01
-  initial_permanence_basal: 0.4
-  predicted_segment_decrement_basal: 0.001
-  max_segments_per_cell_basal: 32
   prune_zero_synapses: True
   timeseries: False
   anomaly_window: 1000
   confidence_window: 1000
-  noise_tolerance: 0.0
   sm_ac: 0.99
+  seed: ???
+
+  bc_sds: ???
+  context_cells: ???
+  basal_context:
+    sample_size: ???
+    activation_threshold: 0.85
+    learning_threshold: 0.5
+    max_synapses_per_segment: 1.2
+    max_segments_per_cell: 32
+    connected_threshold: 0.5
+    permanence_increment: 0.1
+    permanence_decrement: 0.05
+    initial_permanence: 0.41
+    predicted_segment_decrement: 0.001
+
+  fb_sds: ???
+  feedback_cells: ???
+  apical_feedback:
+    sample_size: ???
+    activation_threshold: 0.85
+    learning_threshold: 0.6
+    max_synapses_per_segment: 1.2
+    max_segments_per_cell: 32
+    connected_threshold: 0.5
+    permanence_increment: 0.05
+    permanence_decrement: 0.02
+    initial_permanence: 0.41
+    predicted_segment_decrement: 0.001

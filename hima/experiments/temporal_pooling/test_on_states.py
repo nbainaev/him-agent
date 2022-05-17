@@ -15,10 +15,10 @@ from wandb.sdk.wandb_run import Run
 
 from copy import copy
 
-from hima.common.config_utils import TConfig, extracted_type
+from hima.common.config_utils import TConfig, extracted_type, resolve_absolute_quantity
 from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
-from hima.common.utils import safe_divide, ensure_absolute_number
+from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
 from hima.experiments.temporal_pooling.custom_utp import CustomUtp
 from hima.experiments.temporal_pooling.config_resolvers import resolve_data_generator
