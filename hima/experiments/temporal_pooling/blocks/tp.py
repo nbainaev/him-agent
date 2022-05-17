@@ -14,6 +14,7 @@ from hima.common.sds import Sds
 
 
 class TemporalPoolerBlock:
+    name: str
     feedforward_sds: Sds
     output_sds: Sds
     tp: Any

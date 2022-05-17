@@ -11,6 +11,8 @@ pipeline:
   - generator
   - temporal_memory
   - temporal_pooler
+#  - temporal_memory_2
+#  - temporal_pooler_2
 
 run_setups:
   simple:

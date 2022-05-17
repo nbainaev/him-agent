@@ -11,6 +11,7 @@ from hima.modules.htm.temporal_memory import DelayedFeedbackTM
 
 
 class ContextTemporalMemoryBlock:
+    name: str
     feedforward_sds: Sds
     cells_per_column: int
     basal_context_sds: Sds

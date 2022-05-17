@@ -98,7 +98,7 @@ class PoliciesExperiment(Runner):
         feedforward, feedback = [], []
         # context is fixed for all levels (as I don't know what another context to take)
         context = state
-        prev_block_name = None
+        prev_block = None
 
         for block_name in self.pipeline:
             block = self.blocks[block_name]
@@ -114,7 +114,7 @@ class PoliciesExperiment(Runner):
                 active_input, correctly_predicted_input = feedforward
                 # stats
             elif block_name.startswith('temporal_pooler'):
-                after_tm = prev_block_name.startswith('temporal_memory')
+                after_tm = prev_block.name.startswith('temporal_memory')
                 if after_tm:
                     active_input, correctly_predicted_input = feedforward
                     feedforward = block.compute(
@@ -122,13 +122,13 @@ class PoliciesExperiment(Runner):
                         predicted_input=correctly_predicted_input,
                         learn=learn
                     )
-                    self.blocks[prev_block_name].pass_feedback(feedforward)
+                    prev_block.pass_feedback(feedforward)
                 else:
                     feedforward = block.compute(
                         active_input=feedforward, predicted_input=feedforward, learn=learn
                     )
                 # stats
-            prev_block_name = block_name
+            prev_block = block
 
         # self.stats.on_step(
         #     policy_id=policy.id,
@@ -145,7 +145,7 @@ class PoliciesExperiment(Runner):
     def build_blocks(self, temporal_pooler: str) -> dict:
         blocks = {}
         feedforward_sds, context_sds = None, None
-        prev_block_name = None
+        prev_block = None
         for block_name in self.pipeline:
             if block_name == 'generator':
                 data_generator = resolve_data_generator(
@@ -172,14 +172,15 @@ class PoliciesExperiment(Runner):
                     output_sds=self.run_setup.tp_output_sds,
                     seed=self.seed
                 )
-                if prev_block_name.startswith('temporal_memory'):
+                if prev_block.name.startswith('temporal_memory'):
                     resolve_context_tm_apical_feedback(
-                        fb_sds=block.output_sds, tm_block=blocks[prev_block_name]
+                        fb_sds=block.output_sds, tm_block=prev_block
                     )
                 feedforward_sds = block.output_sds
             else:
                 raise KeyError(f'Block name "{block_name}" is not supported')
 
+            block.name = block_name
             blocks[block_name] = block
-            prev_block_name = block_name
+            prev_block = block
         return blocks

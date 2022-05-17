@@ -29,6 +29,7 @@ class Policy:
 
 
 class SyntheticDatasetBlock:
+    name: str
     n_states: int
     n_actions: int
 
