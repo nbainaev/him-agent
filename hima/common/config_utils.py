@@ -10,8 +10,7 @@ from typing import Iterable, Any, Optional, Union
 
 from ruamel import yaml
 
-from hima.common.utils import ensure_list
-
+from hima.common.utils import ensure_list, isnone
 
 # TODO: rename file to `config` and add top-level description comment
 
@@ -72,21 +71,77 @@ def extracted_type(config: TConfig) -> tuple[TConfig, Optional[str]]:
 
 
 # ==================== config dict value induction ====================
-def resolve_value(value, key, induction_registry):
+def resolve_absolute_quantity(abs_or_relative: Union[int, float], baseline: int) -> int:
+    """
+    Convert passed quantity to the absolute quantity regarding its type and the baseline value.
+    Here we consider that ints relate to the absolute quantities and floats
+    relate to the relative quantities (relative to the `baseline` value).
+
+    Examples:
+        ensure_absolute(10, 20) -> 10
+        ensure_absolute(1.25, 20) -> 25
+
+
+    Parameters
+    ----------
+    abs_or_relative: int or float
+        The value to convert. If it's int then it's returned as is. Otherwise, it's
+        converted to the absolute system relative to the `baseline` value
+    baseline: int
+        The baseline for the relative number system.
+
+    Returns
+    -------
+        Integer value in the absolute quantities system
+    """
+
+    if isinstance(abs_or_relative, float):
+        relative = abs_or_relative
+        return int(baseline * relative)
+    elif isinstance(abs_or_relative, int):
+        absolute = abs_or_relative
+        return absolute
+    else:
+        raise TypeError(f'Function does not support type {type(abs_or_relative)}')
+
+
+def resolve_relative_quantity(abs_or_relative: Union[int, float], baseline: int) -> float:
+    """See `resolve_absolute_quantity` - this method is the opposite of it."""
+
+    if isinstance(abs_or_relative, float):
+        relative = abs_or_relative
+        return relative
+    elif isinstance(abs_or_relative, int):
+        absolute = abs_or_relative
+        return absolute / baseline
+    else:
+        raise TypeError(f'Function does not support type {type(abs_or_relative)}')
+
+
+def resolve_value(
+        value: Any, key: str, induction_registry: dict, raise_if_not_resolved: bool = True
+) -> Any:
     if value == _TO_BE_NONE_VALUE:
         return None
     elif value == _TO_BE_INDUCED_VALUE:
-        return induction_registry[key]
+        if raise_if_not_resolved:
+            return induction_registry[key]
+        else:
+            return induction_registry.get(key, _TO_BE_INDUCED_VALUE)
 
     return value
 
 
-def resolve_init_params(config, **induction_registry):
+def resolve_init_params(config: dict, *, raise_if_not_resolved = True, **induction_registry):
     return {
-        k: resolve_value(config[k], k, induction_registry)
+        k: resolve_value(config[k], k, induction_registry, raise_if_not_resolved)
         for k in config
     }
 
+
+def assert_all_resolved(config: dict):
+    for k in config:
+        resolve_value(config[k], k, {}, raise_if_not_resolved=True)
 
 # ==================== config dict compilation and values parsing ====================
 def override_config(
