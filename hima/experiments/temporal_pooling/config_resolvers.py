@@ -12,8 +12,7 @@ from hima.common.sds import Sds
 from hima.modules.htm.temporal_memory import DelayedFeedbackTM
 
 
-def resolve_tp(config, temporal_pooler: str, feedforward_sds: Sds, output_sds: Sds, seed: int):
-    tp_config = config['temporal_poolers'][temporal_pooler]
+def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
     tp_config, tp_type = extracted_type(tp_config)
 
     if tp_type == 'UnionTp':
@@ -66,7 +65,7 @@ def resolve_tp(config, temporal_pooler: str, feedforward_sds: Sds, output_sds: S
     else:
         raise KeyError(f'Temporal Pooler type "{tp_type}" is not supported')
 
-    from hima.experiments.temporal_pooling.new.test_on_policies import TemporalPoolerBlock
+    from hima.experiments.temporal_pooling.blocks.tp import TemporalPoolerBlock
     tp_block = TemporalPoolerBlock(feedforward_sds=feedforward_sds, output_sds=output_sds, tp=tp)
     return tp_block
 
@@ -90,7 +89,7 @@ def resolve_context_tm(
     # append extracted and resolved BC config
     tm_config |= resolve_tm_connections_region(bc_config, bc_sds, '_basal')
 
-    from hima.experiments.temporal_pooling.new.test_on_policies import ContextTemporalMemoryBlock
+    from hima.experiments.temporal_pooling.blocks.context_tm import ContextTemporalMemoryBlock
     return ContextTemporalMemoryBlock(
         ff_sds=ff_sds, bc_sds=bc_sds, **tm_config
     )
@@ -112,7 +111,7 @@ def resolve_context_tm_apical_feedback(fb_sds: Sds, tm_block):
     # append extracted and resolved FB config
     tm_config |= resolve_tm_connections_region(fb_config, fb_sds, '_apical')
 
-    tm_block.set_apical_feedback(fb_sds=fb_sds, resolved_tm_config=tm_config)
+    tm_block.configure_apical_feedback(fb_sds=fb_sds, resolved_tm_config=tm_config)
 
 
 def resolve_tm_connections_region(connections_config, sds, suffix):

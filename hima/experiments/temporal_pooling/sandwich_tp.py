@@ -36,7 +36,7 @@ class SandwichTp:
         self._pooling_activations[self._pooling_activations != 0] -= self.pooling_decay
         self._pooling_activations = self._pooling_activations.clip(0, 1)
 
-    def compute(self, active_neurons: SDR, predicted_neurons: SDR, learn: bool = True):
+    def compute(self, active_neurons: SDR, predicted_neurons: SDR, learn: bool = True) -> SDR:
         self._pooling_decay_step()
 
         input_representation = SDR(self._pooling_activations.shape)
@@ -47,6 +47,8 @@ class SandwichTp:
         sdr_for_upper = SDR(self._pooling_activations.shape)
         sdr_for_upper.dense = self._pooling_activations != 0
         self.upper_sp.compute(sdr_for_upper, learn=learn, output=self._unionSDR)
+
+        return self.getUnionSDR()
 
     def getUnionSDR(self):
         # ---- middle layer --------

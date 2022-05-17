@@ -656,8 +656,10 @@ class UnionTemporalPooler(HtmSpatialPooler):
             self.setMinOverlapDutyCycles(np.zeros(self.getNumColumns(), dtype=REAL_DTYPE))
             self.setBoostFactors(np.ones(self.getNumColumns(), dtype=REAL_DTYPE))
 
-    def compute(self, input_active: SDR, correctly_predicted_input: SDR,
-                learn: bool):
+    # noinspection PyMethodOverriding
+    def compute(
+            self, input_active: SDR, correctly_predicted_input: SDR, learn: bool
+    ) -> SDR:
         """
     Computes one cycle of the Union Temporal Pooler algorithm.
     @param input_active (SDR) Input bottom up feedforward activity
@@ -726,7 +728,7 @@ class UnionTemporalPooler(HtmSpatialPooler):
                 self._prePredictedActiveInput.pop(0)
             self._prePredictedActiveInput.append(correctly_predicted_input)
 
-        return self._unionSDR
+        return self.getUnionSDR()
 
     def _decayPoolingActivation(self):
         """

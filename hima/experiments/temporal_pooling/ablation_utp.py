@@ -176,7 +176,7 @@ class AblationUtp(SpatialPooler):
     # noinspection PyMethodOverriding
     def compute(
             self, input_active: SDR, correctly_predicted_input: SDR, learn: bool
-    ):
+    ) -> SDR:
         """
         Computes one cycle of the Union Temporal Pooler algorithm.
         @param input_active (SDR) Input bottom up feedforward activity
@@ -258,7 +258,7 @@ class AblationUtp(SpatialPooler):
                 self._prePredictedActiveInput.pop(0)
             self._prePredictedActiveInput.append(correctly_predicted_input)
 
-        return self._unionSDR
+        return self.getUnionSDR()
 
     def _decayPoolingActivation(self):
         """

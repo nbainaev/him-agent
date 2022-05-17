@@ -9,12 +9,10 @@ from typing import Optional, Iterator
 import numpy as np
 from numpy.random import Generator
 
-from hima.common.sdr import SparseSdr
-
 import pickle
 
-from hima.common.sds import Sds
 from hima.common.utils import clip
+from hima.experiments.temporal_pooling.blocks.policies_dataset import SyntheticDatasetBlock, Policy
 from hima.experiments.temporal_pooling.config_resolvers import resolve_encoder
 from hima.experiments.temporal_pooling.metrics import sdrs_similarity
 
@@ -33,30 +31,14 @@ def v1_output_similarity(output1, output2):
     return sim/n
 
 
-class Policy:
-    id: int
-    _policy: np.ndarray
-
-    def __init__(self, id_: int, policy, seed=None):
-        self.id = id_
-        self._policy = policy
-
-    def __iter__(self) -> Iterator[tuple[SparseSdr, SparseSdr]]:
-        return iter(self._policy)
-
-    def shuffle(self) -> None:
-        ...
-
-
 class SyntheticGenerator:
     n_states: int
     n_actions: int
 
-    states_sds: Sds
-    actions_sds: Sds
-
     policy_similarity: float
     policy_similarity_std: float
+
+    seed: int
     _rng: Generator
 
     def __init__(
@@ -87,9 +69,11 @@ class SyntheticGenerator:
 
         self.policy_similarity = policy_similarity
         self.policy_similarity_std = policy_similarity_std
+
+        self.seed = seed
         self._rng = np.random.default_rng(seed)
 
-    def generate_policies(self, n_policies) -> list[Policy]:
+    def generate_policies(self, n_policies) -> SyntheticDatasetBlock:
         n_states, n_actions = self.n_states, self.n_actions
         rng = self._rng
 
@@ -134,7 +118,11 @@ class SyntheticGenerator:
 
             encoded_policies.append(Policy(id_=i_policy, policy=policy))
 
-        return encoded_policies
+        return SyntheticDatasetBlock(
+            n_states=self.n_states, states_sds=self.states_sds,
+            n_actions=self.n_actions, actions_sds=self.actions_sds,
+            policies=encoded_policies, seed=self.seed
+        )
 
 
 class AAIRotationsGenerator:
@@ -164,25 +152,36 @@ class AAIRotationsGenerator:
         return sim_matrix
 
 
-class PolicySelector:
-    n_policies: int
+class SequenceSelector:
+    n_elements: int
     regime: str
-
     seed: Optional[int]
 
-    def __init__(self, n_policies: int, regime: str, seed: int = None):
-        self.n_policies = n_policies
+    indices: np.ndarray
+
+    def __init__(self, n_elements: int, regime: str, seed: int = None):
+        self.n_elements = n_elements
         self.regime = regime
         self.seed = seed
+        self.indices = self._select_order()
 
-    def __iter__(self):
+    def reshuffle(self):
+        self.seed = np.random.default_rng(self.seed).integers(100000)
+        self.indices = self._select_order()
+
+    def __iter__(self) -> Iterator[int]:
+        if self.regime == 'unordered':
+            # re-shuffle each time making the order to be random
+            self.reshuffle()
+
+        return iter(self.indices)
+
+    def _select_order(self) -> np.ndarray:
         if self.regime == 'ordered':
-            return range(self.n_policies)
-        elif self.regime == 'random':
-            assert self.seed is not None, 'seed is expected for random selector'
-
+            return np.arange(self.n_elements)
+        elif self.regime == 'shuffled' or self.regime == 'unordered':
             rng = np.random.default_rng(self.seed)
-            return iter(rng.permutation(self.n_policies))
+            return rng.permutation(self.n_elements)
         else:
             raise KeyError(f'{self.regime} is not supported')
 

@@ -191,7 +191,7 @@ class CustomUtp:
         else:
             self._union_sdr.dense = self._pooling_activations != 0
 
-    def compute(self, active_neurons: SDR, predicted_neurons: SDR, learn: bool = True):
+    def compute(self, active_neurons: SDR, predicted_neurons: SDR, learn: bool = True) -> SDR:
         overlap = self.count_overlap(active_neurons, predicted_neurons)
         winners = self.choose_winners(overlap)
 
@@ -203,6 +203,8 @@ class CustomUtp:
 
         if learn:
             self.update_permanences(predicted_neurons, winners)
+
+        return self.getUnionSDR()
 
     def getUnionSDR(self):
         return self._union_sdr

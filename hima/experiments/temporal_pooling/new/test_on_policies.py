@@ -5,7 +5,6 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from typing import Optional, Any
 
-from htm.bindings.sdr import SDR
 from wandb.sdk.wandb_run import Run
 
 from hima.common.config_utils import TConfig
@@ -13,55 +12,13 @@ from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone
+from hima.experiments.temporal_pooling.blocks.context_tm import ContextTemporalMemoryBlock
 from hima.experiments.temporal_pooling.config_resolvers import (
     resolve_tp, resolve_data_generator, resolve_run_setup, resolve_context_tm,
     resolve_context_tm_apical_feedback
 )
+from hima.experiments.temporal_pooling.blocks.policies_dataset import Policy
 from hima.experiments.temporal_pooling.new.test_on_policies_stats import ExperimentStats
-from hima.modules.htm.temporal_memory import DelayedFeedbackTM
-
-
-class ContextTemporalMemoryBlock:
-    feedforward_sds: Sds
-    cells_per_column: int
-    basal_context_sds: Sds
-    apical_feedback_sds: Sds
-    cells_sds: Sds
-
-    tm: DelayedFeedbackTM
-    tm_config: dict
-
-    def __init__(self, ff_sds: Sds, bc_sds: Sds, **partially_resolved_tm_config):
-        cells_per_column = partially_resolved_tm_config['cells_per_column']
-
-        self.feedforward_sds = ff_sds
-        self.cells_per_column = cells_per_column
-        self.basal_context_sds = bc_sds
-        self.cells_sds = Sds(
-            size=self.feedforward_sds.size * cells_per_column,
-            active_size=self.feedforward_sds.active_size
-        )
-        self.tm_config = partially_resolved_tm_config
-
-    def set_apical_feedback(self, fb_sds, resolved_tm_config):
-        self.apical_feedback_sds = fb_sds
-        self.tm_config = resolved_tm_config
-        self.tm = DelayedFeedbackTM(**self.tm_config)
-
-    @property
-    def output_sds(self):
-        return self.cells_sds
-
-
-class TemporalPoolerBlock:
-    feedforward_sds: Sds
-    output_sds: Sds
-    tp: Any
-
-    def __init__(self, feedforward_sds: Sds, output_sds: Sds, tp: Any):
-        self.feedforward_sds = feedforward_sds
-        self.output_sds = output_sds
-        self.tp = tp
 
 
 class RunSetup:
@@ -94,11 +51,9 @@ class PoliciesExperiment(Runner):
 
     seed: int
     run_setup: RunSetup
-    pipeline: list
+    pipeline: list[str]
+    blocks: dict[str, Any]
     stats: ExperimentStats
-
-    _tp_active_input: SDR
-    _tp_predicted_input: SDR
 
     def __init__(
             self, config: TConfig, run_setup, seed: int,
@@ -110,121 +65,121 @@ class PoliciesExperiment(Runner):
         self.run_setup = resolve_run_setup(config, run_setup)
 
         print('==> Init')
-        self.data_generator = resolve_data_generator(
-            config,
-            n_states=self.run_setup.n_states,
-            n_actions=self.run_setup.n_actions,
-            seed=self.seed
-        )
+        self.pipeline = pipeline
+        self.blocks = self.build_blocks(temporal_pooler)
+        self.input_data = self.blocks[self.pipeline[0]]
 
-        self.pipeline = []
-        for block_name in pipeline:
-            if block_name == 'generator':
-                block = self.data_generator
-            elif block_name == 'temporal_memory':
-                block = resolve_context_tm(
-                    tm_config=self.config['temporal_memory'],
-                    ff_sds=self.data_generator.actions_sds,
-                    bc_sds=self.data_generator.states_sds,
-                    seed=self.seed
-                )
-                print(block.feedforward_sds, block.output_sds, block.basal_context_sds)
-            elif block_name == 'temporal_pooler':
-                prev_block = self.pipeline[-1]
-                block = resolve_tp(
-                    self.config, temporal_pooler,
-                    feedforward_sds=prev_block.output_sds,
-                    output_sds=self.run_setup.tp_output_sds,
-                    seed=seed
-                )
-                if isinstance(prev_block, ContextTemporalMemoryBlock):
-                    resolve_context_tm_apical_feedback(block.output_sds, prev_block)
-            else:
-                raise KeyError(f'Block name "{block_name}" is not supported')
-
-            self.pipeline.append(block)
-
-        # self.temporal_pooler = resolve_tp(
-        #     self.config, temporal_pooler,
-        #     temporal_memory=self.temporal_memory
-        # )
         # self.stats = ExperimentStats(self.temporal_pooler)
-        #
-        # # pre-allocated SDR
-        # tp_input_size = self.temporal_pooler.getNumInputs()
-        # self._tp_active_input = SDR(tp_input_size)
-        # self._tp_predicted_input = SDR(tp_input_size)
 
     def run(self):
         print('==> Generate policies')
-        return
-        policies = self.data_generator.generate_policies(self.n_policies)
 
         print('==> Run')
-        for epoch in range(self.epochs):
-            self.train_epoch(policies)
+        for epoch in range(self.run_setup.epochs):
+            self.train_epoch()
 
-        self.stats.on_finish(
-            policies=policies,
-            logger=self.logger
-        )
+        # self.stats.on_finish(
+        #     policies=policies,
+        #     logger=self.logger
+        # )
         print('<==')
 
-    def train_epoch(self, policies):
-        representations = []
-
-        for policy in policies:
-            self.temporal_pooler.reset()
-            for i in range(self.policy_repeats):
+    def train_epoch(self):
+        for policy in self.input_data:
+            self.reset_blocks(block_type='temporal_pooler')
+            for i in range(self.run_setup.policy_repeats):
                 self.run_policy(policy, learn=True)
 
-            representations.append(self.temporal_pooler.getUnionSDR())
-        return representations
-
-    def run_policy(self, policy, learn=True):
-        tm, tp = self.temporal_memory, self.temporal_pooler
-
+    def run_policy(self, policy: Policy, learn=True):
         for state, action in policy:
-            self.compute_tm_step(
-                feedforward_input=action,
-                basal_context=state,
-                apical_feedback=self.temporal_pooler.getUnionSDR().sparse,
-                learn=learn
-            )
-            self.compute_tp_step(
-                active_input=tm.get_active_cells(),
-                predicted_input=tm.get_correctly_predicted_cells(),
-                learn=learn
-            )
-            self.stats.on_step(
-                policy_id=policy.id,
-                temporal_memory=self.temporal_memory,
-                temporal_pooler=self.temporal_pooler,
-                logger=self.logger
-            )
+            self.step(state, action, learn)
 
-    def compute_tm_step(
-            self, feedforward_input: SparseSdr, basal_context: SparseSdr,
-            apical_feedback: SparseSdr, learn: bool
-    ):
-        tm = self.temporal_memory
+    def step(self, state: SparseSdr, action: SparseSdr, learn: bool):
+        feedforward, feedback = [], []
+        # context is fixed for all levels (as I don't know what another context to take)
+        context = state
+        prev_block_name = None
 
-        tm.set_active_context_cells(basal_context)
-        tm.activate_basal_dendrites(learn)
+        for block_name in self.pipeline:
+            block = self.blocks[block_name]
 
-        tm.set_active_feedback_cells(apical_feedback)
-        tm.activate_apical_dendrites(learn)
-        tm.propagate_feedback()
+            if block_name == 'generator':
+                feedforward = action
+                # stats
+            elif block_name.startswith('temporal_memory'):
+                feedforward = block.compute(
+                    feedforward_input=feedforward, basal_context=context, learn=learn
+                )
 
-        tm.predict_cells()
+                active_input, correctly_predicted_input = feedforward
+                # stats
+            elif block_name.startswith('temporal_pooler'):
+                after_tm = prev_block_name.startswith('temporal_memory')
+                if after_tm:
+                    active_input, correctly_predicted_input = feedforward
+                    feedforward = block.compute(
+                        active_input=active_input,
+                        predicted_input=correctly_predicted_input,
+                        learn=learn
+                    )
+                    self.blocks[prev_block_name].pass_feedback(feedforward)
+                else:
+                    feedforward = block.compute(
+                        active_input=feedforward, predicted_input=feedforward, learn=learn
+                    )
+                # stats
+            prev_block_name = block_name
 
-        tm.set_active_columns(feedforward_input)
-        tm.activate_cells(learn)
+        # self.stats.on_step(
+        #     policy_id=policy.id,
+        #     temporal_memory=self.temporal_memory,
+        #     temporal_pooler=self.temporal_pooler,
+        #     logger=self.logger
+        # )
 
-    def compute_tp_step(self, active_input: SparseSdr, predicted_input: SparseSdr, learn: bool):
-        self._tp_active_input.sparse = active_input.copy()
-        self._tp_predicted_input.sparse = predicted_input.copy()
+    def reset_blocks(self, block_type):
+        for block_name in self.pipeline:
+            if block_name.startswith(block_type):
+                self.blocks[block_name].reset()
 
-        self.temporal_pooler.compute(self._tp_active_input, self._tp_predicted_input, learn)
+    def build_blocks(self, temporal_pooler: str) -> dict:
+        blocks = {}
+        feedforward_sds, context_sds = None, None
+        prev_block_name = None
+        for block_name in self.pipeline:
+            if block_name == 'generator':
+                data_generator = resolve_data_generator(
+                    self.config,
+                    n_states=self.run_setup.n_states,
+                    n_actions=self.run_setup.n_actions,
+                    seed=self.seed
+                )
+                block = data_generator.generate_policies(self.run_setup.n_policies)
+                feedforward_sds = block.output_sds
+                context_sds = block.context_sds
+            elif block_name.startswith('temporal_memory'):
+                block = resolve_context_tm(
+                    tm_config=self.config['temporal_memory'],
+                    ff_sds=feedforward_sds,
+                    bc_sds=context_sds,
+                    seed=self.seed
+                )
+                feedforward_sds = block.output_sds
+            elif block_name.startswith('temporal_pooler'):
+                block = resolve_tp(
+                    self.config['temporal_poolers'][temporal_pooler],
+                    feedforward_sds=feedforward_sds,
+                    output_sds=self.run_setup.tp_output_sds,
+                    seed=self.seed
+                )
+                if prev_block_name.startswith('temporal_memory'):
+                    resolve_context_tm_apical_feedback(
+                        fb_sds=block.output_sds, tm_block=blocks[prev_block_name]
+                    )
+                feedforward_sds = block.output_sds
+            else:
+                raise KeyError(f'Block name "{block_name}" is not supported')
 
-
+            blocks[block_name] = block
+            prev_block_name = block_name
+        return blocks
