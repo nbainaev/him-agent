@@ -8,6 +8,7 @@ import numpy as np
 from htm.advanced.support.numpy_helpers import setCompare, argmaxMulti, getAllCellsInColumns
 from hima.modules.htm.temporal_memory import GeneralFeedbackTM
 from hima.modules.htm.connections import Connections
+from htm.bindings.sdr import SDR
 
 EPS = 1e-24
 UINT_DTYPE = "uint32"
@@ -376,11 +377,23 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             nu_lr=0.01,
             b_lr=0.01,
             beta_lr=0.01,
+            theta_lr=0.01,
+            tau_lr=0.01,
+            gamma_lr=0.01,
             init_w=0.5,
             init_nu=0.5,
             init_b=0.5,
             init_beta=0.5,
+            init_theta=0.5,
+            init_tau=0.5,
+            init_gamma=0.5,
             full_learning=False,
+            max_interneurons=100,
+            connected_threshold_inhib=0.01,
+            learning_threshold_inhib=1,
+            initial_permanence_inhib=0.5,
+            permanence_increment_inhib=0.1,
+            permanence_decrement_inhib=0.1,
             **kwargs
     ):
         super(HybridNaiveBayesTM, self).__init__(**kwargs)
@@ -390,6 +403,9 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         self.nu_lr = nu_lr
         self.b_lr = b_lr
         self.beta_lr = beta_lr
+        self.theta_lr = theta_lr
+        self.tau_lr = tau_lr
+        self.gamma_lr = gamma_lr
 
         self.segments_in_use = np.empty(0, dtype=UINT_DTYPE)
         # probabilities
@@ -408,6 +424,9 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         self.init_nu = init_nu
         self.init_b = init_b
         self.init_beta = init_beta
+        self.init_theta = init_theta
+        self.init_gamma = init_gamma
+        self.init_tau = init_tau
 
         self.full_learning = full_learning
         # learning parameters
@@ -425,8 +444,38 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
 
         self.beta = np.zeros(self.segment_probs.size, dtype=REAL64_DTYPE) + self.init_beta
 
+        # inhibitory interneurons
+        self.max_interneurons = max_interneurons
+        self.connected_threshold_inhib = connected_threshold_inhib
+        self.learning_threshold_inhib = learning_threshold_inhib
+        self.initial_permanence_inhib = initial_permanence_inhib
+        self.presynaptic_inhib_cells = SDR(self.local_cells + self.max_interneurons)
+        self.permanence_increment_inhib = permanence_increment_inhib
+        self.permanence_decrement_inhib = permanence_decrement_inhib
+
+        self.inhib_connections = Connections(numCells=self.local_cells + self.max_interneurons,
+                                             connectedThreshold=self.connected_threshold_inhib,
+                                             timeseries=self.timeseries)
+
+        self.theta = np.zeros(
+            (self.max_interneurons, self.cell_probs.size), dtype=REAL64_DTYPE
+        ) + self.init_theta
+        self.tau = np.zeros(
+            (self.max_interneurons, self.cell_probs.size), dtype=REAL64_DTYPE
+        ) + self.init_tau
+        self.inhib_receptive_fields = np.zeros(
+            (self.max_interneurons, self.cell_probs.size),
+            dtype="bool"
+        )
+
+        self.gamma = np.zeros(
+            self.max_interneurons, dtype=REAL64_DTYPE
+        ) + self.init_gamma
+
         # surprise (analog to anomaly in classical TM)
         self.surprise = 0
+
+        self.np_rng = np.random.default_rng(kwargs['seed'])
 
     def reset(self):
         super(HybridNaiveBayesTM, self).reset()
@@ -484,6 +533,8 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
 
         # Learn
         if learn:
+            if len(new_winner_cells) > 0:
+                self._learn_inhib_cell(new_winner_cells)
             # Learn on existing segments
             if self.active_cells_context.sparse.size > 0:
                 for learning_segments in (
@@ -634,6 +685,111 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
 
         cell_probs = 1 - cell_probs.reshape((self.columns, -1))
         self.column_probs = 1 - np.prod(cell_probs, axis=-1)
+
+    def sample_cells(self):
+        cell_probs = self.cell_probs
+        # non-zero segments' id
+        segments_in_use = np.flatnonzero(np.sum(self.inhib_receptive_fields, axis=-1))
+        theta = self.theta[segments_in_use]
+        tau = self.tau[segments_in_use]
+        gamma = self.gamma[segments_in_use]
+        f = self.inhib_receptive_fields[segments_in_use]
+
+        # p(s|d=1)
+        synapse_probs_true = np.power((1 - theta), 1 - cell_probs) * np.power(theta, cell_probs)
+        # p(s|d=0)
+        synapse_probs_false = np.power((1 - tau), 1 - cell_probs) * np.power(tau, cell_probs)
+
+        likelihood_true = np.prod(synapse_probs_true, axis=-1, where=f)
+        likelihood_false = np.prod(synapse_probs_false, axis=-1, where=f)
+
+        norm = gamma * likelihood_true + (1 - gamma) * likelihood_false
+        segment_probs = np.divide(
+            gamma * likelihood_true, norm,
+            out=np.zeros_like(gamma, dtype=REAL64_DTYPE), where=(norm != 0)
+        )
+
+        # normalize
+        segment_probs /= segment_probs.sum()
+
+        # choose cluster
+        segment = self.np_rng.choice(segments_in_use, 1, p=segment_probs)
+
+        # sample cells from cluster
+        cell_probs = self.theta[segment]*self.inhib_receptive_fields[segment]
+        cells = np.flatnonzero(self.np_rng.random(cell_probs.size) < cell_probs)
+
+        return cells
+
+    def _learn_inhib_cell(self, winner_cells):
+        self.presynaptic_inhib_cells.sparse = winner_cells
+
+        num_connected, num_potential = self.inhib_connections.computeActivityFull(
+            self.presynaptic_inhib_cells,
+            True
+        )
+        # TODO should we use num_connected instead?
+        candidates = np.flatnonzero(num_potential >= self.learning_threshold_inhib)
+        if len(candidates) > 0:
+            winner = candidates[np.argmax(num_potential[candidates])]
+            is_new = False
+        else:
+            winner = np.argmin(self.gamma)
+            is_new = True
+
+        winner_cells_dense = np.zeros(self.local_cells)
+        winner_cells_dense[winner_cells] = 1
+
+        if is_new:
+            new_segment = self.inhib_connections.createSegment(winner, 1)
+            self.inhib_connections.growSynapses(
+                new_segment, winner_cells, self.initial_permanence_inhib, self.rng,
+                maxNew=len(winner_cells)
+            )
+
+            self.theta[new_segment] = self.init_theta
+            self.tau[new_segment] = self.init_tau
+            self.gamma[new_segment] = self.init_gamma
+
+            self.inhib_receptive_fields[new_segment] = winner_cells_dense
+        else:
+            segment = self.inhib_connections.getSegment(winner, 0)
+            self.inhib_connections.adaptSegment(
+                segment, self.presynaptic_inhib_cells, self.permanence_increment_inhib, self.permanence_decrement_inhib,
+                self.prune_zero_synapses, self.learning_threshold_inhib
+            )
+            max_new = len(winner_cells) - num_potential[winner]
+            if max_new > 0:
+                self.inhib_connections.growSynapses(segment, winner_cells, self.initial_permanence_inhib, self.rng, max_new)
+
+            cells = np.array(self.inhib_connections.presynapticCellsForSegment(segment))
+            cells_dense = np.zeros_like(self.cell_probs, dtype='bool')
+            cells_dense[cells] = 1
+            self.inhib_receptive_fields[segment] = cells_dense
+
+            # update dendrites activity
+            active_segments_dense = np.zeros_like(self.gamma)
+            active_segments_dense[segment] = 1
+
+            gamma_deltas = active_segments_dense - self.gamma
+            self.gamma += self.gamma_lr * gamma_deltas
+
+            self.gamma = np.clip(self.gamma, 0, 1)
+
+            # update conditional probs
+            theta_active = self.theta[segment]
+            theta_delta = winner_cells_dense - theta_active
+            theta_delta[~self.inhib_receptive_fields[segment]] = 0
+
+            self.theta[segment] += self.theta_lr * theta_delta
+
+            tau_deltas = winner_cells_dense - self.tau
+            tau_deltas[~self.inhib_receptive_fields] = 0
+            tau_deltas[segment] = 0
+            self.tau += self.tau_lr * tau_deltas
+
+            self.theta = np.clip(self.theta, 0, 1)
+            self.tau = np.clip(self.tau, 0, 1)
 
     def _update_segments_in_use(self, sort=True):
         # non-zero segments' id

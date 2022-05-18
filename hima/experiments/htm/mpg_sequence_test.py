@@ -234,6 +234,7 @@ def run_hybrid_naive_bayes_tm(config, mpg, encoder, logger):
         feedback_cells=0,
         activation_threshold_basal=activation_threshold,
         learning_threshold_basal=learning_threshold,
+        learning_threshold_inhib=learning_threshold,
         activation_threshold_apical=1,
         learning_threshold_apical=1,
         seed=config['run']['seed'],
