@@ -709,15 +709,29 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             out=np.zeros_like(gamma, dtype=REAL64_DTYPE), where=(norm != 0)
         )
 
+        norm2 = np.sum(theta, axis=-1, where=f)
+        cluster_probs = np.sum(theta * self.cell_probs, axis=-1, where=f)
+        cluster_probs = np.divide(
+            cluster_probs,
+            norm2,
+            out=np.zeros_like(cluster_probs, dtype=REAL64_DTYPE), where=(norm2 != 0)
+        )
+
+        cluster_probs *= segment_probs
+
         # normalize
-        segment_probs /= segment_probs.sum()
+        norm3 = cluster_probs.sum()
+        if norm3 != 0:
+            cluster_probs /= norm3
+            # choose cluster
+            segment = self.np_rng.choice(segments_in_use, 1, p=cluster_probs)
 
-        # choose cluster
-        segment = self.np_rng.choice(segments_in_use, 1, p=segment_probs)
-
-        # sample cells from cluster
-        cell_probs = self.theta[segment]*self.inhib_receptive_fields[segment]
-        cells = np.flatnonzero(self.np_rng.random(cell_probs.size) < cell_probs)
+            # sample cells from cluster
+            cell_probs = self.theta[segment] * self.inhib_receptive_fields[segment]
+            cells = np.flatnonzero(self.np_rng.random(cell_probs.size) < cell_probs)
+        else:
+            segment = np.empty(0, dtype=UINT_DTYPE)
+            cells = np.empty(0, dtype=UINT_DTYPE)
 
         return cells
 
