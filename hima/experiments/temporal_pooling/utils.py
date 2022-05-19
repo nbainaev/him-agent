@@ -3,6 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from typing import Any
 
 import numpy as np
 from htm.bindings.sdr import SDR
@@ -54,3 +55,10 @@ def one_hot(num, _classes_num=25):
     _data = np.zeros(_classes_num)
     _data[num] = 1
     return _data
+
+
+def rename_dict_keys(d: dict[str, Any], add_prefix):
+    return {
+        f'{add_prefix}{k}': d[k]
+        for k in d
+    }

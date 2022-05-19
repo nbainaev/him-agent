@@ -11,14 +11,14 @@ from hima.common.config_utils import TConfig
 from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import isnone
-from hima.experiments.temporal_pooling.blocks.context_tm import ContextTemporalMemoryBlock
+from hima.common.utils import isnone, timed
+from hima.experiments.temporal_pooling.blocks.policies_dataset import Policy
 from hima.experiments.temporal_pooling.config_resolvers import (
     resolve_tp, resolve_data_generator, resolve_run_setup, resolve_context_tm,
     resolve_context_tm_apical_feedback
 )
-from hima.experiments.temporal_pooling.blocks.policies_dataset import Policy
 from hima.experiments.temporal_pooling.new.test_on_policies_stats import ExperimentStats
+from hima.experiments.temporal_pooling.utils import rename_dict_keys
 
 
 class RunSetup:
@@ -69,29 +69,30 @@ class PoliciesExperiment(Runner):
         self.blocks = self.build_blocks(temporal_pooler)
         self.input_data = self.blocks[self.pipeline[0]]
 
-        # self.stats = ExperimentStats(self.temporal_pooler)
+        self.stats = ExperimentStats(self.blocks)
 
     def run(self):
-        print('==> Generate policies')
-
         print('==> Run')
         for epoch in range(self.run_setup.epochs):
-            self.train_epoch()
-
-        # self.stats.on_finish(
-        #     policies=policies,
-        #     logger=self.logger
-        # )
+            _, elapsed_time = self.train_epoch()
+            print(f'Epoch {epoch}: {elapsed_time}')
         print('<==')
 
+    @timed
     def train_epoch(self):
+        self.stats = ExperimentStats(self.blocks)
+        self.reset_blocks_stats()
+
         for policy in self.input_data:
-            self.reset_blocks(block_type='temporal_pooler')
             for i in range(self.run_setup.policy_repeats):
                 self.run_policy(policy, learn=True)
 
     def run_policy(self, policy: Policy, learn=True):
-        for state, action in policy:
+        self.reset_blocks(block_type='temporal_memory')
+        self.reset_blocks(block_type='temporal_pooler')
+        self.stats.on_new_sequence(policy.id)
+
+        for action, state in policy:
             self.step(state, action, learn)
 
     def step(self, state: SparseSdr, action: SparseSdr, learn: bool):
@@ -104,49 +105,47 @@ class PoliciesExperiment(Runner):
             block = self.blocks[block_name]
 
             if block_name == 'generator':
-                feedforward = action
-                # stats
+                output = action
+
             elif block_name.startswith('temporal_memory'):
-                feedforward = block.compute(
+                output = block.compute(
                     feedforward_input=feedforward, basal_context=context, learn=learn
                 )
 
-                active_input, correctly_predicted_input = feedforward
-                # stats
-            elif block_name.startswith('temporal_pooler'):
-                after_tm = prev_block.name.startswith('temporal_memory')
-                if after_tm:
+            else:   # temporal pooler
+                goes_after_tm = prev_block.name.startswith('temporal_memory')
+                if goes_after_tm:
                     active_input, correctly_predicted_input = feedforward
-                    feedforward = block.compute(
+                    output = block.compute(
                         active_input=active_input,
                         predicted_input=correctly_predicted_input,
                         learn=learn
                     )
-                    prev_block.pass_feedback(feedforward)
+                    prev_block.pass_feedback(output)
                 else:
-                    feedforward = block.compute(
+                    output = block.compute(
                         active_input=feedforward, predicted_input=feedforward, learn=learn
                     )
-                # stats
+
+            feedforward = output
             prev_block = block
 
-        # self.stats.on_step(
-        #     policy_id=policy.id,
-        #     temporal_memory=self.temporal_memory,
-        #     temporal_pooler=self.temporal_pooler,
-        #     logger=self.logger
-        # )
+        self.stats.on_step(self.logger)
 
     def reset_blocks(self, block_type):
         for block_name in self.pipeline:
             if block_name.startswith(block_type):
                 self.blocks[block_name].reset()
 
+    def reset_blocks_stats(self):
+        for block_name in self.pipeline:
+            self.blocks[block_name].reset_stats()
+
     def build_blocks(self, temporal_pooler: str) -> dict:
         blocks = {}
         feedforward_sds, context_sds = None, None
         prev_block = None
-        for block_name in self.pipeline:
+        for block_ind, block_name in enumerate(self.pipeline):
             if block_name == 'generator':
                 data_generator = resolve_data_generator(
                     self.config,
@@ -157,6 +156,7 @@ class PoliciesExperiment(Runner):
                 block = data_generator.generate_policies(self.run_setup.n_policies)
                 feedforward_sds = block.output_sds
                 context_sds = block.context_sds
+
             elif block_name.startswith('temporal_memory'):
                 block = resolve_context_tm(
                     tm_config=self.config['temporal_memory'],
@@ -165,6 +165,7 @@ class PoliciesExperiment(Runner):
                     seed=self.seed
                 )
                 feedforward_sds = block.output_sds
+
             elif block_name.startswith('temporal_pooler'):
                 block = resolve_tp(
                     self.config['temporal_poolers'][temporal_pooler],
@@ -177,10 +178,13 @@ class PoliciesExperiment(Runner):
                         fb_sds=block.output_sds, tm_block=prev_block
                     )
                 feedforward_sds = block.output_sds
+
             else:
                 raise KeyError(f'Block name "{block_name}" is not supported')
 
+            block.id = block_ind
             block.name = block_name
-            blocks[block_name] = block
+            blocks[block.name] = block
             prev_block = block
+
         return blocks

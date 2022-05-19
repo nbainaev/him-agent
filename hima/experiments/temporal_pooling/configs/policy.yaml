@@ -13,6 +13,8 @@ pipeline:
   - temporal_pooler
 #  - temporal_memory_2
 #  - temporal_pooler_2
+#  - temporal_memory_3
+#  - temporal_pooler_3
 
 run_setups:
   simple:
@@ -31,14 +33,14 @@ run_setups:
     steps_per_policy: ...
     policy_repeats: 20
     epochs: 4
-    tp_output_sds: [2000, 40]
+    tp_output_sds: [1000, 25]
 
 generator:
   _type_: synthetic
   n_states: ???
   n_actions: ???
   active_size: 10
-  state_encoder: bucket
+  state_encoder: random
   action_encoder: random
   policy_similarity: 0.5
   policy_similarity_std: 0.35
@@ -201,7 +203,7 @@ temporal_poolers:
 temporal_memory:
   ff_sds: ???
   columns: ???
-  cells_per_column: 16
+  cells_per_column: 8
   prune_zero_synapses: True
   timeseries: False
   anomaly_window: 1000

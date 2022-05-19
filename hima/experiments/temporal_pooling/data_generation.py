@@ -114,7 +114,7 @@ class SyntheticGenerator:
                 action = policies[i_policy, state]
                 s = states_encoding[state]
                 a = action_encoding[action]
-                policy.append((s, a))
+                policy.append((a, s))
 
             encoded_policies.append(Policy(id_=i_policy, policy=policy))
 

@@ -3,14 +3,33 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from typing import Any
+
 import numpy as np
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
+from hima.common.utils import safe_divide
 from hima.modules.htm.temporal_memory import DelayedFeedbackTM
 
 
+class TemporalMemoryBlockStats:
+    recall: float
+
+    def __init__(self):
+        self.recall = 0.
+
+    def update(self, active_cells: SparseSdr, correctly_predicted_cells: SparseSdr):
+        self.recall = safe_divide(correctly_predicted_cells.size, active_cells.size)
+
+    def get_metrics(self) -> dict[str, Any]:
+        return {
+            'recall': self.recall
+        }
+
+
 class ContextTemporalMemoryBlock:
+    id: int
     name: str
     feedforward_sds: Sds
     cells_per_column: int
@@ -20,6 +39,8 @@ class ContextTemporalMemoryBlock:
 
     tm: DelayedFeedbackTM
     tm_config: dict
+
+    stats: TemporalMemoryBlockStats
 
     _apical_feedback: SparseSdr
 
@@ -34,6 +55,11 @@ class ContextTemporalMemoryBlock:
             active_size=self.feedforward_sds.active_size
         )
         self.tm_config = partially_resolved_tm_config
+        self.stats = TemporalMemoryBlockStats()
+
+    @property
+    def tag(self) -> str:
+        return f'{self.id}_tm'
 
     @property
     def output_sds(self):
@@ -47,6 +73,13 @@ class ContextTemporalMemoryBlock:
 
     def pass_feedback(self, apical_feedback: SparseSdr):
         self._apical_feedback = apical_feedback
+
+    def reset(self):
+        self.tm.reset()
+        self._apical_feedback = []
+
+    def reset_stats(self):
+        self.stats = TemporalMemoryBlockStats()
 
     def compute(
             self, feedforward_input: SparseSdr, basal_context: SparseSdr, learn: bool
@@ -67,4 +100,9 @@ class ContextTemporalMemoryBlock:
 
         active_cells = np.array(tm.get_active_cells(), copy=True)
         correctly_predicted_cells = np.array(tm.get_correctly_predicted_cells(), copy=True)
+
+        self.stats.update(
+            active_cells=active_cells,
+            correctly_predicted_cells=correctly_predicted_cells
+        )
         return active_cells, correctly_predicted_cells

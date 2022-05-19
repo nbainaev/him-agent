@@ -20,7 +20,7 @@ def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
         tp_config = resolve_init_params(
             tp_config,
             inputDimensions=feedforward_sds.shape, localAreaDensity=output_sds.sparsity,
-            columnDimensions=output_sds.shape, maxUnionActivity=output_sds.active_size,
+            columnDimensions=output_sds.shape, maxUnionActivity=output_sds.sparsity,
             potentialRadius=feedforward_sds.size, seed=seed
         )
         tp = UnionTemporalPooler(**tp_config)
@@ -30,7 +30,7 @@ def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
         tp_config = resolve_init_params(
             tp_config,
             inputDimensions=feedforward_sds.shape, localAreaDensity=output_sds.sparsity,
-            columnDimensions=output_sds.shape, maxUnionActivity=output_sds.active_size,
+            columnDimensions=output_sds.shape, maxUnionActivity=output_sds.sparsity,
             potentialRadius=feedforward_sds.size, seed=seed
         )
         tp = AblationUtp(seed=seed, **tp_config)
@@ -40,7 +40,7 @@ def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
         tp_config = resolve_init_params(
             tp_config,
             inputDimensions=feedforward_sds.shape,
-            columnDimensions=output_sds.shape, union_sdr_sparsity=output_sds.active_size,
+            columnDimensions=output_sds.shape, union_sdr_sparsity=output_sds.sparsity,
             seed=seed
         )
         tp = CustomUtp(seed=seed, **tp_config)
@@ -118,18 +118,19 @@ def resolve_tm_connections_region(connections_config, sds, suffix):
     sample_size = sds.active_size
     activation_threshold = resolve_absolute_quantity(
         connections_config['activation_threshold'],
-        baseline=sds.size
+        baseline=sample_size
     )
     learning_threshold = resolve_absolute_quantity(
         connections_config['learning_threshold'],
-        baseline=sds.size
+        baseline=sample_size
     )
     max_synapses_per_segment = resolve_absolute_quantity(
         connections_config['max_synapses_per_segment'],
-        baseline=sds.active_size
+        baseline=sample_size
     )
     induced_config = dict(
-        sample_size=sample_size, activation_threshold=activation_threshold,
+        sample_size=sample_size,
+        activation_threshold=activation_threshold,
         learning_threshold=learning_threshold,
         max_synapses_per_segment=max_synapses_per_segment
     )

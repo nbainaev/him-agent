@@ -3,71 +3,89 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from typing import Optional, Any
+
+from typing import Optional
 
 import numpy as np
-import seaborn as sns
 import wandb
 from matplotlib import pyplot as plt
+import seaborn as sns
 from wandb.sdk.wandb_run import Run
 
+from hima.common.sdr import SparseSdr, DenseSdr
 from hima.common.utils import safe_divide
-from hima.experiments.temporal_pooling.metrics import mean_absolute_error, kl_div
-from hima.experiments.temporal_pooling.utils import rename_dict_keys
+
+
+# noinspection PyAttributeOutsideInit
+from hima.experiments.temporal_pooling.metrics import mean_absolute_error, entropy, kl_div
 
 
 class ExperimentStats:
-    blocks: dict[str, Any]
-    sequence_ids_order: list[int]
-    sequences_block_stats: dict[int, dict[str, Any]]
+    # current policy id
+    policy_id: Optional[int]
 
-    def __init__(self, blocks):
-        self.blocks = blocks
-        self.sequences_block_stats = {}
-        self.sequence_ids_order = []
+    tp_expected_active_size: int
+    tp_output_sdr_size: int
 
-    def on_new_sequence(self, sequence_id: int):
-        if sequence_id == self.current_sequence_id:
-            return
-        self.sequence_ids_order.append(sequence_id)
-        self.sequences_block_stats[sequence_id] = {}
+    last_representations: dict[int, SparseSdr]
+    tp_current_representation: set
+    tp_output_distribution_counts: dict[int, DenseSdr]
+    tp_sequence_total_trials: dict[int, int]
 
-        for block_name in self.blocks:
-            block = self.blocks[block_name]
-            block.reset_stats()
-            self.current_block_stats[block.name] = block.stats
+    def __init__(self, temporal_pooler):
+        self.policy_id = None
+        self.last_representations = {}
+        self.tp_current_representation = set()
+        self.tp_output_distribution_counts = {}
+        self.tp_output_sdr_size = temporal_pooler.output_sdr_size
+        self.tp_expected_active_size = temporal_pooler.n_active_bits
+        self.tp_sequence_total_trials = {}
 
-    @property
-    def current_sequence_id(self):
-        return self.sequence_ids_order[-1] if self.sequence_ids_order else None
+    def on_policy_change(self, policy_id):
+        self.policy_id = policy_id
+        self.window_size = 1
+        self.window_error = 0
+        self.whole_active = None
+        self.policy_repeat = 0
+        self.intra_policy_step = 0
 
-    @property
-    def previous_sequence_id(self):
-        return self.sequence_ids_order[-2] if len(self.sequence_ids_order) >= 2 else None
+        if policy_id not in self.tp_output_distribution_counts:
+            self.tp_output_distribution_counts[policy_id] = np.zeros(
+                self.tp_output_sdr_size, dtype=int
+            )
+            self.tp_sequence_total_trials[policy_id] = 0
 
-    @property
-    def current_block_stats(self):
-        return self.sequences_block_stats[self.current_sequence_id]
+    def on_policy_repeat(self):
+        self.intra_policy_step = 0
+        self.policy_repeat += 1
 
-    def on_step(self, logger):
-        if logger is None:
-            return
+    def on_step(
+            self, policy_id: int,
+            temporal_memory, temporal_pooler, logger
+    ):
+        if policy_id != self.policy_id:
+            self.on_policy_change(policy_id)
 
-        metrics = {}
-        for block_name in self.current_block_stats:
-            block = self.blocks[block_name]
-            block_stats = self.current_block_stats[block_name]
-            block_metrics = block_stats.get_metrics()
-            block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/')
-            metrics |= block_metrics
+        tm_log = self._get_tm_metrics(temporal_memory)
+        tp_log = self._get_tp_metrics(temporal_pooler)
+        if logger:
+            logger.log(tm_log | tp_log)
 
-        logger.log(metrics)
+        self.intra_policy_step += 1
 
-    def on_finish(self, logger: Run):
+    def on_finish(self, policies, logger: Run):
         if not logger:
             return
 
-        to_log, to_sum = {}, {}
+        to_log, to_sum = self._get_summary_old_actions(policies)
+        to_log2, to_sum2 = self._get_summary_new_sdrs(policies)
+
+        to_log = to_log | to_log2
+        to_sum = to_sum | to_sum2
+
+        to_log |= self._get_final_representations()
+        to_log |= self._get_summary_old_actions_distr(policies)
+
         logger.log(to_log)
         for key, val in to_sum.items():
             logger.summary[key] = val
@@ -79,12 +97,12 @@ class ExperimentStats:
         curr_repr = set(curr_repr_lst)
         self.tp_current_representation = curr_repr
         # noinspection PyTypeChecker
-        self.last_representations[self.current_sequence_id] = curr_repr
+        self.last_representations[self.policy_id] = curr_repr
 
-        self.tp_sequence_total_trials[self.current_sequence_id] += 1
-        cluster_trials = self.tp_sequence_total_trials[self.current_sequence_id]
+        self.tp_sequence_total_trials[self.policy_id] += 1
+        cluster_trials = self.tp_sequence_total_trials[self.policy_id]
 
-        output_distribution_counts = self.tp_output_distribution_counts[self.current_sequence_id]
+        output_distribution_counts = self.tp_output_distribution_counts[self.policy_id]
         output_distribution_counts[curr_repr_lst] += 1
         cluster_size = np.count_nonzero(output_distribution_counts)
         cluster_distribution = output_distribution_counts / cluster_trials
