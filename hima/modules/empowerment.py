@@ -128,60 +128,54 @@ class Memory:
 
 class Empowerment:
     """
-    The Empowerment object contains all necessary things to evaluate 'empowerment' using the model of environment. This
-    model creates and learns also here.
+    The Empowerment contains all necessary things to evaluate 'empowerment' using the model
+    of environment based on Temporal Memory algorithm.
 
     Parameters
     ----------
-    seed: int
+    seed : int
         The seed for random generator.
-    encode_size: int
+    encode_size : int
         The size of SDR representations which is taken by model.
-    tm_config: dict
-        It contains all parameters for initialisation of the TemporalMemory without the columnDimensions.
-        columnDimensions is defined inside Empowerment.
-    sparsity: float
+    tm_config : dict
+        It contains all parameters for initialisation of the TemporalMemory without the
+        'columnDimensions'. 'columnDimensions' is defined inside Empowerment.
+    sparsity : float
         The sparsity of SDR representations which are used in the TemporalMemory algorithm.
-    sp_config (optional): dict
-        It contains all parameters for initialisation of the SpatialPooler without the inputDimensions
-        and localareaDensity. They are defined inside Empowerment. By default sp_config is None that means the absence
-        of SpatialPooler.
-    memory (optional): bool
-        This parameter defines will be used the Memory for saving and clusterization of state representations or not.
-        By default is False (doesn't use the Memory).
-    similarity_threshold (optional): float
-        This parameter determines the threshold for cluster creation. It is used then memory is True. By default: 0.6.
-    evaluate (optional): bool
-        This flag defines the necessarity of storing some statistics to evaluate the learning process.
+    memory : bool, optional
+        This parameter defines will be used the Memory for saving and clustering of state
+        representations or not. By default is False (doesn't use the Memory).
+    similarity_threshold : float, optional
+        This parameter determines the threshold for cluster creation.
+        It is used then memory is True. By default: 0.6.
+    evaluate : bool, optional
+        This flag defines the necessity of storing some statistics to evaluate the learning process.
         By default is True.
 
     Attributes
     ----------
-    evaluate: bool
+    evaluate : bool
         It stores the same parameter.
-    anomalies: list
-        It stores the anomaly values of TM for easch time step after learning. Only then evaluate is True.
-    IoU: list
-        It stores the Intersection over Union values of TM predictions and real ones for easch time step after learning.
-        Only then evaluate is True.
-    sparsity: float
+    anomalies : list
+        It stores the anomaly values of TM for each time step after learning.
+        Only then 'evaluate' is True.
+    IoU : list
+        It stores the Intersection over Union values of TM predictions and real ones for each
+        time step after learning. Only then 'evaluate' is True.
+    sparsity : float
         It stores the same parameter.
-    sp: SpatialPooler
-        It contains the SpatialPooler object if it was defined, else None
-    tm: TemporalMemory
+    tm : TemporalMemory
         It contains the TemporalMemory object.
-    size: int
-        It stores the encode_size parameter.
+    size : int
+        It stores the 'encode_size' parameter.
     memory: Memory
-        It contains the Memory object if memory parameter is True, else None.
+        It contains the Memory object if 'memory' parameter is True, else None.
     """
 
-    def __init__(self, seed, encode_size, tm_config, sparsity,
-                 sp_config=None,
-                 memory=False,
-                 similarity_threshold=0.6,
-                 evaluate=True,
-                 filename=None):
+    def __init__(
+            self, seed: int, encode_size: int, tm_config: dict, sparsity: float,
+            memory: bool = False, similarity_threshold: float = 0.6, evaluate: bool = True,
+            filename: str = None):
         self.filename = filename
         if self.filename is None:
             self.evaluate = evaluate
@@ -192,27 +186,10 @@ class Empowerment:
             self.sdr_1 = SDR(encode_size)
             self.sparsity = sparsity
 
-            if sp_config is not None:
-                self.sp = SpatialPooler(inputDimensions=[encode_size],
-                                        seed=seed,
-                                        localAreaDensity=sparsity,
-                                        **sp_config,
-                                        )
-                self.tm = TemporalMemory(
-                    columnDimensions=self.sp.getColumnDimensions(),
-                    seed=seed,
-                    **tm_config,
-                )
-                self.sdr_sp = SDR(self.sp.getColumnDimensions())
-                self.size = self.sp.getColumnDimensions()[0]
-            else:
-                self.sp = None
-                self.tm = TemporalMemory(
-                    columnDimensions=[encode_size],
-                    seed=seed,
-                    **tm_config,
-                )
-                self.size = self.tm.getColumnDimensions()[0]
+            self.tm = TemporalMemory(
+                columnDimensions=[encode_size], seed=seed, **tm_config,
+            )
+            self.size = self.tm.getColumnDimensions()[0]
 
             if memory:
                 self.memory = Memory(self.tm.getColumnDimensions()[0], threshold=similarity_threshold)
@@ -246,13 +223,8 @@ class Empowerment:
         float
             The empowerment value (always > 0).
         """
-        if self.sp is not None:
-            self.sdr_0.sparse = state
-            self.sp.compute(self.sdr_0, learn=False, output=self.sdr_sp)
-            sdr = self.sdr_sp
-        else:
-            self.sdr_0.sparse = state
-            sdr = self.sdr_0
+        self.sdr_0.sparse = state
+        sdr = self.sdr_0
         start_state = np.copy(sdr.sparse)
         data = np.zeros(self.tm.getColumnDimensions()[0])
         for actions in range(horizon):
@@ -333,32 +305,19 @@ class Empowerment:
         self.sdr_1.sparse = state_1
         self.tm.reset()
 
-        if self.sp is not None:
-            self.sp.compute(self.sdr_0, learn=True, output=self.sdr_sp)
-            if self.memory is not None:
-                self.memory.add(self.sdr_sp.sparse)
-            self.tm.compute(self.sdr_sp, learn=True)
-        else:
-            if self.memory is not None:
-                self.memory.add(self.sdr_0.sparse)
-            self.tm.compute(self.sdr_0, learn=True)
+        if self.memory is not None:
+            self.memory.add(self.sdr_0.sparse)
+        self.tm.compute(self.sdr_0, learn=True)
 
         if self.evaluate:
             self.tm.activateDendrites(learn=False)
             predictiveCells = self.tm.getPredictiveCells().sparse
             predictedColumnIndices = np.unique([self.tm.columnForCell(i) for i in predictiveCells])
 
-        if self.sp is not None:
-            self.sp.compute(self.sdr_1, learn=True, output=self.sdr_sp)
-            self.tm.compute(self.sdr_sp, learn=True)
-            if self.evaluate:
-                intersection = np.intersect1d(self.sdr_sp.sparse, predictedColumnIndices)
-                union = np.union1d(self.sdr_sp.sparse, predictedColumnIndices)
-        else:
-            self.tm.compute(self.sdr_1, learn=True)
-            if self.evaluate:
-                intersection = np.intersect1d(self.sdr_1.sparse, predictedColumnIndices)
-                union = np.union1d(self.sdr_1.sparse, predictedColumnIndices)
+        self.tm.compute(self.sdr_1, learn=True)
+        if self.evaluate:
+            intersection = np.intersect1d(self.sdr_1.sparse, predictedColumnIndices)
+            union = np.union1d(self.sdr_1.sparse, predictedColumnIndices)
 
         if self.evaluate:
             self.IoU.append(len(intersection) / len(union))
