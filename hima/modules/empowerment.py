@@ -255,39 +255,6 @@ class Empowerment:
         p = data / (data.sum() + EPS)
         return empowerment
 
-    def eval_env(self, environment, horizon, use_segments=False, use_memory=False):
-        """This function evaluate empowerment for every state in gridworld environment.
-
-        Parameters
-        ----------
-        environment:
-            The gridworld environment to be evaluated.
-        horizon: int
-            The horison of evaluating for given state. The good value is 3.
-        use_segments (optional): bool
-            The flag determines using of segments instead of cells to evaluate empowerment. By default: False.
-        use_memory (optional): bool
-            The flag determines using of the Memory object. Useful only if this object was initialised.
-            By default: False
-
-        Returns
-        -------
-        empowerment_map: np.array
-            This is the map of the environment with values of empowerment for each state.
-        """
-        env = deepcopy(environment)
-        empowerment_map = np.zeros(env.env.shape)
-
-        for i in range(env.env.shape[0]):
-            for j in range(env.env.shape[1]):
-                if not env.env.entities['obstacle'].mask[i, j]:
-                    env.env.agent.position = (i, j)
-                    _, s, _ = env.observe()
-                    empowerment_map[i, j] = self.eval_state(s, horizon, use_segments, use_memory)
-        # plt.imshow(empowerment_map)
-        # plt.show()
-        return empowerment_map
-
     def learn(self, state_0, state_1):
         """This function realize learning of TM.
 
