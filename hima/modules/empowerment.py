@@ -5,14 +5,11 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
 import numpy as np
-import matplotlib.pyplot as plt
-from tqdm import trange
 from htm.bindings.sdr import SDR
 from htm.bindings.algorithms import TemporalMemory
-from htm.bindings.algorithms import SpatialPooler
 from itertools import product
-from copy import deepcopy
 import json
+from hima.common.sdr import SparseSdr
 
 EPS = 1e-12
 
@@ -202,15 +199,18 @@ class Empowerment:
     def eval_from_file(self, position):
         return self.empowerment_data[str(position[0])][str(position[1])]
 
-    def eval_state(self, state, horizon, use_segments=False, use_memory=False):
+    def eval_state(
+            self, state: SparseSdr, horizon: int,
+            use_segments: bool = False, use_memory: bool = False
+    ) -> float:
         """This function evaluates empowerment for given state.
 
         Parameters
         ----------
-        state : np.array
+        state : SparseSdr
             The SDR representation (sparse) of the state.
         horizon : int
-            The horison of evaluating for given state. The good value is 3.
+            The horizon of evaluating for given state. The good value is 3.
         use_segments : bool, optional
             The flag determines using of segments instead of cells to evaluate empowerment.
             By default: False.
@@ -225,7 +225,6 @@ class Empowerment:
         """
         self.sdr_0.sparse = state
         sdr = self.sdr_0
-        start_state = np.copy(sdr.sparse)
         data = np.zeros(self.tm.getColumnDimensions()[0])
         for actions in range(horizon):
             self.tm.reset()
@@ -235,24 +234,27 @@ class Empowerment:
             predictedColumnIndices = [self.tm.columnForCell(i) for i in predictiveCells]
             sdr.sparse = np.unique(predictedColumnIndices)
         if use_segments:
-            predictedColumnIndices = map(self.tm.columnForCell,
-                                         map(self.tm.connections.cellForSegment, self.tm.getActiveSegments()))
+            predictedColumnIndices = map(
+                self.tm.columnForCell,
+                map(self.tm.connections.cellForSegment, self.tm.getActiveSegments())
+            )
         for i in predictedColumnIndices:
             data[i] += 1
         if self.memory is not None and use_memory:
             if (self.memory.kernels is not None) and (self.memory.kernels.size > 0):
                 clusters = self.memory.adopted_kernels(self.sparsity)
-                mask = (clusters[:, data!=0].sum(axis=1) / (self.sparsity * self.size)) < self.memory.threshold
+                mask = clusters[:, data!=0].sum(axis=1) / (self.sparsity * self.size)
+                mask = mask < self.memory.threshold
                 p = np.dot(clusters, data.T) / (self.sparsity * self.size)
                 p[mask] = 0
                 total_p = p.sum()
-                empowerment = np.sum(-p / (total_p + EPS) * np.log(p / (total_p + EPS), where=p != 0), where=p != 0)
                 p = p / (total_p + EPS)
-                return empowerment, p, start_state
+                empowerment = np.sum(-p * np.log(p, where=p != 0), where=p != 0)
+                return empowerment
             else:
-                return 0, None, start_state
-        empowerment = np.sum(-data / (data.sum() + EPS) * np.log(data / (data.sum() + EPS), where=data != 0), where=data != 0)
+                return 0
         p = data / (data.sum() + EPS)
+        empowerment = np.sum(-p * np.log(p, where=data != 0), where=data != 0)
         return empowerment
 
     def learn(self, state_0, state_1):
