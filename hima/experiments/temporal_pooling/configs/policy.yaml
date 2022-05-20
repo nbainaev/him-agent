@@ -83,9 +83,9 @@ temporal_poolers:
     synPermPreviousPredActiveInc: 0.05
     historyLength: 20
     minHistory: 3
-    boostStrength: 0.0
-    dutyCyclePeriod: 1000
-    minPctOverlapDutyCycle: 0.001
+    boostStrength: 1.0
+    dutyCyclePeriod: 40000
+    minPctOverlapDutyCycle: 0.0002
     numActiveColumnsPerInhArea: 0
     stimulusThreshold: 3
     synPermConnected: 0.5
@@ -116,9 +116,9 @@ temporal_poolers:
     synPermPreviousPredActiveInc: 0.05
     historyLength: 20
     minHistory: 3
-    boostStrength: 0.0
-    dutyCyclePeriod: 1000
-    minPctOverlapDutyCycle: 0.001
+    boostStrength: 1.0
+    dutyCyclePeriod: 40000
+    minPctOverlapDutyCycle: 0.0002
     numActiveColumnsPerInhArea: 0
     stimulusThreshold: 3
     synPermConnected: 0.5
@@ -170,9 +170,9 @@ temporal_poolers:
       columnDimensions: ???
       localAreaDensity: ???
 
-      boostStrength: 0.
-      dutyCyclePeriod: 1000
-      minPctOverlapDutyCycle: 0.001
+      boostStrength: 1.0
+      dutyCyclePeriod: 40000
+      minPctOverlapDutyCycle: 0.0002
       numActiveColumnsPerInhArea: 0
       stimulusThreshold: 3
       synPermConnected: 0.5
@@ -188,9 +188,9 @@ temporal_poolers:
 
       potentialRadius: ???
       globalInhibition: True
-      boostStrength: 0.
-      dutyCyclePeriod: 1000
-      minPctOverlapDutyCycle: 0.001
+      boostStrength: 1.0
+      dutyCyclePeriod: 40000
+      minPctOverlapDutyCycle: 0.0002
       numActiveColumnsPerInhArea: 0
       potentialPct: 0.5
       stimulusThreshold: 3
