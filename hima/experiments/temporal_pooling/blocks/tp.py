@@ -12,7 +12,7 @@ from htm.bindings.sdr import SDR
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
-from hima.experiments.temporal_pooling.new.metrics import entropy
+from hima.experiments.temporal_pooling.new.metrics import entropy, representation_from_pmf
 
 
 class TemporalPoolerBlockStats:
@@ -64,7 +64,7 @@ class TemporalPoolerBlockStats:
 
         # aggregate/cluster/sequence metrics
         agg_sdr_size = np.count_nonzero(self.aggregate_histogram)
-        agg_pmf = self.aggregate_histogram / self.aggregate_steps
+        agg_pmf = self.aggregate_pmf()
 
         self.agg_sparsity = safe_divide(agg_sdr_size, self.output_sds.size)
         self.agg_relative_sparsity = safe_divide(agg_sdr_size, self.output_sds.active_size)
@@ -75,7 +75,7 @@ class TemporalPoolerBlockStats:
         active_entropy = entropy(agg_pmf[curr_sdr_lst], self.output_sds)
         self.active_entropy_coverage = safe_divide(active_entropy, self.agg_entropy)
 
-    def get_metrics(self) -> dict[str, Any]:
+    def step_metrics(self) -> dict[str, Any]:
         step_metrics = {
             'step/sparsity': self.step_sparsity,
             'step/relative_sparsity': self.step_relative_sparsity,
@@ -91,6 +91,31 @@ class TemporalPoolerBlockStats:
             'agg/active_entropy_coverage': self.active_entropy_coverage,
         }
         return step_metrics | aggregate_metrics
+
+    def final_metrics(self) -> dict[str, Any]:
+        distribution = self.aggregate_pmf()
+
+        # noinspection PyTypeChecker
+        representative_sdr_lst: list = representation_from_pmf(
+            pmf=distribution, sds=self.output_sds
+        ).tolist()
+
+        representative_sdr = set(representative_sdr_lst)
+
+        agg_sdr_size = np.count_nonzero(self.aggregate_histogram)
+        agg_pmf = self.aggregate_pmf()
+
+        agg_relative_sparsity = safe_divide(agg_sdr_size, self.output_sds.active_size)
+        representative_pmf_coverage = agg_pmf[representative_sdr_lst].sum() / agg_pmf.sum()
+        return {
+            'representative': representative_sdr,
+            'distribution': distribution,
+            'relative_sparsity': agg_relative_sparsity,
+            'representative_pmf_coverage': representative_pmf_coverage
+        }
+
+    def aggregate_pmf(self) -> np.ndarray:
+        return self.aggregate_histogram / self.aggregate_steps
 
 
 class TemporalPoolerBlock:

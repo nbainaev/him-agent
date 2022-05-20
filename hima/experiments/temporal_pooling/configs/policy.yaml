@@ -1,5 +1,5 @@
 _type_: tp.policy
-project: temporal_pooling
+project: tp_policy
 log: True    # wandb logging
 
 run_setup: simple

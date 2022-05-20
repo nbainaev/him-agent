@@ -3,6 +3,8 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from typing import Union
+
 import numpy as np
 
 from hima.common.sdr import SparseSdr, DenseSdr
@@ -11,7 +13,7 @@ from hima.common.utils import safe_divide
 
 
 # ==================== Sdr [sequence] similarity ====================
-def dense_similarity(x1: DenseSdr, x2: DenseSdr, symmetrical=False) -> float:
+def dense_similarity(x1: DenseSdr, x2: DenseSdr, symmetrical: bool = False) -> float:
     overlap = np.count_nonzero(x1 == x2)
     if symmetrical:
         union_size = np.count_nonzero(np.logical_or(x1, x2))
@@ -20,7 +22,7 @@ def dense_similarity(x1: DenseSdr, x2: DenseSdr, symmetrical=False) -> float:
     return safe_divide(overlap, np.count_nonzero(x2))
 
 
-def sdr_similarity(x1: set, x2: set, symmetrical=False) -> float:
+def sdr_similarity(x1: set, x2: set, symmetrical: bool = False) -> float:
     overlap = len(x1 & x2)
     if symmetrical:
         return safe_divide(overlap, len(x1 | x2))
@@ -39,7 +41,7 @@ def tuple_similarity(
 
 def sequence_similarity(
         s1: list, s2: list,
-        algorithm: str, discount: float = None, symmetrical=False,
+        algorithm: str, discount: float = None, symmetrical: bool = False,
         sds: Sds = None
 ) -> float:
     if algorithm == 'elementwise':
@@ -55,23 +57,58 @@ def sequence_similarity(
         raise KeyError(f'Invalid algorithm: {algorithm}')
 
 
+def distribution_similarity(
+        p: np.ndarray, q: np.ndarray, algorithm: str, sds: Sds = None, symmetrical: bool = False
+) -> float:
+    if algorithm == 'kl-divergence':
+        return kl_divergence(p, q, sds, symmetrical=symmetrical)
+    elif algorithm == 'wasserstein':
+        return wasserstein_distance(p, q, sds=sds)
+    else:
+        raise KeyError(f'Invalid algorithm: {algorithm}')
+
+
 def similarity_matrix(
-        sequences: list[list],
-        algorithm: str, discount: float = None, symmetrical=False,
+        a: Union[list[set[int]], list[np.ndarray], list[list]],
+        algorithm: str = None, discount: float = None, symmetrical: bool = False,
         sds: Sds = None
 ) -> np.ndarray:
-    n = len(sequences)
+    n = len(a)
     diagonal_mask = np.identity(n, dtype=bool)
-    sm = np.ma.array(np.zeros((n, n)), mask=diagonal_mask)
+    sm = np.empty((n, n))
+
+    if isinstance(a[0], set):
+        # SDR representations
+        regime = 0
+    elif isinstance(a[0], np.ndarray):
+        # representations distribution (PMF)
+        regime = 1
+    elif isinstance(a[0], list):
+        # sequences
+        regime = 2
+    else:
+        raise KeyError(f'List of {type(a[0])} is not supported')
+
     for i in range(n):
         for j in range(n):
             if i == j:
                 continue
-            sm[i, j] = sequence_similarity(
-                sequences[i], sequences[j],
-                algorithm=algorithm, discount=discount, symmetrical=symmetrical, sds=sds
-            )
-    return sm
+            x, y = a[i], a[j]
+
+            if regime == 0:
+                sim = sdr_similarity(x, y, symmetrical=symmetrical)
+            elif regime == 1:
+                # noinspection PyTypeChecker
+                sim = distribution_similarity(
+                    x, y, algorithm=algorithm, sds=sds, symmetrical=symmetrical
+                )
+            else:
+                # noinspection PyTypeChecker
+                sim = sequence_similarity(
+                    x, y, algorithm=algorithm, discount=discount, symmetrical=symmetrical, sds=sds
+                )
+            sm[i, j] = sim
+    return np.ma.array(sm, mask=diagonal_mask)
 
 
 # FIXME:
@@ -94,7 +131,7 @@ def similarity_matrix(
 
 
 def sequence_similarity_elementwise(
-        s1: list, s2: list, discount: float = None, symmetrical=False
+        s1: list, s2: list, discount: float = None, symmetrical: bool = False
 ) -> float:
     n = len(s1)
     assert n == len(s2)
@@ -120,7 +157,7 @@ def sequence_similarity_elementwise(
 
 
 def sequence_similarity_as_union(
-        s1: list, s2: list, sds: Sds, symmetrical=False, metric: str = 'kl-divergence'
+        s1: list, s2: list, sds: Sds, symmetrical: bool = False, algorithm: str = 'kl-divergence'
 ) -> float:
     n = len(s1)
     assert n == len(s2)
@@ -131,9 +168,7 @@ def sequence_similarity_as_union(
     p = aggregate_pmf(s1, sds)
     q = aggregate_pmf(s2, sds)
 
-    if symmetrical:
-        return (kl_divergence(p, q, sds) + kl_divergence(q, p, sds)) / 2
-    return kl_divergence(p, q, sds)
+    return distribution_similarity(p, q, algorithm=algorithm, sds=sds, symmetrical=symmetrical)
 
 
 def sequence_similarity_by_prefixes(
@@ -171,6 +206,12 @@ def aggregate_pmf(seq: list, sds: Sds) -> np.ndarray:
     return histogram / cnt
 
 
+def representation_from_pmf(pmf: np.ndarray, sds: Sds) -> SparseSdr:
+    representative_sdr = np.argpartition(pmf, -sds.active_size)
+    representative_sdr.sort()
+    return representative_sdr
+
+
 def _correct_information_metric_for_sds(metric: float, sds: Sds = None) -> float:
     # if SDS params are passed, we treat each distribution as cluster distribution
     # and normalize it
@@ -183,8 +224,15 @@ def _correct_information_metric_for_sds(metric: float, sds: Sds = None) -> float
     return metric
 
 
-def kl_divergence(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float:
-    kl_div = -np.dot(p, np.ma.log(p) - np.ma.log(q))
+def kl_divergence(
+        p: np.ndarray, q: np.ndarray, sds: Sds = None,
+        symmetrical=False
+) -> float:
+    if symmetrical:
+        return (kl_divergence(p, q, sds) + kl_divergence(q, p, sds)) / 2
+
+    # noinspection PyTypeChecker
+    kl_div: float = np.dot(p, np.ma.log(p) - np.ma.log(q))
     kl_div = _correct_information_metric_for_sds(kl_div, sds)
     return kl_div
 
@@ -216,7 +264,8 @@ def wasserstein_distance(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float
 
 # ==================== Errors ====================
 def standardize_sample_distribution(x: np.ndarray) -> np.ndarray:
-    return (x - np.mean(x)) / (np.max(x) - np.min(x))
+    unbiased_x = x - np.mean(x)
+    return safe_divide(unbiased_x, np.max(x) - np.min(x), default=unbiased_x)
 
 
 def mean_absolute_error(x: np.ndarray, y: np.ndarray) -> float:

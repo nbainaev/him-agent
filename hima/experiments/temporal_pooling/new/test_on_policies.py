@@ -17,8 +17,10 @@ from hima.experiments.temporal_pooling.config_resolvers import (
     resolve_tp, resolve_data_generator, resolve_run_setup, resolve_context_tm,
     resolve_context_tm_apical_feedback
 )
-from hima.experiments.temporal_pooling.new.test_on_policies_stats import ExperimentStats
-from hima.experiments.temporal_pooling.utils import rename_dict_keys
+from hima.experiments.temporal_pooling.new.test_on_policies_stats import (
+    ExperimentStats,
+    RunProgress
+)
 
 
 class RunSetup:
@@ -53,6 +55,7 @@ class PoliciesExperiment(Runner):
     run_setup: RunSetup
     pipeline: list[str]
     blocks: dict[str, Any]
+    progress: RunProgress
     stats: ExperimentStats
 
     def __init__(
@@ -68,11 +71,12 @@ class PoliciesExperiment(Runner):
         self.pipeline = pipeline
         self.blocks = self.build_blocks(temporal_pooler)
         self.input_data = self.blocks[self.pipeline[0]]
-
-        self.stats = ExperimentStats(self.blocks)
+        self.progress = RunProgress()
 
     def run(self):
         print('==> Run')
+        self.define_metrics(self.logger, self.blocks)
+
         for epoch in range(self.run_setup.epochs):
             _, elapsed_time = self.train_epoch()
             print(f'Epoch {epoch}: {elapsed_time}')
@@ -80,12 +84,17 @@ class PoliciesExperiment(Runner):
 
     @timed
     def train_epoch(self):
-        self.stats = ExperimentStats(self.blocks)
+        self.progress.next_epoch()
+        self.stats = ExperimentStats(
+            progress=self.progress, logger=self.logger, blocks=self.blocks
+        )
         self.reset_blocks_stats()
 
         for policy in self.input_data:
             for i in range(self.run_setup.policy_repeats):
                 self.run_policy(policy, learn=True)
+
+        self.stats.on_finish()
 
     def run_policy(self, policy: Policy, learn=True):
         self.reset_blocks(block_type='temporal_memory')
@@ -96,6 +105,8 @@ class PoliciesExperiment(Runner):
             self.step(state, action, learn)
 
     def step(self, state: SparseSdr, action: SparseSdr, learn: bool):
+        self.progress.next_step()
+
         feedforward, feedback = [], []
         # context is fixed for all levels (as I don't know what another context to take)
         context = state
@@ -130,7 +141,7 @@ class PoliciesExperiment(Runner):
             feedforward = output
             prev_block = block
 
-        self.stats.on_step(self.logger)
+        self.stats.on_step()
 
     def reset_blocks(self, block_type):
         for block_name in self.pipeline:
@@ -188,3 +199,13 @@ class PoliciesExperiment(Runner):
             prev_block = block
 
         return blocks
+
+    @staticmethod
+    def define_metrics(logger, blocks: dict[str, Any]):
+        if not logger:
+            return
+
+        logger.define_metric('epoch')
+        for k in blocks:
+            block = blocks[k]
+            logger.define_metric(f'{block.tag}/epoch/*', step_metric='epoch')

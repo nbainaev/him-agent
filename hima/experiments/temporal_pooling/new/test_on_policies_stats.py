@@ -11,17 +11,39 @@ import wandb
 from matplotlib import pyplot as plt
 from wandb.sdk.wandb_run import Run
 
-from hima.common.utils import safe_divide
-from hima.experiments.temporal_pooling.metrics import mean_absolute_error, kl_div
+from hima.common.sds import Sds
+from hima.experiments.temporal_pooling.new.metrics import (
+    similarity_matrix,
+    standardize_sample_distribution
+)
 from hima.experiments.temporal_pooling.utils import rename_dict_keys
 
 
+class RunProgress:
+    epoch: int
+    step: int
+
+    def __init__(self):
+        self.epoch = -1
+        self.step = -1
+
+    def next_epoch(self):
+        self.epoch += 1
+
+    def next_step(self):
+        self.step += 1
+
+
 class ExperimentStats:
+    progress: RunProgress
+    logger: Optional[Run]
     blocks: dict[str, Any]
     sequence_ids_order: list[int]
     sequences_block_stats: dict[int, dict[str, Any]]
 
-    def __init__(self, blocks):
+    def __init__(self, progress: RunProgress, logger: Optional[Run], blocks: dict[str, Any]):
+        self.progress = progress
+        self.logger = logger
         self.blocks = blocks
         self.sequences_block_stats = {}
         self.sequence_ids_order = []
@@ -49,295 +71,118 @@ class ExperimentStats:
     def current_block_stats(self):
         return self.sequences_block_stats[self.current_sequence_id]
 
-    def on_step(self, logger):
-        if logger is None:
+    def on_step(self):
+        if self.logger is None:
             return
 
-        metrics = {}
+        metrics = {
+            'epoch': self.progress.epoch
+        }
         for block_name in self.current_block_stats:
             block = self.blocks[block_name]
             block_stats = self.current_block_stats[block_name]
-            block_metrics = block_stats.get_metrics()
+            block_metrics = block_stats.step_metrics()
+            # metrics[block.tag] = block_metrics
             block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/')
             metrics |= block_metrics
 
-        logger.log(metrics)
+        if self.logger:
+            self.logger.log(metrics, step=self.progress.step)
 
-    def on_finish(self, logger: Run):
-        if not logger:
-            return
+    def on_finish(self):
+        # if not self.logger:
+        #     return
 
-        to_log, to_sum = {}, {}
-        logger.log(to_log)
-        for key, val in to_sum.items():
-            logger.summary[key] = val
+        metrics = {}
+        diff_metrics = []
+        for block_name in self.current_block_stats:
+            block = self.blocks[block_name]
+            if block_name.startswith('generator'):
+                block_metrics, block_diff_metrics = self.summarize_input(block)
+            elif block_name.startswith('temporal_memory'):
+                block_metrics, block_diff_metrics = {}, {}
+            else:   # temporal_pooler
+                block_metrics, block_diff_metrics = self.summarize_tp(block)
 
-    # noinspection PyProtectedMember
-    def _get_tp_metrics(self, temporal_pooler) -> dict:
-        prev_repr = self.tp_current_representation
-        curr_repr_lst = temporal_pooler.getUnionSDR().sparse
-        curr_repr = set(curr_repr_lst)
-        self.tp_current_representation = curr_repr
-        # noinspection PyTypeChecker
-        self.last_representations[self.current_sequence_id] = curr_repr
+            block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/epoch/')
+            metrics |= block_metrics
+            diff_metrics.append((block.tag, block_diff_metrics))
 
-        self.tp_sequence_total_trials[self.current_sequence_id] += 1
-        cluster_trials = self.tp_sequence_total_trials[self.current_sequence_id]
+        metrics |= self.summarize_similarity_errors(diff_metrics)
 
-        output_distribution_counts = self.tp_output_distribution_counts[self.current_sequence_id]
-        output_distribution_counts[curr_repr_lst] += 1
-        cluster_size = np.count_nonzero(output_distribution_counts)
-        cluster_distribution = output_distribution_counts / cluster_trials
+        if self.logger:
+            self.logger.log(metrics, step=self.progress.step)
 
-        step_sparsity = safe_divide(
-            len(curr_repr), self.tp_output_sdr_size
+    def summarize_input(self, block):
+        block_stats = self.current_block_stats[block.name]
+        metrics = block_stats.final_metrics()
+        diff_metrics = {}
+        for metric_key in metrics:
+            metric_value = metrics[metric_key]
+
+            if metric_key == 'raw_sim_mx_prfx':
+                diff_metrics['raw_sim_mx'] = metric_value
+            if metric_key == 'sim_mx_prfx':
+                diff_metrics['sim_mx'] = metric_value
+
+            if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
+                metrics[metric_key] = self.plot_representations(metric_value)
+        return metrics, diff_metrics
+
+    def summarize_tp(self, block):
+        raw_metrics = self._collect_block_final_stats(block)
+        metrics = self._sdr_representation_similarities(
+            raw_metrics['representative'], block.output_sds
         )
-        step_relative_sparsity = safe_divide(
-            len(curr_repr), self.tp_expected_active_size
+        metrics |= self._pmf_similarities(
+            raw_metrics['distribution'], block.output_sds
         )
-        new_cells_relative_ratio = safe_divide(
-            len(curr_repr - prev_repr), self.tp_expected_active_size
-        )
-        sym_diff_cells_ratio = safe_divide(
-            len(curr_repr ^ prev_repr),
-            len(curr_repr | prev_repr)
-        )
-        step_metrics = {
-            'tp/step/sparsity': step_sparsity,
-            'tp/step/relative_sparsity': step_relative_sparsity,
-            'tp/step/new_cells_relative_ratio': new_cells_relative_ratio,
-            'tp/step/sym_diff_cells_ratio': sym_diff_cells_ratio,
+        metrics['mean_repr_pmf_coverage'] = np.mean(raw_metrics['representative_pmf_coverage'])
+        metrics['mean_relative_sparsity'] = np.mean(raw_metrics['relative_sparsity'])
+
+        diff_metrics = {}
+        for metric_key in metrics:
+            metric_value = metrics[metric_key]
+            if metric_key in {'raw_sim_mx', 'sim_mx'}:
+                diff_metrics[metric_key] = metric_value
+            if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
+                metrics[metric_key] = self.plot_representations(metric_value)
+        return metrics, diff_metrics
+
+    def summarize_similarity_errors(self, diff_metrics):
+        input_tag, input_sims = diff_metrics[0]
+        metrics = {
+            sim_key: {input_tag: input_sims[sim_key]}
+            for sim_key in input_sims
         }
 
-        cluster_sparsity = safe_divide(
-            cluster_size, self.tp_output_sdr_size
-        )
-        cluster_relative_sparsity = safe_divide(
-            cluster_size, self.tp_expected_active_size
-        )
-        cluster_binary_active_coverage = safe_divide(
-            len(curr_repr), cluster_size
-        )
-        cluster_distribution_active_coverage = cluster_distribution[curr_repr_lst].sum()
-        cluster_distribution_active_coverage /= self.tp_expected_active_size
+        for block_tag, block_sim_metrics in diff_metrics[1:]:
+            for metric_key in block_sim_metrics:
+                sim_mx = block_sim_metrics[metric_key]
 
-        cluster_entropy = self._cluster_entropy(cluster_distribution)
-        cluster_entropy_active_coverage = safe_divide(
-            self._cluster_entropy(cluster_distribution[curr_repr_lst]),
-            cluster_entropy
-        )
-        sequence_metrics = {
-            'tp/sequence/sparsity': cluster_sparsity,
-            'tp/sequence/relative_sparsity': cluster_relative_sparsity,
-            'tp/sequence/cluster_binary_coverage': cluster_binary_active_coverage,
-            'tp/sequence/cluster_distribution_coverage': cluster_distribution_active_coverage,
-            'tp/sequence/entropy': cluster_entropy,
-            'tp/sequence/entropy_coverage': cluster_entropy_active_coverage,
-        }
-        return step_metrics | sequence_metrics
+                metrics[metric_key][block_tag] = sim_mx
+                abs_err_mx = np.ma.abs(sim_mx - input_sims[metric_key])
+                metrics[metric_key][f'{block_tag}_abs_err'] = abs_err_mx
 
-    def _cluster_kl_div(self, x: np.ndarray, y: np.ndarray) -> float:
-        h = kl_div(x, y)
-        h /= self.tp_expected_active_size
-        h /= np.log(self.tp_output_sdr_size)
-        return h
+                mae = abs_err_mx.mean()
+                if metric_key.startswith('raw_'):
+                    metrics[f'{block_tag}/epoch/similarity_mae'] = mae
+                else:
+                    metrics[f'{block_tag}/epoch/similarity_smae'] = mae
 
-    def _cluster_entropy(self, x: np.ndarray) -> float:
-        return self._cluster_kl_div(x, x)
+        result = {}
+        for metric_key in metrics.keys():
+            metric = metrics[metric_key]
+            if isinstance(metric, dict):
+                # dict of similarity matrices
+                result[f'diff/{metric_key}'] = self._plot_similarity_matrices(**metric)
+            else:
+                result[metric_key] = metric
 
-    def _get_tm_metrics(self, temporal_memory) -> dict:
-        active_cells: np.ndarray = temporal_memory.get_active_cells()
-        predicted_cells: np.ndarray = temporal_memory.get_correctly_predicted_cells()
+        return result
 
-        recall = safe_divide(predicted_cells.size, active_cells.size)
-
-        return {
-            'tm/recall': recall
-        }
-
-    def _get_summary_new_sdrs(self, policies):
-        n_policies = len(policies)
-        diag_mask = np.identity(n_policies, dtype=bool)
-
-        input_similarity_matrix = self._get_input_similarity(policies)
-        input_similarity_matrix = np.ma.array(input_similarity_matrix, mask=diag_mask)
-
-        output_similarity_matrix = self._get_output_similarity(self.last_representations)
-        output_similarity_matrix = np.ma.array(output_similarity_matrix, mask=diag_mask)
-
-        input_similarity_matrix = standardize_distr(input_similarity_matrix)
-        output_similarity_matrix = standardize_distr(output_similarity_matrix)
-
-        smae = mean_absolute_error(input_similarity_matrix, output_similarity_matrix)
-
-        representation_similarity_plot = self._plot_similarity_matrices(
-            input=input_similarity_matrix,
-            output=output_similarity_matrix,
-            diff=np.ma.abs(output_similarity_matrix - input_similarity_matrix)
-        )
-        to_log = {
-            'representations_similarity_sdr': representation_similarity_plot,
-        }
-        to_sum = {
-            'standardized_mae_sdr': smae,
-        }
-        return to_log, to_sum
-
-    def _get_summary_old_actions(self, policies):
-        n_policies = len(policies)
-        diag_mask = np.identity(n_policies, dtype=bool)
-
-        input_similarity_matrix = self._get_policy_action_similarity(policies)
-        input_similarity_matrix = np.ma.array(input_similarity_matrix, mask=diag_mask)
-
-        output_similarity_matrix = self._get_output_similarity_union(
-            self.last_representations
-        )
-        output_similarity_matrix = np.ma.array(output_similarity_matrix, mask=diag_mask)
-
-        unnorm_representation_similarity_plot = self._plot_similarity_matrices(
-            input=input_similarity_matrix,
-            output=output_similarity_matrix
-        )
-
-        input_similarity_matrix = standardize_distr(input_similarity_matrix)
-        output_similarity_matrix = standardize_distr(output_similarity_matrix)
-
-        smae = mean_absolute_error(input_similarity_matrix, output_similarity_matrix)
-
-        representation_similarity_plot = self._plot_similarity_matrices(
-            input=input_similarity_matrix,
-            output=output_similarity_matrix,
-            diff=np.ma.abs(output_similarity_matrix - input_similarity_matrix)
-        )
-        to_log = {
-            'raw_representations_similarity': unnorm_representation_similarity_plot,
-            'representations_similarity': representation_similarity_plot,
-        }
-        to_sum = {
-            'standardized_mae': smae,
-        }
-        return to_log, to_sum
-
-    def _get_summary_old_actions_distr(self, policies):
-        n_policies = len(policies)
-        diag_mask = np.identity(n_policies, dtype=bool)
-
-        input_similarity_matrix = self._get_policy_action_similarity(policies)
-        input_similarity_matrix = np.ma.array(input_similarity_matrix, mask=diag_mask)
-
-        output_similarity_matrix = self._get_output_similarity_distr()
-        output_similarity_matrix = np.ma.array(output_similarity_matrix, mask=diag_mask)
-
-        unnorm_input_similarity_matrix = input_similarity_matrix
-        input_similarity_matrix = standardize_distr(input_similarity_matrix)
-
-        unnorm_output_similarity_matrix = output_similarity_matrix
-        output_similarity_matrix = standardize_distr(output_similarity_matrix)
-
-        representation_similarity_plot = self._plot_similarity_matrices(
-            raw_input_sim=unnorm_input_similarity_matrix,
-            raw_output_kl_div=unnorm_output_similarity_matrix,
-            input_sim=input_similarity_matrix,
-            output_kl_div=output_similarity_matrix
-        )
-        to_log = {
-            'representations_kl_div': representation_similarity_plot,
-        }
-        return to_log
-
-    def _get_policy_action_similarity(self, policies):
-        n_policies = len(policies)
-        similarity_matrix = np.zeros((n_policies, n_policies))
-
-        for i in range(n_policies):
-            for j in range(n_policies):
-
-                counter = 0
-                size = 0
-                for p1, p2 in zip(policies[i], policies[j]):
-                    _, a1 = p1
-                    _, a2 = p2
-
-                    size += 1
-                    # such comparison works only for bucket encoding
-                    if a1[0] == a2[0]:
-                        counter += 1
-
-                similarity_matrix[i, j] = safe_divide(counter, size)
-        return similarity_matrix
-
-    def _get_input_similarity(self, policies):
-        def elem_sim(x1, x2):
-            overlap = np.intersect1d(x1, x2, assume_unique=True).size
-            return safe_divide(overlap, x2.size)
-
-        def reduce_elementwise_similarity(similarities):
-            return np.mean(similarities)
-
-        n_policies = len(policies)
-        similarity_matrix = np.zeros((n_policies, n_policies))
-        for i in range(n_policies):
-            for j in range(n_policies):
-                if i == j:
-                    continue
-
-                similarities = []
-                for p1, p2 in zip(policies[i], policies[j]):
-                    p1_sim = [elem_sim(p1[k], p2[k]) for k in range(len(p1))]
-                    sim = reduce_elementwise_similarity(p1_sim)
-                    similarities.append(sim)
-
-                similarity_matrix[i, j] = reduce_elementwise_similarity(similarities)
-        return similarity_matrix
-
-    def _get_output_similarity_union(self, representations):
-        n_policies = len(representations.keys())
-        similarity_matrix = np.zeros((n_policies, n_policies))
-        for i in range(n_policies):
-            for j in range(n_policies):
-                if i == j:
-                    continue
-
-                repr1: set = representations[i]
-                repr2: set = representations[j]
-                similarity_matrix[i, j] = safe_divide(
-                    len(repr1 & repr2),
-                    len(repr2 | repr2)
-                )
-        return similarity_matrix
-
-    def _get_output_similarity(self, representations):
-        n_policies = len(representations.keys())
-        similarity_matrix = np.zeros((n_policies, n_policies))
-        for i in range(n_policies):
-            for j in range(n_policies):
-                if i == j:
-                    continue
-
-                repr1: set = representations[i]
-                repr2: set = representations[j]
-                similarity_matrix[i, j] = safe_divide(
-                    len(repr1 & repr2),
-                    len(repr2)
-                )
-        return similarity_matrix
-
-    def _get_output_similarity_distr(self):
-        n_policies = len(self.tp_output_distribution_counts.keys())
-        similarity_matrix = np.zeros((n_policies, n_policies))
-        for i in range(n_policies):
-            for j in range(n_policies):
-                if i == j:
-                    continue
-
-                distr1 = self.tp_output_distribution_counts[i] / self.tp_sequence_total_trials[i]
-                distr2 = self.tp_output_distribution_counts[j] / self.tp_sequence_total_trials[j]
-
-                similarity_matrix[i, j] = self._cluster_kl_div(distr1, distr2)
-        return similarity_matrix
-
-    def _plot_similarity_matrices(self, **sim_matrices):
+    @staticmethod
+    def _plot_similarity_matrices(**sim_matrices):
         n = len(sim_matrices)
         heatmap_size = 6
         fig, axes = plt.subplots(
@@ -356,31 +201,90 @@ class ExperimentStats:
                 sns.heatmap(sim_matrix, vmin=vmin, vmax=1, cmap='plasma', ax=ax, annot=True)
             ax.set_title(name, size=10)
 
-        return wandb.Image(axes[0])
+        img = wandb.Image(axes[0])
+        plt.close(fig)
+        return img
 
-    def _get_final_representations(self):
-        n_clusters = len(self.last_representations)
-        representations = np.zeros((n_clusters, self.tp_output_sdr_size), dtype=float)
-        distributions = np.zeros_like(representations)
+    @staticmethod
+    def _sdr_representation_similarities(representations, sds: Sds):
+        raw_similarity_matrix = similarity_matrix(
+            representations, symmetrical=False, sds=sds
+        )
+        stand_similarity_matrix = standardize_sample_distribution(raw_similarity_matrix)
 
-        for i, policy_id in enumerate(self.last_representations.keys()):
-            repr = self.last_representations[policy_id]
-            distr = self.tp_output_distribution_counts[policy_id]
-            trials = self.tp_sequence_total_trials[policy_id]
-
-            representations[i, list(repr)] = 1.
-            distributions[i] = distr / trials
-
-        fig, ax1 = plt.subplots(1, 1, figsize=(16, 8))
-        sns.heatmap(representations, vmin=0, vmax=1, cmap='plasma')
-
-        fig, ax2 = plt.subplots(1, 1, figsize=(16, 8))
-        sns.heatmap(distributions, vmin=0, vmax=1, cmap='plasma', ax=ax2)
+        raw_similarity = raw_similarity_matrix.mean()
+        similarity = stand_similarity_matrix.mean()
 
         return {
-            'representations': wandb.Image(ax1),
-            'distributions': wandb.Image(ax2)
+            'raw_sim_mx': raw_similarity_matrix,
+            'sim_mx': stand_similarity_matrix,
+            'raw_sim': raw_similarity,
+            'sim': similarity,
         }
+
+    @staticmethod
+    def _pmf_similarities(representations, sds: Sds):
+        raw_similarity_matrix_kl = similarity_matrix(
+            representations, algorithm='kl-divergence', symmetrical=False, sds=sds
+        )
+        similarity_matrix_kl = standardize_sample_distribution(
+            raw_similarity_matrix_kl
+        )
+        raw_similarity_kl = raw_similarity_matrix_kl.mean()
+        similarity_kl = similarity_matrix_kl.mean()
+
+        raw_similarity_matrix_was = similarity_matrix(
+            representations, algorithm='wasserstein', symmetrical=False, sds=sds
+        )
+        similarity_matrix_was = standardize_sample_distribution(
+            raw_similarity_matrix_kl
+        )
+        raw_similarity_was = raw_similarity_matrix_was.mean()
+        similarity_was = similarity_matrix_was.mean()
+
+        return {
+            'raw_sim_mx_kl': raw_similarity_matrix_kl,
+            'sim_mx_kl': similarity_matrix_kl,
+            'raw_sim_kl': raw_similarity_kl,
+            'sim_kl': similarity_kl,
+
+            'raw_sim_mx_was': raw_similarity_matrix_was,
+            'sim_mx_was': similarity_matrix_was,
+            'raw_sim_was': raw_similarity_was,
+            'sim_was': similarity_was,
+        }
+
+    def _collect_block_final_stats(self, block) -> dict[str, Any]:
+        result = {}
+        n_sequences = len(self.sequences_block_stats)
+        for seq in self.sequences_block_stats:
+            block_stat = self.sequences_block_stats[seq][block.name]
+            final_metrics = block_stat.final_metrics()
+            for k in final_metrics:
+                if k not in result:
+                    result[k] = [None]*n_sequences
+                result[k][seq] = final_metrics[k]
+
+        for k in result:
+            if isinstance(result[k][0], np.ndarray):
+                result[k] = np.vstack(result[k])
+        return result
+
+    @staticmethod
+    def plot_representations(repr_matrix):
+        fig, ax = plt.subplots(1, 1, figsize=(16, 8))
+
+        vmin = 0 if np.min(repr_matrix) >= 0 else -1
+        if isinstance(repr_matrix, np.ma.MaskedArray):
+            sns.heatmap(
+                repr_matrix, mask=repr_matrix.mask,
+                vmin=vmin, vmax=1, cmap='plasma', ax=ax, annot=True
+            )
+        else:
+            sns.heatmap(repr_matrix, vmin=vmin, vmax=1, cmap='plasma', ax=ax, annot=True)
+        img = wandb.Image(fig)
+        plt.close(fig)
+        return img
 
 
 def standardize_distr(x: np.ndarray) -> np.ndarray:

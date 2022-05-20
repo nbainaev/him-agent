@@ -22,10 +22,15 @@ class TemporalMemoryBlockStats:
     def update(self, active_cells: SparseSdr, correctly_predicted_cells: SparseSdr):
         self.recall = safe_divide(correctly_predicted_cells.size, active_cells.size)
 
-    def get_metrics(self) -> dict[str, Any]:
+    def step_metrics(self) -> dict[str, Any]:
         return {
             'recall': self.recall
         }
+
+    @staticmethod
+    def final_metrics() -> dict[str, Any]:
+        # TODO: collect repr and distr
+        return {}
 
 
 class ContextTemporalMemoryBlock:
