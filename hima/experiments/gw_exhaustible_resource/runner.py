@@ -96,6 +96,7 @@ class GwExhaustibleResource(Runner):
         self._rng = random.Random(self.scenario['seed'])
         self.n_episodes = self.scenario['n_episodes']
         self.env_config = config['environment']
+        self.env_config['seed'] = self.scenario['seed']
         self.environment: Environment = unwrap(BioGwLabEnvironment(**self.env_config))
         self.agent = resolve_agent(
             config['agent'],

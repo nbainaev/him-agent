@@ -17,7 +17,6 @@ scenario:
   door_positions: [ [4, 2], [1, 4], [4, 6], [7, 4] ]
 
 environment:
-  seed: 432921
   shape_xy: [9, 9]
 
   actions_cost:
