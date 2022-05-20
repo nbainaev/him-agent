@@ -99,7 +99,6 @@ class TemporalPoolerBlockStats:
         representative_sdr_lst: list = representation_from_pmf(
             pmf=distribution, sds=self.output_sds
         ).tolist()
-
         representative_sdr = set(representative_sdr_lst)
 
         agg_sdr_size = np.count_nonzero(self.aggregate_histogram)

@@ -207,7 +207,7 @@ def aggregate_pmf(seq: list, sds: Sds) -> np.ndarray:
 
 
 def representation_from_pmf(pmf: np.ndarray, sds: Sds) -> SparseSdr:
-    representative_sdr = np.argpartition(pmf, -sds.active_size)
+    representative_sdr = np.argpartition(pmf, -sds.active_size)[-sds.active_size:]
     representative_sdr.sort()
     return representative_sdr
 
@@ -234,6 +234,8 @@ def kl_divergence(
     # noinspection PyTypeChecker
     kl_div: float = np.dot(p, np.ma.log(p) - np.ma.log(q))
     kl_div = _correct_information_metric_for_sds(kl_div, sds)
+    # we take abs as for SDS KL-div actually can be < 0! But I think it's ok to consider abs value
+    kl_div = abs(kl_div)
     return kl_div
 
 
@@ -258,6 +260,8 @@ def wasserstein_distance(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float
         # normalize by the distribution mass
         res /= sds.active_size
 
+    # same as for KL-div
+    res = abs(res)
     # noinspection PyTypeChecker
     return res
 

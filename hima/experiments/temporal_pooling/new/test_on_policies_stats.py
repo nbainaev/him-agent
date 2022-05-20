@@ -82,7 +82,6 @@ class ExperimentStats:
             block = self.blocks[block_name]
             block_stats = self.current_block_stats[block_name]
             block_metrics = block_stats.step_metrics()
-            # metrics[block.tag] = block_metrics
             block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/')
             metrics |= block_metrics
 
@@ -90,8 +89,8 @@ class ExperimentStats:
             self.logger.log(metrics, step=self.progress.step)
 
     def on_finish(self):
-        # if not self.logger:
-        #     return
+        if not self.logger:
+            return
 
         metrics = {}
         diff_metrics = []
@@ -207,19 +206,14 @@ class ExperimentStats:
 
     @staticmethod
     def _sdr_representation_similarities(representations, sds: Sds):
-        raw_similarity_matrix = similarity_matrix(
-            representations, symmetrical=False, sds=sds
-        )
-        stand_similarity_matrix = standardize_sample_distribution(raw_similarity_matrix)
-
+        raw_similarity_matrix = similarity_matrix(representations, symmetrical=False, sds=sds)
         raw_similarity = raw_similarity_matrix.mean()
-        similarity = stand_similarity_matrix.mean()
+        stand_similarity_matrix = standardize_sample_distribution(raw_similarity_matrix)
 
         return {
             'raw_sim_mx': raw_similarity_matrix,
-            'sim_mx': stand_similarity_matrix,
             'raw_sim': raw_similarity,
-            'sim': similarity,
+            'sim_mx': stand_similarity_matrix,
         }
 
     @staticmethod
@@ -227,47 +221,39 @@ class ExperimentStats:
         raw_similarity_matrix_kl = similarity_matrix(
             representations, algorithm='kl-divergence', symmetrical=False, sds=sds
         )
-        similarity_matrix_kl = standardize_sample_distribution(
-            raw_similarity_matrix_kl
-        )
         raw_similarity_kl = raw_similarity_matrix_kl.mean()
-        similarity_kl = similarity_matrix_kl.mean()
+        similarity_matrix_kl = standardize_sample_distribution(raw_similarity_matrix_kl)
 
         raw_similarity_matrix_was = similarity_matrix(
             representations, algorithm='wasserstein', symmetrical=False, sds=sds
         )
-        similarity_matrix_was = standardize_sample_distribution(
-            raw_similarity_matrix_kl
-        )
         raw_similarity_was = raw_similarity_matrix_was.mean()
-        similarity_was = similarity_matrix_was.mean()
+        similarity_matrix_was = standardize_sample_distribution(raw_similarity_matrix_kl)
 
         return {
             'raw_sim_mx_kl': raw_similarity_matrix_kl,
-            'sim_mx_kl': similarity_matrix_kl,
             'raw_sim_kl': raw_similarity_kl,
-            'sim_kl': similarity_kl,
+            'sim_mx_kl': similarity_matrix_kl,
 
             'raw_sim_mx_was': raw_similarity_matrix_was,
-            'sim_mx_was': similarity_matrix_was,
             'raw_sim_was': raw_similarity_was,
-            'sim_was': similarity_was,
+            'sim_mx_was': similarity_matrix_was,
         }
 
     def _collect_block_final_stats(self, block) -> dict[str, Any]:
         result = {}
         n_sequences = len(self.sequences_block_stats)
-        for seq in self.sequences_block_stats:
-            block_stat = self.sequences_block_stats[seq][block.name]
+        for seq_ind in self.sequences_block_stats:
+            block_stat = self.sequences_block_stats[seq_ind][block.name]
             final_metrics = block_stat.final_metrics()
-            for k in final_metrics:
-                if k not in result:
-                    result[k] = [None]*n_sequences
-                result[k][seq] = final_metrics[k]
+            for metric_key in final_metrics:
+                if metric_key not in result:
+                    result[metric_key] = [None]*n_sequences
+                result[metric_key][seq_ind] = final_metrics[metric_key]
 
-        for k in result:
-            if isinstance(result[k][0], np.ndarray):
-                result[k] = np.vstack(result[k])
+        for metric_key in result:
+            if isinstance(result[metric_key][0], np.ndarray):
+                result[metric_key] = np.vstack(result[metric_key])
         return result
 
     @staticmethod
@@ -285,7 +271,3 @@ class ExperimentStats:
         img = wandb.Image(fig)
         plt.close(fig)
         return img
-
-
-def standardize_distr(x: np.ndarray) -> np.ndarray:
-    return (x - np.mean(x)) / (np.max(x) - np.min(x))
