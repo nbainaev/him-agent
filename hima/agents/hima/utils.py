@@ -65,7 +65,7 @@ class EmpowermentVis:
             if self.empowerment.filename is None:
                 learned_emp[unshifted_pos] = self.empowerment.eval_state(output_state.sparse,
                                                                          self.horizon,
-                                                                         use_memory=True)[0]
+                                                                         use_memory=True)
             else:
                 learned_emp[unshifted_pos] = self.empowerment.eval_from_file(unshifted_pos)
 

@@ -86,7 +86,7 @@ class HIMA:
             reward = self.empowerment.eval_state(
                 state,
                 self.empowerment_horizon,
-                use_memory=True)[0]
+                use_memory=True)
         else:
             reward = self.empowerment.eval_from_file(self.real_pos)
         return reward

@@ -230,25 +230,21 @@ class Empowerment:
 
         Parameters
         ----------
-        state: np.array
+        state : np.array
             The SDR representation (sparse) of the state.
-        horizon: int
+        horizon : int
             The horison of evaluating for given state. The good value is 3.
-        use_segments (optional): bool
-            The flag determines using of segments instead of cells to evaluate empowerment. By default: False.
-        use_memory (optional): bool
-            The flag determines using of the Memory object. Useful only if this object was initialised.
-            By default: False
+        use_segments : bool, optional
+            The flag determines using of segments instead of cells to evaluate empowerment.
+            By default: False.
+        use_memory : bool, optional
+            The flag determines using of the Memory object. Useful only if this object was
+            initialised. By default: False.
 
         Returns
         -------
-        empowerment: float
+        float
             The empowerment value (always > 0).
-        p: np.array
-            The array of probabilities on that the empowerment was calculated.
-        start_state: np.array
-            The SDR representation of given state that is used in TM. (Only if sp is defined it differs from parameter
-            state).
         """
         if self.sp is not None:
             self.sdr_0.sparse = state
@@ -285,7 +281,7 @@ class Empowerment:
                 return 0, None, start_state
         empowerment = np.sum(-data / (data.sum() + EPS) * np.log(data / (data.sum() + EPS), where=data != 0), where=data != 0)
         p = data / (data.sum() + EPS)
-        return empowerment, p, start_state
+        return empowerment
 
     def eval_env(self, environment, horizon, use_segments=False, use_memory=False):
         """This function evaluate empowerment for every state in gridworld environment.
@@ -315,7 +311,7 @@ class Empowerment:
                 if not env.env.entities['obstacle'].mask[i, j]:
                     env.env.agent.position = (i, j)
                     _, s, _ = env.observe()
-                    empowerment_map[i, j] = self.eval_state(s, horizon, use_segments, use_memory)[0]
+                    empowerment_map[i, j] = self.eval_state(s, horizon, use_segments, use_memory)
         # plt.imshow(empowerment_map)
         # plt.show()
         return empowerment_map
