@@ -33,7 +33,7 @@ def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
             columnDimensions=output_sds.shape, maxUnionActivity=output_sds.sparsity,
             potentialRadius=feedforward_sds.size, seed=seed
         )
-        tp = AblationUtp(seed=seed, **tp_config)
+        tp = AblationUtp(**tp_config)
 
     elif tp_type == 'CustomUtp':
         from hima.experiments.temporal_pooling.custom_utp import CustomUtp
@@ -43,7 +43,7 @@ def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
             columnDimensions=output_sds.shape, union_sdr_sparsity=output_sds.sparsity,
             seed=seed
         )
-        tp = CustomUtp(seed=seed, **tp_config)
+        tp = CustomUtp(**tp_config)
 
     elif tp_type == 'SandwichTp':
         from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
@@ -139,53 +139,6 @@ def resolve_tm_connections_region(connections_config, sds, suffix):
         f'{k}{suffix}': connections_config[k]
         for k in connections_config
     }
-
-
-def resolve_context_tm_2(
-        config, action_encoder, state_encoder,
-
-):
-    base_config_tm = config['temporal_memory']
-    seed = config['seed']
-
-    # apical feedback
-    apical_feedback_cells = base_config_tm['feedback_cells']
-    apical_active_bits = resolve_absolute_quantity(
-        base_config_tm['sample_size_apical'],
-        baseline=apical_feedback_cells
-    )
-    activation_threshold_apical = resolve_absolute_quantity(
-        base_config_tm['activation_threshold_apical'],
-        baseline=apical_active_bits
-    )
-    learning_threshold_apical = resolve_absolute_quantity(
-        base_config_tm['learning_threshold_apical'],
-        baseline=apical_active_bits
-    )
-
-    # basal context
-    basal_active_bits = state_encoder.n_active_bits
-
-    config_tm = dict(
-        columns=action_encoder.output_sdr_size,
-
-        context_cells=state_encoder.output_sdr_size,
-        sample_size_basal=basal_active_bits,
-        activation_threshold_basal=basal_active_bits,
-        learning_threshold_basal=basal_active_bits,
-        max_synapses_per_segment_basal=basal_active_bits,
-
-        feedback_cells=apical_feedback_cells,
-        sample_size_apical=apical_active_bits,
-        activation_threshold_apical=activation_threshold_apical,
-        learning_threshold_apical=learning_threshold_apical,
-        max_synapses_per_segment_apical=apical_active_bits,
-    )
-
-    # it's necessary as we shadow some "relative" values with the "absolute" values
-    config_tm = base_config_tm | config_tm
-    tm = DelayedFeedbackTM(seed=seed, **config_tm)
-    return tm
 
 
 def resolve_run_setup(config: dict, run_setup_config):

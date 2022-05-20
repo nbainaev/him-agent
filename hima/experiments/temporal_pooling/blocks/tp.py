@@ -69,7 +69,7 @@ class TemporalPoolerBlockStats:
         self.agg_sparsity = safe_divide(agg_sdr_size, self.output_sds.size)
         self.agg_relative_sparsity = safe_divide(agg_sdr_size, self.output_sds.active_size)
         self.active_binary_coverage = safe_divide(curr_sdr_size, agg_sdr_size)
-        self.active_pmf_coverage = agg_pmf[curr_sdr_lst].sum() / agg_pmf.sum()
+        self.active_pmf_coverage = safe_divide(agg_pmf[curr_sdr_lst].sum(), agg_pmf.sum())
 
         self.agg_entropy = entropy(agg_pmf, self.output_sds)
         active_entropy = entropy(agg_pmf[curr_sdr_lst], self.output_sds)

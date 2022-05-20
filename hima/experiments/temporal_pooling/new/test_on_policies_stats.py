@@ -119,9 +119,9 @@ class ExperimentStats:
         for metric_key in metrics:
             metric_value = metrics[metric_key]
 
-            if metric_key == 'raw_sim_mx_prfx':
+            if metric_key == 'raw_sim_mx_el':
                 diff_metrics['raw_sim_mx'] = metric_value
-            if metric_key == 'sim_mx_prfx':
+            if metric_key == 'sim_mx_el':
                 diff_metrics['sim_mx'] = metric_value
 
             if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:

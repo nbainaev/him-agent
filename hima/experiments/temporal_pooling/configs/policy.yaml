@@ -2,7 +2,7 @@ _type_: tp.policy
 project: tp_policy
 log: True    # wandb logging
 
-run_setup: simple
+run_setup: full
 policy_selection_rule: ordered
 temporal_pooler: union_tp
 seed: 42
@@ -11,10 +11,10 @@ pipeline:
   - generator
   - temporal_memory
   - temporal_pooler
-#  - temporal_memory_2
-#  - temporal_pooler_2
+  - temporal_memory_2
+  - temporal_pooler_2
 #  - temporal_memory_3
-#  - temporal_pooler_3
+  - temporal_pooler_3
 
 run_setups:
   simple:
@@ -203,7 +203,7 @@ temporal_poolers:
 temporal_memory:
   ff_sds: ???
   columns: ???
-  cells_per_column: 8
+  cells_per_column: 12
   prune_zero_synapses: True
   timeseries: False
   anomaly_window: 1000
@@ -222,7 +222,7 @@ temporal_memory:
     connected_threshold: 0.5
     permanence_increment: 0.1
     permanence_decrement: 0.05
-    initial_permanence: 0.41
+    initial_permanence: 0.46
     predicted_segment_decrement: 0.001
 
   fb_sds: ???
@@ -236,5 +236,5 @@ temporal_memory:
     connected_threshold: 0.5
     permanence_increment: 0.05
     permanence_decrement: 0.02
-    initial_permanence: 0.41
+    initial_permanence: 0.46
     predicted_segment_decrement: 0.001
