@@ -21,8 +21,8 @@ from hima.envs.biogwlab.env import BioGwLabEnvironment
 from hima.envs.env import unwrap
 from hima.envs.biogwlab.environment import Environment
 from hima.envs.biogwlab.module import EntityType
-from hima.common.utils import isnone
 from hima.common.sdr import SparseSdr
+from hima.envs.biogwlab.utils.state_provider import GwAgentStateProvider
 
 
 def draw_masked_observation(concatenated_observation: np.ndarray, sdr_sizes: list[tuple[str, int]]):
@@ -48,41 +48,6 @@ def draw_masked_observation(concatenated_observation: np.ndarray, sdr_sizes: lis
     img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
     plt.close(fig)
     return img
-
-
-class GwAgentStateProvider:
-    env: Environment
-
-    def __init__(self, env: Environment):
-        self.env = env
-        self.origin = None
-
-    @property
-    def state(self):
-        return self.position, self.view_direction
-
-    @property
-    def position(self):
-        return self.env.agent.position
-
-    @property
-    def view_direction(self):
-        return self.env.agent.view_direction
-
-    def overwrite(self, position=None, view_direction=None):
-        if self.origin is None:
-            self.origin = self.state
-        self._set(position, view_direction)
-
-    def restore(self):
-        if self.origin is None:
-            raise ValueError('Nothing to restore')
-        self._set(*self.origin)
-        self.origin = None
-
-    def _set(self, position, view_direction):
-        self.env.agent.position = isnone(position, self.env.agent.position)
-        self.env.agent.view_direction = isnone(view_direction, self.env.agent.view_direction)
 
 
 class GwExhaustibleResource(Runner):
