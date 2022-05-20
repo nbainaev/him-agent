@@ -257,18 +257,15 @@ class Empowerment:
         empowerment = np.sum(-p * np.log(p, where=data != 0), where=data != 0)
         return empowerment
 
-    def learn(self, state_0, state_1):
-        """This function realize learning of TM.
+    def learn(self, state_0: SparseSdr, state_1: SparseSdr):
+        """This function realizes learning of TM.
 
         Parameters
         ----------
-        state_0: np.array
+        state_0 : SparseSdr
             The SDR representation of the state (sparse form).
-        state_1: np.array
+        state_1 : SparseSdr
             The SDR representation of the next state (sparse form).
-
-        Returns
-        -------
         """
         self.sdr_0.sparse = state_0
         self.sdr_1.sparse = state_1
@@ -287,8 +284,6 @@ class Empowerment:
         if self.evaluate:
             intersection = np.intersect1d(self.sdr_1.sparse, predictedColumnIndices)
             union = np.union1d(self.sdr_1.sparse, predictedColumnIndices)
-
-        if self.evaluate:
             self.IoU.append(len(intersection) / len(union))
             self.anomalies.append(self.tm.anomaly)
         self.tm.reset()
