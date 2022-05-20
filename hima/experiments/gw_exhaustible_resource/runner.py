@@ -100,7 +100,7 @@ class GwExhaustibleResource(Runner):
         self.environment: Environment = unwrap(BioGwLabEnvironment(**self.env_config))
         self.agent = resolve_agent(
             config['agent'],
-            state_dim=self.environment.output_sdr_size,
+            obs_dim=self.environment.output_sdr_size,
             action_dim=self.environment.n_actions,
             config=config['agent_config']
         )

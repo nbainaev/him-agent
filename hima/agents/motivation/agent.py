@@ -11,12 +11,12 @@ from hima.common.config_utils import TConfig
 
 
 class Agent:
-    def __init__(self, state_dim: int, action_dim: int, config: TConfig):
+    def __init__(self, obs_dim: int, action_dim: int, config: TConfig):
         self.seed = config['seed']
         self._rng = np.random.default_rng(self.seed)
 
         self.amg = Amygdala(
-            sdr_size=state_dim,
+            sdr_size=obs_dim,
             seed=self.seed, **config['amygdala']
         )
 
@@ -25,7 +25,7 @@ class Agent:
             seed=self.seed, **config['striatum']
         )
         self.sma_striatum = StriatumBlock(
-            inputDimensions=[1, state_dim],
+            inputDimensions=[1, obs_dim],
             seed=self.seed, **config['striatum']
         )
         self.striatum_output_sdr_size = self.amg_striatum.output_sdr_size \
