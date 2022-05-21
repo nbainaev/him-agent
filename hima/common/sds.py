@@ -4,16 +4,16 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from typing import Union
+from typing import Union, Optional
 
 import numpy as np
 
 
 class Sds:
     """
-    Sparse Distributed Space parameters.
+    Sparse Distributed Space (SDS) parameters.
 
-    Short notation helps to correctly define SDS with minimal number of params. In each case
+    Short notation helps to correctly define SDS with the minimal number of params. In each case
     we want to specify only a sufficient subset of all params and just let the others be
     inducted.
 
@@ -24,10 +24,16 @@ class Sds:
         d) ((20, 20), 10) — shape and active SDR size
         e) (0.02, 10) — sparsity and active SDR size
 
-    The same is correct for keyword-only __init__ arguments — you only need to specify
-    the sufficient subset.
+    The same goes for the keyword-only __init__ arguments — you only need to specify
+    the sufficient subset of them.
     """
-    TShortNotation = tuple[Union[tuple, int, float], Union[int, float]]
+    TShortNotation = Union[
+        # tuple[shape|size, active_size|sparsity]
+        tuple[Union[tuple, int], Union[int, float]],
+
+        # tuple[sparsity, active_size]
+        tuple[float, int]
+    ]
 
     shape: tuple[int, ...]
     size: int
@@ -36,7 +42,7 @@ class Sds:
 
     def __init__(
             self,
-            short_notation: TShortNotation = None,
+            short_notation: Optional[TShortNotation] = None,
             *,
             shape: tuple[int, ...] = None,
             size: int = None,

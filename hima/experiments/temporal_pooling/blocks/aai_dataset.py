@@ -18,6 +18,7 @@ from hima.experiments.temporal_pooling.new.metrics import (
 class RoomObservationSequence:
     """Sequence of observations."""
     id: int
+
     _observations: list[SparseSdr]
 
     def __init__(self, id_: int, observations):
@@ -26,6 +27,9 @@ class RoomObservationSequence:
 
     def __iter__(self) -> Iterator[SparseSdr]:
         return iter(self._observations)
+
+    def __len__(self):
+        return len(self._observations)
 
 
 class AnimalAiDatasetBlockStats:
@@ -116,6 +120,7 @@ class AnimalAiDatasetBlock:
     name: str
 
     n_sequences: int
+    n_observations_per_sequence: int
     output_sds: Sds
 
     stats: AnimalAiDatasetBlockStats
@@ -126,6 +131,7 @@ class AnimalAiDatasetBlock:
         self.output_sds = sds
         self._observation_sequences = observation_sequences
         self.n_sequences = len(self._observation_sequences)
+        self.n_observations_per_sequence = len(self._observation_sequences[0])
 
         self.stats = AnimalAiDatasetBlockStats(self._observation_sequences, self.output_sds)
         self.stats.compute()

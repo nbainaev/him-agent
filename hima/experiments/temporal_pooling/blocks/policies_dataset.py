@@ -22,15 +22,15 @@ class Policy:
     id: int
     _policy: list[tuple[SparseSdr, SparseSdr]]
 
-    def __init__(self, id_: int, policy, seed=None):
+    def __init__(self, id_: int, policy):
         self.id = id_
         self._policy = policy
 
     def __iter__(self) -> Iterator[tuple[SparseSdr, SparseSdr]]:
         return iter(self._policy)
 
-    def shuffle(self) -> None:
-        ...
+    def __len__(self):
+        return len(self._policy)
 
 
 class SyntheticDatasetBlockStats:

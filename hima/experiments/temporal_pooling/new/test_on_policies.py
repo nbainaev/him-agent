@@ -3,7 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from typing import Optional, Any
+from typing import Optional, Any, Union
 
 from wandb.sdk.wandb_run import Run
 
@@ -36,7 +36,7 @@ class RunSetup:
     def __init__(
             self, n_policies: int, n_states: int, n_actions: int,
             steps_per_policy: Optional[int], policy_repeats: int, epochs: int,
-            tp_output_sds: tuple
+            tp_output_sds: Sds.TShortNotation
     ):
         self.n_policies = n_policies
         self.n_states = n_states
@@ -44,7 +44,7 @@ class RunSetup:
         self.steps_per_policy = isnone(steps_per_policy, self.n_states)
         self.epochs = epochs
         self.policy_repeats = policy_repeats
-        self.tp_output_sds = Sds(tp_output_sds)
+        self.tp_output_sds = Sds(short_notation=tp_output_sds)
 
 
 class PoliciesExperiment(Runner):
@@ -59,13 +59,13 @@ class PoliciesExperiment(Runner):
     stats: ExperimentStats
 
     def __init__(
-            self, config: TConfig, run_setup, seed: int,
+            self, config: TConfig, run_setup: Union[dict, str], seed: int,
             pipeline: list[str],
             policy_selection_rule: str, temporal_pooler: str, **_
     ):
         super().__init__(config, **config)
         self.seed = seed
-        self.run_setup = resolve_run_setup(config, run_setup)
+        self.run_setup = resolve_run_setup(config, run_setup, experiment_type='policies')
 
         print('==> Init')
         self.pipeline = pipeline
