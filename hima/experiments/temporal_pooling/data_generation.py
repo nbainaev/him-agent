@@ -12,7 +12,7 @@ from htm.bindings.sdr import SDR
 from numpy.random import Generator
 
 from hima.common.sds import Sds
-from hima.common.utils import clip
+from hima.common.utils import clip, isnone
 from hima.experiments.temporal_pooling.blocks.aai_dataset import (
     RoomObservationSequence,
     AnimalAiDatasetBlock
@@ -118,20 +118,34 @@ class SyntheticGenerator:
 class AAIRotationsGenerator:
     TDataset = list[list[SDR]]
 
+    n_sequences: int
+    n_rotations: int
     v1_output_sequences: TDataset
     v1_output_sds: Sds
 
-    def __init__(self, sds: Sds.TShortNotation, filepath: str):
+    def __init__(
+            self, sds: Sds.TShortNotation, filepath: str
+    ):
         self.v1_output_sequences = self.restore_dataset(filepath)
         self.v1_output_sds = Sds(short_notation=sds)
 
-    def generate_data(self):
+        self.n_sequences = len(self.v1_output_sequences)
+        self.n_rotations = len(self.v1_output_sequences[0])
+
+    def generate_data(self, n_sequences: int = None, n_observations_per_sequence: int = None):
+        n_sequences = isnone(n_sequences, self.n_sequences)
+        n_rotations = isnone(n_observations_per_sequence, self.n_rotations)
+
+        # NB: take only requested N of sequences and rotations per sequence
         observation_sequences = [
             RoomObservationSequence(
                 id_=ind,
-                observations=[np.array(obs.sparse, copy=True) for obs in observations]
+                observations=[
+                    np.array(obs.sparse, copy=True)
+                    for obs in observations[:n_rotations]
+                ]
             )
-            for ind, observations in enumerate(self.v1_output_sequences)
+            for ind, observations in enumerate(self.v1_output_sequences[:n_sequences])
         ]
         return AnimalAiDatasetBlock(
             sds=self.v1_output_sds,
