@@ -158,7 +158,7 @@ def resolve_data_generator(config: dict, **induction_registry):
         return SyntheticGenerator(config, **generator_config)
     elif generator_type == 'aai_rotation':
         from hima.experiments.temporal_pooling.data_generation import AAIRotationsGenerator
-        return AAIRotationsGenerator(config)
+        return AAIRotationsGenerator(**generator_config)
     else:
         raise KeyError(f'{generator_type} is not supported')
 
