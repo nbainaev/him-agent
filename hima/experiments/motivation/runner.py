@@ -5,7 +5,6 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
 import numpy as np
-from copy import deepcopy
 import matplotlib.pyplot as plt
 import wandb
 
@@ -174,6 +173,8 @@ class GwMotivationRunner(Runner):
             seed=self.seed, encode_size=state_space_size,
             sparsity=self.sp.getLocalAreaDensity(), **config['emp']
         )
+        self.learn_epochs = config['learn_epochs']
+        self.horizon = config['horizon']
 
         self.prev_state = None
         self.episode = 0
@@ -207,6 +208,7 @@ class GwMotivationRunner(Runner):
             self.state_metrics.add(key, self.sp_output.sparse)
 
         anomaly = np.mean(self.emp.anomalies[-self.steps+1:])
+        self.log_empowerment()
         self.logger.log(
             {
                 'anomaly': anomaly,
@@ -226,9 +228,76 @@ class GwMotivationRunner(Runner):
         )
         self.state_metrics.reset()
 
+    def learn_empowerment(self):
+        height, width = self.environment.shape
+        obstacle_mask = self.environment.aggregated_mask[EntityType.Obstacle]
+        position_provider = GwAgentStateProvider(self.environment)
+
+        for epoch in range(self.learn_epochs):
+            for i in range(height):
+                for j in range(width):
+                    if obstacle_mask[i, j]:
+                        continue
+                    position = i, j
+                    delta = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+                    for di, dj in delta:
+                        position_provider.overwrite(position)
+                        self.sp_input.sparse = self.environment.render()
+                        self.sp.compute(self.sp_input, learn=False, output=self.sp_output)
+                        sdr_0 = self.sp_output.sparse.copy()
+
+                        new_position = i + di, j + dj
+                        if new_position[0] < 0 or new_position[0] == height:
+                            new_position = i, j + dj
+                        if new_position[1] < 0 or new_position[1] == width:
+                            new_position = i + di, j
+                        if obstacle_mask[new_position]:
+                            new_position = position
+                        position_provider.overwrite(new_position)
+                        self.sp_input.sparse = self.environment.render()
+                        self.sp.compute(self.sp_input, learn=False, output=self.sp_output)
+                        sdr_1 = self.sp_output.sparse.copy()
+                        self.emp.learn(sdr_0, sdr_1)
+
+        position_provider.restore()
+
+    def learn_sp(self):
+        observations = self.get_all_observations()
+        for epoch in range(self.learn_epochs):
+            for key in observations.keys():
+                self.sp_input.sparse = observations[key]
+                self.sp.compute(self.sp_input, learn=True, output=self.sp_output)
+
+    def log_empowerment(self):
+        observations = self.get_all_observations()
+        empowerment_map = np.zeros(self.environment.shape)
+        obstacle_mask = self.environment.aggregated_mask[EntityType.Obstacle]
+        empowerment_map = np.ma.masked_where(obstacle_mask, empowerment_map, False)
+        for key in observations.keys():
+            self.sp_input.sparse = observations[key]
+            self.sp.compute(self.sp_input, learn=False, output=self.sp_output)
+            empowerment_map[key] = self.emp.eval_state(self.sp_output.sparse, self.horizon)
+
+        fig = plt.figure(frameon=False)
+        fig.set_size_inches(5, 5)
+        fig.set_dpi(300)
+        ax = plt.Axes(fig, [0., 0., 1., 1.])
+        ax.set_axis_off()
+        fig.add_axes(ax)
+        self.logger.log({
+            'empowerment': wandb.Image(ax.imshow(empowerment_map))
+        }, step=self.episode)
+        plt.close(fig)
+
     def run(self):
         self.episode = 0
         self.steps = 0
+
+        if self.learn_epochs > 0:
+            self.learn_sp()
+            self.learn_empowerment()
+            self.log_empowerment()
+            return
 
         while True:
 
@@ -236,7 +305,7 @@ class GwMotivationRunner(Runner):
             self.metrics.add(self.environment.agent.position, obs)
             self.sp_input.sparse = obs
             self.sp.compute(self.sp_input, learn=True, output=self.sp_output)
-            if self.prev_state is None:
+            if is_first:
                 self.prev_state = np.copy(self.sp_output.sparse)
             else:
                 self.emp.learn(self.prev_state, self.sp_output.sparse)

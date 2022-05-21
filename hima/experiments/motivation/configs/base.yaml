@@ -66,6 +66,8 @@ sp:
   boostStrength: 3
   wrapAround: true
 
+learn_epochs: 0
+horizon: 4
 emp:
   similarity_threshold: 0.6
   memory: false
