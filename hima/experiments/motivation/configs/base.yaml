@@ -1,9 +1,9 @@
 _type_: motivation.base
 seed: 1337
-project: motivation
+project: empowerment
 log: True
 
-n_episodes: 10
+n_episodes: 100
 evaluate_step: 1
 
 environment:
@@ -51,38 +51,34 @@ environment:
     n_items_to_collect: 1
 
 
-amygdala:
-  gamma: 0.999
-  alpha: 0.01
-  lambda_: 0.9
-  with_reset: True
-  bucket_shape: [1, 10]
-  n_buckets: 10
-  min_cut_fraction: 0.08
-
-
-striatum:
-  columnDimensions:
-  - 1
-  - 300
+state_space_size: 1000
+sp:
   potentialRadius: 1000
-  potentialPct: 0.9
+  potentialPct: 0.5
   globalInhibition: true
-  localAreaDensity: 0.04
+  localAreaDensity: 0.02
   stimulusThreshold: 1
   synPermInactiveDec: 0.01
   synPermActiveInc: 0.1
-  synPermConnected: 0.5
+  synPermConnected: 0.1
   minPctOverlapDutyCycle: 0.001
   dutyCyclePeriod: 1000
-  boostStrength: 0
+  boostStrength: 3
   wrapAround: true
-  dopamine_factor: 0.99
 
-
-policy:
-  gamma: 0.999
-  alpha: 0.01
-  lambda_: 0.9
-  with_reset: True
+emp:
+  similarity_threshold: 0.6
+  memory: false
+  evaluate: True
+  tm_config:
+    cellsPerColumn: 20
+    activationThreshold: 17
+    initialPermanence: 0.5
+    connectedPermanence: 0.5
+    minThreshold: 10
+    maxNewSynapseCount: 23
+    permanenceIncrement: 0.02
+    permanenceDecrement: 0.001
+    predictedSegmentDecrement: 0.001
+    maxSegmentsPerCell: 5
 

@@ -15,6 +15,12 @@ from htm.bindings.sdr import SDR
 from hima.modules.motivation import Amygdala, StriatumBlock, Policy
 from hima.common.run_utils import Runner
 from hima.common.config_utils import TConfig
+from hima.envs.biogwlab.utils.state_provider import GwAgentStateProvider
+from hima.common.sdr import SparseSdr
+from hima.envs.biogwlab.module import EntityType
+from hima.envs.env import unwrap
+from hima.envs.biogwlab.environment import Environment
+from hima.modules.empowerment import Empowerment
 
 
 def xlogx(x):
@@ -143,11 +149,9 @@ class GwMotivationRunner(Runner):
         self.seed = config['seed']
         self._rng = np.random.default_rng(self.seed)
 
-        print('==> Environment')
         self.n_episodes = config['n_episodes']
         self.evaluate_step = config['evaluate_step']
-        self.environment = BioGwLabEnvironment(**config['environment'])
-
+        self.environment: Environment = unwrap(BioGwLabEnvironment(**config['environment']))
         map_image = self.environment.callmethod('render_rgb')
         if isinstance(map_image, list):
             map_image = map_image[0]
@@ -159,117 +163,94 @@ class GwMotivationRunner(Runner):
             plt.show()
         print(f"Environment sdr size: {self.environment.output_sdr_size}")
 
-        print('==> Amygdala')
-        self.amg = Amygdala(
-            sdr_size=self.environment.output_sdr_size,
-            seed=self.seed, **config['amygdala']
+        state_space_size = config['state_space_size']
+        self.sp = SpatialPooler(
+            seed=self.seed, inputDimensions=[self.environment.output_sdr_size],
+            columnDimensions=[state_space_size], **config['sp'])
+        self.sp_input = SDR(self.environment.output_sdr_size)
+        self.sp_output = SDR(state_space_size)
+
+        self.emp = Empowerment(
+            seed=self.seed, encode_size=state_space_size,
+            sparsity=self.sp.getLocalAreaDensity(), **config['emp']
         )
 
-        print('==> Striatum')
-        self.str_amg = StriatumBlock(
-            inputDimensions=self.amg.out_sdr_shape,
-            seed=self.seed, **config['striatum']
-        )
-        self.str_sma = StriatumBlock(
-            inputDimensions=[1, self.environment.output_sdr_size],
-            seed=self.seed, **config['striatum']
-        )
-        self.striatum_output_sdr_size = self.str_sma.output_sdr_size + self.str_amg.output_sdr_size
-
-        print('==> Policy')
-        self.policy = Policy(
-            sdr_size=self.striatum_output_sdr_size, seed=self.seed,
-            n_actions=self.environment.n_actions, **config['policy']
-        )
-
+        self.prev_state = None
         self.episode = 0
         self.steps = 0
         self.metrics = SDRMetrics(self.environment.output_sdr_size)
-        self.str_metrics = SPMetrics(self.striatum_output_sdr_size)
-        self.base_states = self.create_base_states()
+        self.state_metrics = SPMetrics(state_space_size)
 
-    def create_base_states(self):
-        base_states = dict()
-        env = deepcopy(self.environment)
-        for i in range(env.env.shape[0]):
-            for j in range(env.env.shape[1]):
-                if not env.env.entities['obstacle'].mask[i, j]:
-                    env.env.agent.position = (i, j)
-                    _, s, _ = env.observe()
-                    sdr_new = SDR(env.output_sdr_size)
-                    sdr_new.sparse = s
-                    base_states[(i, j)] = sdr_new
-        return base_states
+    def get_all_observations(self) -> dict[tuple[int, int], SparseSdr]:
+        height, width = self.environment.shape
+        obstacle_mask = self.environment.aggregated_mask[EntityType.Obstacle]
+        position_provider = GwAgentStateProvider(self.environment)
+        encoding_scheme = {}
+
+        for i in range(height):
+            for j in range(width):
+                if obstacle_mask[i, j]:
+                    continue
+                position = i, j
+                position_provider.overwrite(position)
+                obs = self.environment.render()
+                encoding_scheme[position] = obs
+
+        position_provider.restore()
+        return encoding_scheme
 
     def log_metrics(self):
-        value_map = np.zeros(self.environment.env.shape)
-        for key in self.base_states.keys():
-            value_map[key] = self.amg.get_value(self.base_states[key].sparse)
-            sdr_amg = self.str_amg.compute(self.amg.compute(self.base_states[key].sparse), 0, False)
-            sdr_sma = self.str_sma.compute(self.base_states[key].sparse, 0, False)
-            sdr_str = np.concatenate(
-                (
-                    sdr_amg, self.str_amg.output_sdr_size + sdr_sma
-                )
-            )
-            self.str_metrics.add(key, sdr_str)
+        observations = self.get_all_observations()
+        for key in observations.keys():
+            self.sp_input.sparse = observations[key]
+            self.sp.compute(self.sp_input, learn=False, output=self.sp_output)
+            self.state_metrics.add(key, self.sp_output.sparse)
 
+        anomaly = np.mean(self.emp.anomalies[-self.steps+1:])
         self.logger.log(
             {
+                'anomaly': anomaly,
                 'steps': self.steps,
-                'value_map': wandb.Image(plt.imshow(value_map)),
-                'env/sdr_entropy': self.metrics.rel_sdr_entropy,
-                'env/bit_entropy': self.metrics.rel_bit_entropy,
-                'env/redundancy': self.metrics.redundancy,
-                'env/sparsity': self.metrics.sparsity,
-                'env/entropy_stability': self.metrics.entropy_stability,
-                'env/max_sdr_per_full_entropy': self.metrics.max_sdr_per_full_entropy,
-                'striatum/sdr_entropy': self.str_metrics.rel_sdr_entropy,
-                'striatum/bit_entropy': self.str_metrics.rel_bit_entropy,
-                'striatum/redundancy': self.str_metrics.redundancy,
-                'striatum/sparsity': self.str_metrics.sparsity,
-                'striatum/stability': self.str_metrics.stability,
-                'striatum/entropy_stability': self.str_metrics.entropy_stability,
-                'striatum/max_sdr_per_full_entropy': self.str_metrics.max_sdr_per_full_entropy,
+                'obs/sdr_entropy': self.metrics.rel_sdr_entropy,
+                'obs/bit_entropy': self.metrics.rel_bit_entropy,
+                'obs/sparsity': self.metrics.sparsity,
+                'obs/entropy_stability': self.metrics.entropy_stability,
+                'obs/max_sdr_per_full_entropy': self.metrics.max_sdr_per_full_entropy,
+                'state/sdr_entropy': self.state_metrics.rel_sdr_entropy,
+                'state/bit_entropy': self.state_metrics.rel_bit_entropy,
+                'state/sparsity': self.state_metrics.sparsity,
+                'state/stability': self.state_metrics.stability,
+                'state/entropy_stability': self.state_metrics.entropy_stability,
+                'state/max_sdr_per_full_entropy': self.state_metrics.max_sdr_per_full_entropy,
             }, step=self.episode
         )
-        self.str_metrics.reset()
+        self.state_metrics.reset()
 
     def run(self):
-        print('==> Run')
         self.episode = 0
         self.steps = 0
 
         while True:
 
             reward, obs, is_first = self.environment.observe()
-            sdr_amg = self.str_amg.compute(self.amg.compute(obs), 0, True)
-            sdr_sma = self.str_sma.compute(obs, 0, True)
-            sdr_str = np.concatenate((
-                sdr_amg, self.str_amg.output_sdr_size + sdr_sma
-            ))
-
-            self.metrics.add(self.environment.env.agent.position, obs)
+            self.metrics.add(self.environment.agent.position, obs)
+            self.sp_input.sparse = obs
+            self.sp.compute(self.sp_input, learn=True, output=self.sp_output)
+            if self.prev_state is None:
+                self.prev_state = np.copy(self.sp_output.sparse)
+            else:
+                self.emp.learn(self.prev_state, self.sp_output.sparse)
+                self.prev_state = np.copy(self.sp_output.sparse)
 
             if is_first:
-                if self.episode != 0 and self.logger:
+                if self.episode != 0 and self.logger and self.episode % self.evaluate_step == 0:
                     self.log_metrics()
                 self.episode += 1
                 self.steps = 0
-                self.amg.reset()
-                self.str_sma.reset()
-                self.str_amg.reset()
-                self.policy.reset()
                 if self.episode > self.n_episodes:
                     break
             else:
                 self.steps += 1
 
-            self.amg.update(obs, reward)
-            action = self.policy.compute(sdr_str)
-            sa = action * self.policy.state_size + sdr_str
-            self.policy.update(sa, reward)
-            # action = self._rng.integers(0, self.environment.n_actions)
+            action = self._rng.integers(0, self.environment.n_actions)
             self.environment.act(action)
-
-        print('<==')

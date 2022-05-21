@@ -7,7 +7,7 @@
 from hima.common.run_utils import (
     get_run_command_arg_parser, run_experiment
 )
-from hima.agents.motivation.runner import GwMotivationRunner
+from hima.experiments.motivation.runner import GwMotivationRunner
 
 
 if __name__ == '__main__':
