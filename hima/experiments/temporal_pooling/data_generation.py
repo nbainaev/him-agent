@@ -4,13 +4,12 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
+import pickle
 from typing import Optional, Iterator
 
 import numpy as np
 from htm.bindings.sdr import SDR
 from numpy.random import Generator
-
-import pickle
 
 from hima.common.sds import Sds
 from hima.common.utils import clip
@@ -20,21 +19,6 @@ from hima.experiments.temporal_pooling.blocks.aai_dataset import (
 )
 from hima.experiments.temporal_pooling.blocks.policies_dataset import SyntheticDatasetBlock, Policy
 from hima.experiments.temporal_pooling.config_resolvers import resolve_encoder
-from hima.experiments.temporal_pooling.metrics import sdrs_similarity
-
-
-def v1_output_similarity(output1, output2):
-    """
-    Corresponding elements of output compared as sets
-
-    @return: mean of similarities
-    """
-    n = len(output1)
-    assert len(output1) == len(output2)
-    sim = 0
-    for i in range(n):
-        sim += sdrs_similarity(output1[i], output2[i])
-    return sim/n
 
 
 class SyntheticGenerator:
