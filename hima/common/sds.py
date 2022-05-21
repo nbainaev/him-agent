@@ -27,6 +27,7 @@ class Sds:
     The same is correct for keyword-only __init__ arguments — you only need to specify
     the sufficient subset.
     """
+    TShortNotation = tuple[Union[tuple, int, float], Union[int, float]]
 
     shape: tuple[int, ...]
     size: int
@@ -35,7 +36,7 @@ class Sds:
 
     def __init__(
             self,
-            short_notation: tuple[Union[tuple, int, float], Union[int, float]] = None,
+            short_notation: TShortNotation = None,
             *,
             shape: tuple[int, ...] = None,
             size: int = None,

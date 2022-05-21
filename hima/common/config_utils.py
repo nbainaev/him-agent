@@ -132,7 +132,7 @@ def resolve_value(
     return value
 
 
-def resolve_init_params(config: dict, *, raise_if_not_resolved = True, **induction_registry):
+def resolve_init_params(config: dict, *, raise_if_not_resolved: bool = True, **induction_registry):
     return {
         k: resolve_value(config[k], k, induction_registry, raise_if_not_resolved)
         for k in config
@@ -197,6 +197,7 @@ def parse_str(s: str) -> Any:
         raise ValueError('Not Boolean Value!')
 
     # NB: try/except is widely accepted pythonic way to parse things
+    assert isinstance(s, str)
 
     # NB: order here is important
     for caster in (boolify, int, float, literal_eval):

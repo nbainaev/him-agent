@@ -7,11 +7,17 @@
 from typing import Optional, Iterator
 
 import numpy as np
+from htm.bindings.sdr import SDR
 from numpy.random import Generator
 
 import pickle
 
+from hima.common.sds import Sds
 from hima.common.utils import clip
+from hima.experiments.temporal_pooling.blocks.aai_dataset import (
+    RoomObservationSequence,
+    AnimalAiDatasetBlock
+)
 from hima.experiments.temporal_pooling.blocks.policies_dataset import SyntheticDatasetBlock, Policy
 from hima.experiments.temporal_pooling.config_resolvers import resolve_encoder
 from hima.experiments.temporal_pooling.metrics import sdrs_similarity
@@ -126,30 +132,32 @@ class SyntheticGenerator:
 
 
 class AAIRotationsGenerator:
-    def __init__(self, config):
-        gen_conf = config['generator']
-        dataset_path = gen_conf['dataset_path']
-        self.rooms_v1_outputs = pickle.load(open(dataset_path, 'rb'))
+    TDataset = list[list[SDR]]
+
+    v1_output_sequences: TDataset
+    v1_output_sds: Sds
+
+    def __init__(self, sds: Sds.TShortNotation, filepath: str):
+        self.v1_output_sequences = self.restore_dataset(filepath)
+        self.v1_output_sds = Sds(short_notation=sds)
 
     def generate_data(self):
-        return self.rooms_v1_outputs
-
-    @staticmethod
-    def true_similarities() -> np.ndarray:
-        return np.asarray(
-            [[1, 0.91, 0.94, 0.94, 0.625],
-             [0.91, 1, 0.94, 0.94, 0.68],
-             [0.94, 0.94, 1, 0.91, 0.69],
-             [0.94, 0.94, 0.91, 1, 0.62],
-             [0.625, 0.68, 0.69, 0.62, 1]]
+        observation_sequences = [
+            RoomObservationSequence(
+                id_=ind,
+                observations=[np.array(obs.sparse, copy=True) for obs in observations]
+            )
+            for ind, observations in enumerate(self.v1_output_sequences)
+        ]
+        return AnimalAiDatasetBlock(
+            sds=self.v1_output_sds,
+            observation_sequences=observation_sequences,
         )
 
-    def v1_similarities(self):
-        sim_matrix = np.empty((len(self.rooms_v1_outputs),len(self.rooms_v1_outputs)))
-        for i, obs1 in enumerate(self.rooms_v1_outputs):
-            for j, obs2 in enumerate(self.rooms_v1_outputs):
-                sim_matrix[i][j] = v1_output_similarity(obs1, obs2)
-        return sim_matrix
+    @staticmethod
+    def restore_dataset(filepath: str) -> TDataset:
+        with open(filepath, 'rb') as dataset_io:
+            return pickle.load(dataset_io)
 
 
 class SequenceSelector:
