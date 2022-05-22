@@ -200,8 +200,7 @@ class Empowerment:
         return self.empowerment_data[str(position[0])][str(position[1])]
 
     def eval_state(
-            self, state: SparseSdr, horizon: int,
-            use_segments: bool = False, use_memory: bool = False
+            self, state: SparseSdr, horizon: int
     ) -> float:
         """This function evaluates empowerment for given state.
 
@@ -211,12 +210,6 @@ class Empowerment:
             The SDR representation (sparse) of the state.
         horizon : int
             The horizon of evaluating for given state. The good value is 3.
-        use_segments : bool, optional
-            The flag determines using of segments instead of cells to evaluate empowerment.
-            By default: False.
-        use_memory : bool, optional
-            The flag determines using of the Memory object. Useful only if this object was
-            initialised. By default: False.
 
         Returns
         -------
@@ -225,37 +218,19 @@ class Empowerment:
         """
         self.sdr_0.sparse = state
         sdr = self.sdr_0
-        data = np.zeros(self.tm.getColumnDimensions()[0])
-        for actions in range(horizon):
+        for _ in range(horizon):
             self.tm.reset()
             self.tm.compute(sdr, learn=False)
             self.tm.activateDendrites(learn=False)
-            predictiveCells = self.tm.getPredictiveCells().sparse
-            predictedColumnIndices = [self.tm.columnForCell(i) for i in predictiveCells]
-            sdr.sparse = np.unique(predictedColumnIndices)
-        if use_segments:
-            predictedColumnIndices = map(
-                self.tm.columnForCell,
-                map(self.tm.connections.cellForSegment, self.tm.getActiveSegments())
-            )
-        for i in predictedColumnIndices:
-            data[i] += 1
-        if self.memory is not None and use_memory:
-            if (self.memory.kernels is not None) and (self.memory.kernels.size > 0):
-                clusters = self.memory.adopted_kernels(self.sparsity)
-                mask = clusters[:, data!=0].sum(axis=1) / (self.sparsity * self.size)
-                mask = mask < self.memory.threshold
-                p = np.dot(clusters, data.T) / (self.sparsity * self.size)
-                p[mask] = 0
-                total_p = p.sum()
-                p = p / (total_p + EPS)
-                empowerment = np.sum(-p * np.log(p, where=p != 0), where=p != 0)
-                return empowerment
-            else:
-                return 0
-        p = data / (data.sum() + EPS)
-        empowerment = np.sum(-p * np.log(p, where=data != 0), where=data != 0)
-        return empowerment
+            predictive_cells = self.tm.getPredictiveCells().sparse
+            predicted_columns = [self.tm.columnForCell(i) for i in predictive_cells]
+            sdr.sparse = np.unique(predicted_columns)
+
+        num_predicted_states = sdr.getSparsity() / self.sparsity
+        if num_predicted_states < 1:
+            # the case of no predictions
+            num_predicted_states = 1
+        return np.log2(num_predicted_states)
 
     def learn(self, state_0: SparseSdr, state_1: SparseSdr):
         """This function realizes learning of TM.

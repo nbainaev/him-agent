@@ -85,8 +85,7 @@ class HIMA:
             state = self.hierarchy.visual_block.get_output('basal')
             reward = self.empowerment.eval_state(
                 state,
-                self.empowerment_horizon,
-                use_memory=True)
+                self.empowerment_horizon)
         else:
             reward = self.empowerment.eval_from_file(self.real_pos)
         return reward

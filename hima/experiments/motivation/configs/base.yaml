@@ -73,7 +73,7 @@ emp:
   memory: false
   evaluate: True
   tm_config:
-    cellsPerColumn: 20
+    cellsPerColumn: 1
     activationThreshold: 17
     initialPermanence: 0.5
     connectedPermanence: 0.5
@@ -82,5 +82,5 @@ emp:
     permanenceIncrement: 0.02
     permanenceDecrement: 0.001
     predictedSegmentDecrement: 0.001
-    maxSegmentsPerCell: 5
+    maxSegmentsPerCell: 20
 
