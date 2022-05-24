@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 from htm.bindings.sdr import SDR
 
+from hima.common.config_utils import extracted_type, resolve_init_params
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
@@ -165,3 +166,61 @@ class TemporalPoolerBlock:
 
         self.stats.update(self.output_sdr)
         return self.output_sdr
+
+
+def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
+    tp_config, tp_type = extracted_type(tp_config)
+
+    if tp_type == 'UnionTp':
+        from hima.modules.htm.spatial_pooler import UnionTemporalPooler
+        tp_config = resolve_init_params(
+            tp_config,
+            inputDimensions=feedforward_sds.shape, localAreaDensity=output_sds.sparsity,
+            columnDimensions=output_sds.shape, maxUnionActivity=output_sds.sparsity,
+            potentialRadius=feedforward_sds.size, seed=seed
+        )
+        tp = UnionTemporalPooler(**tp_config)
+
+    elif tp_type == 'AblationUtp':
+        from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
+        tp_config = resolve_init_params(
+            tp_config,
+            inputDimensions=feedforward_sds.shape, localAreaDensity=output_sds.sparsity,
+            columnDimensions=output_sds.shape, maxUnionActivity=output_sds.sparsity,
+            potentialRadius=feedforward_sds.size, seed=seed
+        )
+        tp = AblationUtp(**tp_config)
+
+    elif tp_type == 'CustomUtp':
+        from hima.experiments.temporal_pooling.custom_utp import CustomUtp
+        tp_config = resolve_init_params(
+            tp_config,
+            inputDimensions=feedforward_sds.shape,
+            columnDimensions=output_sds.shape, union_sdr_sparsity=output_sds.sparsity,
+            seed=seed
+        )
+        tp = CustomUtp(**tp_config)
+
+    elif tp_type == 'SandwichTp':
+        from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
+        tp_config = resolve_init_params(tp_config, seed=seed)
+        tp_config['lower_sp_conf'] = resolve_init_params(
+            tp_config['lower_sp_conf'],
+            inputDimensions=feedforward_sds.shape,
+            columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
+            potentialRadius=feedforward_sds.size
+        )
+        tp_config['upper_sp_conf'] = resolve_init_params(
+            tp_config['upper_sp_conf'],
+            inputDimensions=output_sds.shape,
+            columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
+            potentialRadius=output_sds.size
+        )
+        tp = SandwichTp(**tp_config)
+
+    else:
+        raise KeyError(f'Temporal Pooler type "{tp_type}" is not supported')
+
+    from hima.experiments.temporal_pooling.blocks.tp import TemporalPoolerBlock
+    tp_block = TemporalPoolerBlock(feedforward_sds=feedforward_sds, output_sds=output_sds, tp=tp)
+    return tp_block

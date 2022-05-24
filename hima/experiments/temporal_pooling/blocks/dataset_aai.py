@@ -3,12 +3,15 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+import pickle
 from typing import Iterator, Any
 
 import numpy as np
+from htm.bindings.sdr import SDR
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
+from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.new.metrics import (
     similarity_matrix,
     standardize_sample_distribution
@@ -145,3 +148,46 @@ class AnimalAiDatasetBlock:
 
     def reset_stats(self):
         ...
+
+
+class AAIRotationsGenerator:
+    TDataset = list[list[SDR]]
+
+    n_sequences: int
+    n_rotations: int
+    v1_output_sequences: TDataset
+    v1_output_sds: Sds
+
+    def __init__(
+            self, sds: Sds.TShortNotation, filepath: str
+    ):
+        self.v1_output_sequences = self.restore_dataset(filepath)
+        self.v1_output_sds = Sds(short_notation=sds)
+
+        self.n_sequences = len(self.v1_output_sequences)
+        self.n_rotations = len(self.v1_output_sequences[0])
+
+    def generate_data(self, n_sequences: int = None, n_observations_per_sequence: int = None):
+        n_sequences = isnone(n_sequences, self.n_sequences)
+        n_rotations = isnone(n_observations_per_sequence, self.n_rotations)
+
+        # NB: take only requested N of sequences and rotations per sequence
+        observation_sequences = [
+            RoomObservationSequence(
+                id_=ind,
+                observations=[
+                    np.array(obs.sparse, copy=True)
+                    for obs in observations[:n_rotations]
+                ]
+            )
+            for ind, observations in enumerate(self.v1_output_sequences[:n_sequences])
+        ]
+        return AnimalAiDatasetBlock(
+            sds=self.v1_output_sds,
+            observation_sequences=observation_sequences,
+        )
+
+    @staticmethod
+    def restore_dataset(filepath: str) -> TDataset:
+        with open(filepath, 'rb') as dataset_io:
+            return pickle.load(dataset_io)

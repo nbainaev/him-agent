@@ -12,11 +12,16 @@ from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone, timed
-from hima.experiments.temporal_pooling.blocks.policies_dataset import Policy
+from hima.experiments.temporal_pooling.blocks.dataset_policies import Policy
 from hima.experiments.temporal_pooling.config_resolvers import (
-    resolve_tp, resolve_data_generator, resolve_run_setup, resolve_context_tm,
-    resolve_context_tm_apical_feedback
+    resolve_run_setup
 )
+from hima.experiments.temporal_pooling.blocks.tp import resolve_tp
+from hima.experiments.temporal_pooling.blocks.tm_context import (
+    resolve_tm,
+    resolve_tm_apical_feedback
+)
+from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator
 from hima.experiments.temporal_pooling.new.test_on_policies_stats import (
     ExperimentStats,
     RunProgress
@@ -60,8 +65,7 @@ class PoliciesExperiment(Runner):
 
     def __init__(
             self, config: TConfig, run_setup: Union[dict, str], seed: int,
-            pipeline: list[str],
-            policy_selection_rule: str, temporal_pooler: str, **_
+            pipeline: list[str], temporal_pooler: str, **_
     ):
         super().__init__(config, **config)
         self.seed = seed
@@ -169,7 +173,7 @@ class PoliciesExperiment(Runner):
                 context_sds = block.context_sds
 
             elif block_name.startswith('temporal_memory'):
-                block = resolve_context_tm(
+                block = resolve_tm(
                     tm_config=self.config['temporal_memory'],
                     ff_sds=feedforward_sds,
                     bc_sds=context_sds,
@@ -185,7 +189,7 @@ class PoliciesExperiment(Runner):
                     seed=self.seed
                 )
                 if prev_block.name.startswith('temporal_memory'):
-                    resolve_context_tm_apical_feedback(
+                    resolve_tm_apical_feedback(
                         fb_sds=block.output_sds, tm_block=prev_block
                     )
                 feedforward_sds = block.output_sds

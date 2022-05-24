@@ -21,7 +21,7 @@ from hima.common.sdr import SparseSdr
 from hima.common.utils import safe_divide
 from hima.experiments.temporal_pooling.ablation_utp import AblationUtp
 from hima.experiments.temporal_pooling.custom_utp import CustomUtp
-from hima.experiments.temporal_pooling.config_resolvers import resolve_data_generator
+from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator
 
 from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
 from hima.modules.htm.spatial_pooler import UnionTemporalPooler

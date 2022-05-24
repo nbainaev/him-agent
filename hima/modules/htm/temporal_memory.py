@@ -2703,7 +2703,6 @@ class ClassicApicalTemporalMemory(ApicalTiebreakSequenceMemory):
         self.columns = self.columnCount
         self.cells_per_column = self.cellsPerColumn
 
-
     def get_correctly_predicted_cells(self) -> SDR:
         sdr = SDR(self.cells_per_column*self.columns)
         sdr.sparse = self.getPredictedActiveCells()

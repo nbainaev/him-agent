@@ -125,3 +125,9 @@ class Sds:
             shape = (size, )
 
         return shape, size, sparsity, active_size
+
+    @staticmethod
+    def as_sds(sds: Union['Sds', TShortNotation]) -> 'Sds':
+        if isinstance(sds, Sds):
+            return sds
+        return Sds(short_notation=sds)
