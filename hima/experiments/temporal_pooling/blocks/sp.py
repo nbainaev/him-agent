@@ -144,6 +144,10 @@ class SpatialPoolerBlock:
         self._active_input = SDR(self.feedforward_sds.size)
         self._active_output = SDR(self.output_sds.size)
 
+    @property
+    def tag(self) -> str:
+        return f'{self.id}_sp'
+
     def reset(self):
         self._active_input.sparse = []
         self._active_output.sparse = []

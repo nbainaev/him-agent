@@ -144,16 +144,18 @@ def sequence_similarity_elementwise(
         sim_func(s1[i], s2[i], symmetrical=symmetrical)
         for i in range(n)
     ])
-    norm = 1.
+    norm = sims.size
+
     if discount is not None and discount < 1.:
         discounts = np.cumprod(np.repeat(discount, n))
-        norm = (1 - discounts[-1]) / (1 - discount)
-        sims *= discounts[::-1]
 
+        norm = (1 - discounts[-1]) / (1 - discount)
         # as discounts start with `discount` instead of 1 => everything is multiplied by discount
         norm *= discount
+        # not normalized weighted mean
+        sims *= discounts[::-1]
 
-    return np.mean(sims) / norm
+    return np.sum(sims) / norm
 
 
 def sequence_similarity_as_union(

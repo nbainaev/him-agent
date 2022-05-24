@@ -96,10 +96,13 @@ class ExperimentStats:
         diff_metrics = []
         for block_name in self.current_block_stats:
             block = self.blocks[block_name]
+            block_metrics, block_diff_metrics = {}, {}
             if block_name.startswith('generator'):
                 block_metrics, block_diff_metrics = self.summarize_input(block)
+            elif block_name.startswith('spatial_pooler'):
+                block_metrics = self.summarize_sp(block)
             elif block_name.startswith('temporal_memory'):
-                block_metrics, block_diff_metrics = {}, {}
+                ...
             else:   # temporal_pooler
                 block_metrics, block_diff_metrics = self.summarize_tp(block)
 
@@ -119,14 +122,31 @@ class ExperimentStats:
         for metric_key in metrics:
             metric_value = metrics[metric_key]
 
-            if metric_key == 'raw_sim_mx_el':
+            if metric_key == 'raw_sim_mx_prfx':
                 diff_metrics['raw_sim_mx'] = metric_value
-            if metric_key == 'sim_mx_el':
+            if metric_key == 'sim_mx_prfx':
                 diff_metrics['sim_mx'] = metric_value
 
             if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
                 metrics[metric_key] = self.plot_representations(metric_value)
         return metrics, diff_metrics
+
+    def summarize_sp(self, block):
+        raw_metrics = self._collect_block_final_stats(block)
+        metrics = self._sdr_representation_similarities(
+            raw_metrics['representative'], block.output_sds
+        )
+        metrics |= self._pmf_similarities(
+            raw_metrics['distribution'], block.output_sds
+        )
+        metrics['mean_repr_pmf_coverage'] = np.mean(raw_metrics['representative_pmf_coverage'])
+        metrics['mean_relative_sparsity'] = np.mean(raw_metrics['relative_sparsity'])
+
+        for metric_key in metrics:
+            metric_value = metrics[metric_key]
+            if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
+                metrics[metric_key] = self.plot_representations(metric_value)
+        return metrics
 
     def summarize_tp(self, block):
         raw_metrics = self._collect_block_final_stats(block)
