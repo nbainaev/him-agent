@@ -165,6 +165,7 @@ temporal_memory:
   reduced_basal_threshold: 0.7
   learning_threshold: 0.6
   max_synapses_per_segment: 1.2
+  max_segments_per_cell: 32
   initial_permanence: 0.46
   connected_threshold: 0.5
   permanence_increment: 0.05

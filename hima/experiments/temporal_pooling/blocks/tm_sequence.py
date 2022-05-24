@@ -6,12 +6,12 @@
 from typing import Any
 
 import numpy as np
-from htm.advanced.algorithms.apical_tiebreak_temporal_memory import ApicalTiebreakSequenceMemory
 
 from hima.common.config_utils import resolve_init_params, extracted, resolve_absolute_quantity
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
+from hima.modules.htm.apical_tiebreak_sequence_tm import ApicalTiebreakSequenceMemory
 
 
 class TemporalMemoryBlockStats:
@@ -123,7 +123,7 @@ class SequenceApicalTemporalMemoryBlock:
     def _to_htm_param_names(
             self, cells_per_column: int, seed: int,
             activation_threshold: float, reduced_basal_threshold: float, learning_threshold: float,
-            max_synapses_per_segment: int,
+            max_synapses_per_segment: int, max_segments_per_cell: int,
             initial_permanence: float, connected_threshold: float,
             permanence_increment: float, permanence_decrement: float,
             basal_predicted_segment_decrement: float, apical_predicted_segment_decrement: float
@@ -140,6 +140,7 @@ class SequenceApicalTemporalMemoryBlock:
             minThreshold=learning_threshold,
 
             maxSynapsesPerSegment=max_synapses_per_segment,
+            maxSegmentsPerCell=max_segments_per_cell,
 
             initialPermanence=initial_permanence,
             connectedPermanence=connected_threshold,
