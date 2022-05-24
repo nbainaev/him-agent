@@ -31,12 +31,6 @@ run_setups:
     epochs: 4
     tp_output_sds: [1000, 25]
 
-v1_output: &v1_output 180
-
-# FIXME: using &key/*key is error prone with sweeps overwriting
-.shared_params:
-  tp_output_size: &tp_output_size 4000
-
 generator:
   _type_: aai_rotation
   sds: [180, 4]

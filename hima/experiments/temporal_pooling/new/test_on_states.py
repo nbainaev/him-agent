@@ -12,7 +12,10 @@ from wandb.sdk.wandb_run import Run
 
 from hima.common.config_utils import TConfig
 from hima.common.run_utils import Runner
+from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
+from hima.common.utils import timed
+from hima.experiments.temporal_pooling.blocks.dataset_aai import RoomObservationSequence
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator
 from hima.experiments.temporal_pooling.blocks.tm_sequence import (
     resolve_tm,
@@ -46,7 +49,7 @@ class RunSetup:
         self.n_sequences = n_sequences
         self.n_observations_per_sequence = n_observations_per_sequence
         self.epochs = epochs
-        self.policy_repeats = sequence_repeats
+        self.sequence_repeats = sequence_repeats
         self.tp_output_sds = Sds(short_notation=tp_output_sds)
 
 
@@ -76,72 +79,79 @@ class ObservationsExperiment(Runner):
         self.progress = RunProgress()
 
     def run(self):
-        return
-        print('==> Generate observations')
-        observations = self.data_generator.generate_data()
-
         print('==> Run')
-        representations = []
-        for epoch in range(self.epochs):
-            representations = self.train_epoch(observations)
-        sim_matrix = similarity_matrix(representations)
-        self.log_summary(self.data_generator.true_similarities(), sim_matrix)
+        self.define_metrics(self.logger, self.blocks)
+
+        for epoch in range(self.run_setup.epochs):
+            _, elapsed_time = self.train_epoch()
+            print(f'Epoch {epoch}: {elapsed_time}')
         print('<==')
 
-    # def log_summary(self, input_similarity_matrix, output_similarity_matrix):
-    #     non_diag_mask = np.logical_not(np.identity(input_similarity_matrix.shape[0]))
-    #     diff = np.abs(input_similarity_matrix - output_similarity_matrix)
-    #     mae = np.mean(diff[non_diag_mask])
-    #     self.logger.summary['mae'] = mae
-    #
-    #     self.logger.log({
-    #         'similarities': wandb.Image(similarity_cmp(input_similarity_matrix, output_similarity_matrix))
-    #     })
-
-    def train_epoch(self, observations):
-        representations = []
-
-        for i, room_observations in enumerate(observations):
-            self.temporal_pooler.reset()
-            for j in range(self.rotations_per_room):
-                self.run_room(room_observations, i, learn=True)
-
-            sdr = SDR(self.temporal_pooler.getNumColumns())
-            sdr.sparse = self.temporal_pooler.getUnionSDR().sparse.copy()
-            representations.append(sdr)
-        return representations
-
-    def run_room(self, room_observations, room_id, learn=True):
-        tm, tp = self.temporal_memory, self.temporal_pooler
-
-        for observation in room_observations:
-            self.compute_tm_step(
-                feedforward_input=observation,
-                learn=learn
-            )
-            self.compute_tp_step(
-                active_input=tm.get_active_columns(),
-                predicted_input=tm.get_correctly_predicted_columns(),
-                learn=learn
-            )
-            self.stats.on_step(
-                policy_id=room_id,
-                temporal_memory=self.temporal_memory,
-                temporal_pooler=self.temporal_pooler,
-                logger=self.logger
-            )
-
-    def compute_tm_step(self, feedforward_input, learn=True):
-        self.temporal_memory.compute(
-            activeColumns=feedforward_input.sparse,
-            apicalInput=[],  # self.temporal_pooler.getUnionSDR().sparse,
-            learn=learn
+    @timed
+    def train_epoch(self):
+        self.progress.next_epoch()
+        self.stats = ExperimentStats(
+            progress=self.progress, logger=self.logger, blocks=self.blocks
         )
+        self.reset_blocks_stats()
 
-        # self.temporal_memory.activateDendrites(learn=learn)
+        for room_obs_sequence in self.input_data:
+            for i in range(self.run_setup.sequence_repeats):
+                self.run_sequence(room_obs_sequence, learn=True)
 
-    def compute_tp_step(self, active_input, predicted_input, learn=True):
-        self.temporal_pooler.compute(active_input, predicted_input, learn)
+        self.stats.on_finish()
+
+    def run_sequence(self, room_obs_sequence: RoomObservationSequence, learn=True):
+        self.reset_blocks(block_type='temporal_memory')
+        self.reset_blocks(block_type='temporal_pooler')
+        self.stats.on_new_sequence(room_obs_sequence.id)
+
+        for observation in room_obs_sequence:
+            self.step(observation, learn)
+
+    def step(self, observation: SparseSdr, learn: bool):
+        self.progress.next_step()
+
+        feedforward, feedback = [], []
+        prev_block = None
+
+        for block_name in self.pipeline:
+            block = self.blocks[block_name]
+
+            if block_name == 'generator':
+                output = observation
+
+            elif block_name.startswith('temporal_memory'):
+                output = block.compute(feedforward_input=feedforward, learn=learn)
+
+            else:   # temporal pooler
+                goes_after_tm = prev_block.name.startswith('temporal_memory')
+                if goes_after_tm:
+                    active_input, correctly_predicted_input = feedforward
+                    output = block.compute(
+                        active_input=active_input,
+                        predicted_input=correctly_predicted_input,
+                        learn=learn
+                    )
+                    prev_block.pass_feedback(output)
+                else:
+                    output = block.compute(
+                        active_input=feedforward, predicted_input=feedforward, learn=learn
+                    )
+
+            feedforward = output
+            prev_block = block
+
+        self.stats.on_step()
+
+    def reset_blocks(self, block_type):
+        for block_name in self.pipeline:
+            if block_name.startswith(block_type):
+                self.blocks[block_name].reset()
+
+    def reset_blocks_stats(self):
+        for block_name in self.pipeline:
+            self.blocks[block_name].reset_stats()
 
     def build_blocks(self, temporal_pooler: str) -> dict:
         blocks = {}
