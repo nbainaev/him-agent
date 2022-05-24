@@ -13,6 +13,7 @@ from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone, timed
 from hima.experiments.temporal_pooling.blocks.dataset_policies import Policy
+from hima.experiments.temporal_pooling.blocks.sp import resolve_sp
 from hima.experiments.temporal_pooling.config_resolvers import (
     resolve_run_setup
 )
@@ -37,11 +38,12 @@ class RunSetup:
     epochs: int
 
     tp_output_sds: Sds
+    sp_output_sds: Sds
 
     def __init__(
             self, n_policies: int, n_states: int, n_actions: int,
             steps_per_policy: Optional[int], policy_repeats: int, epochs: int,
-            tp_output_sds: Sds.TShortNotation
+            tp_output_sds: Sds.TShortNotation, sp_output_sds: Sds.TShortNotation
     ):
         self.n_policies = n_policies
         self.n_states = n_states
@@ -50,6 +52,7 @@ class RunSetup:
         self.epochs = epochs
         self.policy_repeats = policy_repeats
         self.tp_output_sds = Sds(short_notation=tp_output_sds)
+        self.sp_output_sds = Sds(short_notation=sp_output_sds)
 
 
 class PoliciesExperiment(Runner):
@@ -122,6 +125,9 @@ class PoliciesExperiment(Runner):
             if block_name == 'generator':
                 output = action
 
+            elif block_name.startswith('spatial_pooler'):
+                output = block.compute(active_input=feedforward, learn=learn)
+
             elif block_name.startswith('temporal_memory'):
                 output = block.compute(
                     feedforward_input=feedforward, basal_context=context, learn=learn
@@ -171,6 +177,15 @@ class PoliciesExperiment(Runner):
                 block = data_generator.generate_policies(self.run_setup.n_policies)
                 feedforward_sds = block.output_sds
                 context_sds = block.context_sds
+
+            elif block_name.startswith('spatial_pooler'):
+                block = resolve_sp(
+                    sp_config=self.config['spatial_pooler'],
+                    ff_sds=feedforward_sds,
+                    output_sds=self.run_setup.sp_output_sds,
+                    seed=self.seed
+                )
+                feedforward_sds = block.output_sds
 
             elif block_name.startswith('temporal_memory'):
                 block = resolve_tm(

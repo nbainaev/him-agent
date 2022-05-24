@@ -17,6 +17,7 @@ from hima.common.sds import Sds
 from hima.common.utils import timed
 from hima.experiments.temporal_pooling.blocks.dataset_aai import RoomObservationSequence
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator
+from hima.experiments.temporal_pooling.blocks.sp import resolve_sp
 from hima.experiments.temporal_pooling.blocks.tm_sequence import (
     resolve_tm,
     resolve_tm_apical_feedback
@@ -26,14 +27,6 @@ from hima.experiments.temporal_pooling.config_resolvers import resolve_run_setup
 from hima.experiments.temporal_pooling.new.test_on_states_stats import RunProgress, ExperimentStats
 
 
-# def similarity_matrix(representations: list):
-#     matrix = np.empty((len(representations), len(representations)))
-#     for i, representation1 in enumerate(representations):
-#         for j, representation2 in enumerate(representations):
-#             matrix[i][j] = sdrs_similarity(representation1, representation2)
-#     return matrix
-
-
 class RunSetup:
     n_sequences: Optional[int]
     n_observations_per_sequence: Optional[int]
@@ -41,9 +34,11 @@ class RunSetup:
     epochs: int
 
     tp_output_sds: Sds
+    sp_output_sds: Sds
 
     def __init__(
-            self, sequence_repeats: int, epochs: int, tp_output_sds: Sds.TShortNotation,
+            self, sequence_repeats: int, epochs: int,
+            tp_output_sds: Sds.TShortNotation, sp_output_sds: Sds.TShortNotation,
             n_sequences: Optional[int] = None, n_observations_per_sequence: Optional[int] = None
     ):
         self.n_sequences = n_sequences
@@ -51,6 +46,7 @@ class RunSetup:
         self.epochs = epochs
         self.sequence_repeats = sequence_repeats
         self.tp_output_sds = Sds(short_notation=tp_output_sds)
+        self.sp_output_sds = Sds(short_notation=sp_output_sds)
 
 
 class ObservationsExperiment(Runner):
@@ -121,6 +117,9 @@ class ObservationsExperiment(Runner):
             if block_name == 'generator':
                 output = observation
 
+            elif block_name.startswith('spatial_pooler'):
+                output = block.compute(active_input=feedforward, learn=learn)
+
             elif block_name.startswith('temporal_memory'):
                 output = block.compute(feedforward_input=feedforward, learn=learn)
 
@@ -163,6 +162,15 @@ class ObservationsExperiment(Runner):
                 block = data_generator.generate_data(
                     n_sequences=self.run_setup.n_sequences,
                     n_observations_per_sequence=self.run_setup.n_observations_per_sequence
+                )
+                feedforward_sds = block.output_sds
+
+            elif block_name.startswith('spatial_pooler'):
+                block = resolve_sp(
+                    sp_config=self.config['spatial_pooler'],
+                    ff_sds=feedforward_sds,
+                    output_sds=self.run_setup.sp_output_sds,
+                    seed=self.seed
                 )
                 feedforward_sds = block.output_sds
 

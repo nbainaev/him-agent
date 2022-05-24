@@ -9,10 +9,13 @@ seed: 42
 
 pipeline:
   - generator
+  - spatial_pooler
   - temporal_memory
   - temporal_pooler
+#  - spatial_pooler_2
   - temporal_memory_2
   - temporal_pooler_2
+#  - spatial_pooler_3
 #  - temporal_memory_3
   - temporal_pooler_3
 
@@ -22,6 +25,7 @@ run_setups:
     n_observations_per_sequence: 10
     sequence_repeats: 3
     epochs: 2
+    sp_output_sds: [400, 10]
     tp_output_sds: [400, 10]
 
   full:
@@ -29,6 +33,7 @@ run_setups:
     n_observations_per_sequence: 60
     sequence_repeats: 20
     epochs: 4
+    sp_output_sds: [500, 16]
     tp_output_sds: [1000, 25]
 
 generator:
@@ -155,7 +160,7 @@ temporal_poolers:
 
 temporal_memory:
   ff_sds: ???
-  cells_per_column: 16
+  cells_per_column: 12
   fb_sds: [0, 0.]
   output_columns: True
   seed: ???
@@ -172,3 +177,27 @@ temporal_memory:
   permanence_decrement: 0.02
   basal_predicted_segment_decrement: 0.001
   apical_predicted_segment_decrement: 0.001
+
+spatial_pooler:
+  ff_sds: ???
+  output_sds: ???
+
+  seed: ???
+  # input
+  inputDimensions: ???
+  potentialRadius: ???
+  potentialPct: 0.25
+  globalInhibition: True
+  # output
+  columnDimensions: ???
+  localAreaDensity: ???
+
+  boostStrength: 0.5
+  dutyCyclePeriod: 5000
+  minPctOverlapDutyCycle: 0.0002
+  numActiveColumnsPerInhArea: 0
+  stimulusThreshold: 3
+  synPermConnected: 0.5
+  synPermActiveInc: 0.1
+  synPermInactiveDec: 0.01
+  wrapAround: False
