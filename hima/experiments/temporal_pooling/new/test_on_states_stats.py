@@ -182,7 +182,7 @@ class ExperimentStats:
 
         for i in range(1, len(diff_metrics)):
             block_tag, block_sim_metrics = diff_metrics[i]
-            pmf_coverage = optimized_metrics
+            pmf_coverage = optimized_metrics[i]
 
             for metric_key in block_sim_metrics:
                 sim_mx = block_sim_metrics[metric_key]
