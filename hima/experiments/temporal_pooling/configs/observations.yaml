@@ -35,7 +35,7 @@ run_setups:
     sequence_repeats: 20
     epochs: 4
     total_repeats: ...
-    sp_output_sds: [800, 25]
+    sp_output_sds: [1000, 25]
     tp_output_sds: [1000, 25]
 
 generator:
@@ -188,14 +188,14 @@ spatial_pooler:
   # input
   inputDimensions: ???
   potentialRadius: ???
-  potentialPct: 0.25
+  potentialPct: 0.5
   globalInhibition: True
   # output
   columnDimensions: ???
   localAreaDensity: ???
 
-  boostStrength: 0.5
-  dutyCyclePeriod: 5000
+  boostStrength: 0.0
+  dutyCyclePeriod: 50000
   minPctOverlapDutyCycle: 0.0002
   numActiveColumnsPerInhArea: 0
   stimulusThreshold: 3
