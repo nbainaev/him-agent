@@ -10,7 +10,7 @@ parameters:
   temporal_pooler.:
     value: ablation_utp
   seed.:
-    value: ???
+    value: ...
 
   # ====== receptive field ======
   temporal_poolers..ablation_utp.potentialPct:

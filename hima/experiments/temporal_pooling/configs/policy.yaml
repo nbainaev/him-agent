@@ -106,7 +106,7 @@ temporal_poolers:
     # input
     inputDimensions: ???
     potentialRadius: ???
-    potentialPct: 0.22
+    potentialPct: 0.26
     globalInhibition: True
     # intermediate
     localAreaDensity: ???

@@ -14,31 +14,15 @@ parameters:
 #      - custom_utp
       - sandwich_tp
 
-  generator..policy_similarity:
+  run_setups..full.tp_output_sds:
     values:
-      - 0.2
-      - 0.5
-      - 0.75
+      - [800, 20]
+      - [1000, 25]
+      - [1200, 25]
 
-  run_setups..full.n_states:
-    values:
-      - 15
-      - 30
-      - 60
-
-  run_setups..full.n_actions:
-    values:
-      - 4
-      - 12
-
-  run_setups..full.policy_repeats:
-    value:
-      - 2
-      - 10
-  run_setups..full.epochs:
-    value: ...
-  run_setups..full.total_repeats:
-    value: 80
+  # ====== TM ======
+  temporal_memory..cells_per_column:
+    values: [8, 12]
 
 command:
   - ${env}

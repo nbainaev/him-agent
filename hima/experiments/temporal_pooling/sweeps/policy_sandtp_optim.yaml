@@ -10,7 +10,7 @@ parameters:
   temporal_pooler.:
     value: sandwich_tp
   seed.:
-    value: ???
+    value: ...
 
   # ====== receptive field ======
   temporal_poolers..sandwich_tp.lower_sp_conf.potentialPct:
