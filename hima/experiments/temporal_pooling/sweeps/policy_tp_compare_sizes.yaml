@@ -22,7 +22,9 @@ parameters:
 
   # ====== TM ======
   temporal_memory..cells_per_column:
-    values: [8, 12]
+    values:
+      - 8
+      - 12
 
 command:
   - ${env}
