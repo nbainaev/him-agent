@@ -25,6 +25,7 @@ run_setups:
     n_observations_per_sequence: 10
     sequence_repeats: 3
     epochs: 2
+    total_repeats: ...
     sp_output_sds: [400, 10]
     tp_output_sds: [400, 10]
 
@@ -33,7 +34,8 @@ run_setups:
     n_observations_per_sequence: 60
     sequence_repeats: 20
     epochs: 4
-    sp_output_sds: [500, 16]
+    total_repeats: ...
+    sp_output_sds: [800, 25]
     tp_output_sds: [1000, 25]
 
 generator:
@@ -81,7 +83,7 @@ temporal_poolers:
     # input
     inputDimensions: ???
     potentialRadius: ???
-    potentialPct: 0.5
+    potentialPct: 0.26
     globalInhibition: True
     # intermediate
     localAreaDensity: ???
@@ -98,8 +100,8 @@ temporal_poolers:
     synPermPreviousPredActiveInc: 0.05
     historyLength: 20
     minHistory: 3
-    boostStrength: 1.0
-    dutyCyclePeriod: 40000
+    boostStrength: 0.5
+    dutyCyclePeriod: 8000
     minPctOverlapDutyCycle: 0.0002
     numActiveColumnsPerInhArea: 0
     stimulusThreshold: 3
@@ -108,29 +110,29 @@ temporal_poolers:
     synPermInactiveDec: 0.01
     wrapAround: False
     # ablation
-    first_boosting: False
-    second_boosting: False
-    untemporal_learning: True
+    first_boosting: True
+    second_boosting: True
+    untemporal_learning: False
     union_learning: True
-    history_learning: True
+    history_learning: False
 
   sandwich_tp:
     _type_: SandwichTp
     seed: ???
     initial_pooling: 1.
-    pooling_decay: 0.05
+    pooling_decay: 0.015
     lower_sp_conf:
       # input
       inputDimensions: ???
       potentialRadius: ???
-      potentialPct: 0.5
+      potentialPct: 0.26
       globalInhibition: True
       # output
       columnDimensions: ???
       localAreaDensity: ???
 
-      boostStrength: 1.0
-      dutyCyclePeriod: 40000
+      boostStrength: 0.5
+      dutyCyclePeriod: 12000
       minPctOverlapDutyCycle: 0.0002
       numActiveColumnsPerInhArea: 0
       stimulusThreshold: 3
@@ -141,17 +143,17 @@ temporal_poolers:
     upper_sp_conf:
       # input: lower output
       inputDimensions: ???
+      potentialRadius: ???
+      potentialPct: 0.26
+      globalInhibition: True
       # output
       columnDimensions: ???
       localAreaDensity: ???
 
-      potentialRadius: ???
-      globalInhibition: True
-      boostStrength: 1.0
-      dutyCyclePeriod: 40000
+      boostStrength: 0.65
+      dutyCyclePeriod: 6000
       minPctOverlapDutyCycle: 0.0002
       numActiveColumnsPerInhArea: 0
-      potentialPct: 0.5
       stimulusThreshold: 3
       synPermConnected: 0.5
       synPermActiveInc: 0.1
@@ -166,9 +168,9 @@ temporal_memory:
   seed: ???
 
   # shared for both [recurrent] basal and apical
-  activation_threshold: 0.85
-  reduced_basal_threshold: 0.7
-  learning_threshold: 0.6
+  activation_threshold: 0.8
+  reduced_basal_threshold: 0.6
+  learning_threshold: 0.45
   max_synapses_per_segment: 1.2
   max_segments_per_cell: 32
   initial_permanence: 0.46
