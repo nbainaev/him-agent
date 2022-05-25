@@ -11,7 +11,6 @@ parameters:
     values:
       - union_tp
       - ablation_utp
-#      - custom_utp
       - sandwich_tp
 
 command:
