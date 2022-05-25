@@ -1,0 +1,50 @@
+program: run.py
+#entity: TBI   # default: $WANDB_ENTITY
+
+project: tp_policy
+method: bayes
+metric:
+  name: loss
+  goal: minimize
+parameters:
+  temporal_pooler.:
+    value: sandwich_tp
+  seed.:
+    value: ???
+
+  # ====== receptive field ======
+  temporal_poolers..sandwich_tp.lower_sp_conf.potentialPct:
+    min: 0.05
+    max: 0.3
+  temporal_poolers..sandwich_tp.upper_sp_conf.potentialPct:
+    min: 0.05
+    max: 0.3
+
+  # ====== pooling window ======
+  temporal_poolers..sandwich_tp.pooling_decay:
+    min: 0.01
+    max: 0.3
+
+  # ====== boosting ======
+  temporal_poolers..sandwich_tp.lower_sp_conf.boostStrength:
+    min: 0.25
+    max: 0.75
+  temporal_poolers..sandwich_tp.lower_sp_conf.dutyCyclePeriod:
+    min: 3000
+    max: 15000
+  temporal_poolers..sandwich_tp.upper_sp_conf.boostStrength:
+    min: 0.25
+    max: 0.75
+  temporal_poolers..sandwich_tp.upper_sp_conf.dutyCyclePeriod:
+    min: 3000
+    max: 15000
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+    # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
+  - --config
+  - ./configs/policy.yaml
