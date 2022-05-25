@@ -6,11 +6,9 @@
 from typing import Optional, Union, Any
 
 import numpy as np
-import wandb
-from htm.bindings.sdr import SDR
 from wandb.sdk.wandb_run import Run
 
-from hima.common.config_utils import TConfig
+from hima.common.config_utils import TConfig, resolve_value
 from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
@@ -65,7 +63,10 @@ class ObservationsExperiment(Runner):
             pipeline: list[str], temporal_pooler: str, **_
     ):
         super().__init__(config, **config)
-        self.seed = seed
+
+        random_seed = np.random.default_rng().integers(10000)
+        self.seed = resolve_value(seed, 'seed', dict(seed=random_seed))
+
         self.run_setup = resolve_run_setup(config, run_setup, experiment_type='observations')
 
         print('==> Init')

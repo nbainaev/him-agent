@@ -94,6 +94,7 @@ class ExperimentStats:
 
         metrics = {}
         diff_metrics = []
+        optimized_metrics = []
         for block_name in self.current_block_stats:
             block = self.blocks[block_name]
             block_metrics, block_diff_metrics = {}, {}
@@ -104,7 +105,8 @@ class ExperimentStats:
             elif block_name.startswith('temporal_memory'):
                 ...
             else:   # temporal_pooler
-                block_metrics, block_diff_metrics = self.summarize_tp(block)
+                block_metrics, block_diff_metrics, repr_pmf_cov = self.summarize_tp(block)
+                optimized_metrics.append(repr_pmf_cov)
 
             block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/epoch/')
             metrics |= block_metrics
@@ -166,16 +168,22 @@ class ExperimentStats:
                 diff_metrics[metric_key] = metric_value
             if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
                 metrics[metric_key] = self.plot_representations(metric_value)
-        return metrics, diff_metrics
+        return metrics, diff_metrics, metrics['mean_repr_pmf_coverage']
 
-    def summarize_similarity_errors(self, diff_metrics):
+    def summarize_similarity_errors(self, diff_metrics, optimized_metrics):
         input_tag, input_sims = diff_metrics[0]
         metrics = {
             sim_key: {input_tag: input_sims[sim_key]}
             for sim_key in input_sims
         }
 
-        for block_tag, block_sim_metrics in diff_metrics[1:]:
+        discount, pmf_alpha = .85, 0.1
+        gamma, loss = 1, 0
+
+        for i in range(1, len(diff_metrics)):
+            block_tag, block_sim_metrics = diff_metrics[i]
+            pmf_coverage = optimized_metrics
+
             for metric_key in block_sim_metrics:
                 sim_mx = block_sim_metrics[metric_key]
 
@@ -188,6 +196,8 @@ class ExperimentStats:
                     metrics[f'{block_tag}/epoch/similarity_mae'] = mae
                 else:
                     metrics[f'{block_tag}/epoch/similarity_smae'] = mae
+                    loss += gamma * (mae + pmf_alpha * (1 - pmf_coverage) / pmf_coverage)
+            gamma *= discount
 
         result = {}
         for metric_key in metrics.keys():
@@ -198,6 +208,7 @@ class ExperimentStats:
             else:
                 result[metric_key] = metric
 
+        result['loss'] = loss
         return result
 
     @staticmethod

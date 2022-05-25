@@ -5,9 +5,10 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from typing import Optional, Any, Union
 
+import numpy as np
 from wandb.sdk.wandb_run import Run
 
-from hima.common.config_utils import TConfig
+from hima.common.config_utils import TConfig, resolve_value
 from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
@@ -71,7 +72,10 @@ class PoliciesExperiment(Runner):
             pipeline: list[str], temporal_pooler: str, **_
     ):
         super().__init__(config, **config)
-        self.seed = seed
+
+        random_seed = np.random.default_rng().integers(10000)
+        self.seed = resolve_value(seed, 'seed', dict(seed=random_seed))
+
         self.run_setup = resolve_run_setup(config, run_setup, experiment_type='policies')
 
         print('==> Init')
