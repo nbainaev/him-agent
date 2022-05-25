@@ -112,7 +112,7 @@ class ExperimentStats:
             metrics |= block_metrics
             diff_metrics.append((block.tag, block_diff_metrics))
 
-        metrics |= self.summarize_similarity_errors(diff_metrics)
+        metrics |= self.summarize_similarity_errors(diff_metrics, optimized_metrics)
 
         if self.logger:
             self.logger.log(metrics, step=self.progress.step)
@@ -178,12 +178,9 @@ class ExperimentStats:
         }
 
         discount, pmf_alpha = .85, 0.1
-        gamma, loss = 1, 0
+        i, gamma, loss = 0, 1, 0
 
-        for i in range(1, len(diff_metrics)):
-            block_tag, block_sim_metrics = diff_metrics[i]
-            pmf_coverage = optimized_metrics[i-1]
-
+        for block_tag, block_sim_metrics in diff_metrics[1:]:
             for metric_key in block_sim_metrics:
                 sim_mx = block_sim_metrics[metric_key]
 
@@ -196,8 +193,11 @@ class ExperimentStats:
                     metrics[f'{block_tag}/epoch/similarity_mae'] = mae
                 else:
                     metrics[f'{block_tag}/epoch/similarity_smae'] = mae
-                    loss += gamma * (mae + pmf_alpha * (1 - pmf_coverage) / pmf_coverage)
-            gamma *= discount
+                    if block_tag.endswith('_tp'):
+                        pmf_coverage = optimized_metrics[i]
+                        loss += gamma * (mae + pmf_alpha * (1 - pmf_coverage) / pmf_coverage)
+                        i += 1
+                        gamma *= discount
 
         result = {}
         for metric_key in metrics.keys():

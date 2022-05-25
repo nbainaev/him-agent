@@ -97,10 +97,13 @@ class ExperimentStats:
         optimized_metrics = []
         for block_name in self.current_block_stats:
             block = self.blocks[block_name]
+            block_metrics, block_diff_metrics = {}, {}
             if block_name.startswith('generator'):
                 block_metrics, block_diff_metrics = self.summarize_input(block)
+            elif block_name.startswith('spatial_pooler'):
+                block_metrics = self.summarize_sp(block)
             elif block_name.startswith('temporal_memory'):
-                block_metrics, block_diff_metrics = {}, {}
+                ...
             else:   # temporal_pooler
                 block_metrics, block_diff_metrics, repr_pmf_cov = self.summarize_tp(block)
                 optimized_metrics.append(repr_pmf_cov)
@@ -130,6 +133,23 @@ class ExperimentStats:
                 metrics[metric_key] = self.plot_representations(metric_value)
         return metrics, diff_metrics
 
+    def summarize_sp(self, block):
+        raw_metrics = self._collect_block_final_stats(block)
+        metrics = self._sdr_representation_similarities(
+            raw_metrics['representative'], block.output_sds
+        )
+        metrics |= self._pmf_similarities(
+            raw_metrics['distribution'], block.output_sds
+        )
+        metrics['mean_repr_pmf_coverage'] = np.mean(raw_metrics['representative_pmf_coverage'])
+        metrics['mean_relative_sparsity'] = np.mean(raw_metrics['relative_sparsity'])
+
+        for metric_key in metrics:
+            metric_value = metrics[metric_key]
+            if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
+                metrics[metric_key] = self.plot_representations(metric_value)
+        return metrics
+
     def summarize_tp(self, block):
         raw_metrics = self._collect_block_final_stats(block)
         metrics = self._sdr_representation_similarities(
@@ -158,12 +178,9 @@ class ExperimentStats:
         }
 
         discount, pmf_alpha = .85, 0.1
-        gamma, loss = 1, 0
+        i, gamma, loss = 0, 1, 0
 
-        for i in range(1, len(diff_metrics)):
-            block_tag, block_sim_metrics = diff_metrics[i]
-            pmf_coverage = optimized_metrics[i-1]
-
+        for block_tag, block_sim_metrics in diff_metrics[1:]:
             for metric_key in block_sim_metrics:
                 sim_mx = block_sim_metrics[metric_key]
 
@@ -176,9 +193,11 @@ class ExperimentStats:
                     metrics[f'{block_tag}/epoch/similarity_mae'] = mae
                 else:
                     metrics[f'{block_tag}/epoch/similarity_smae'] = mae
-                    loss += gamma * (mae + pmf_alpha * (1 - pmf_coverage) / pmf_coverage)
-
-            gamma *= discount
+                    if block_tag.endswith('_tp'):
+                        pmf_coverage = optimized_metrics[i]
+                        loss += gamma * (mae + pmf_alpha * (1 - pmf_coverage) / pmf_coverage)
+                        i += 1
+                        gamma *= discount
 
         result = {}
         for metric_key in metrics.keys():
