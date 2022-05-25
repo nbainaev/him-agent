@@ -1,0 +1,38 @@
+program: run.py
+#entity: TBI   # default: $WANDB_ENTITY
+
+project: tp_policy
+method: bayes
+metric:
+  name: loss
+  goal: minimize
+parameters:
+  temporal_pooler.:
+    value: ablation_utp
+  seed.:
+    value: ???
+
+  # ====== receptive field ======
+  temporal_poolers..ablation_utp.potentialPct:
+    min: 0.2
+    max: 0.4
+
+  # ====== pooling window ======
+  temporal_poolers..ablation_utp.decayTimeConst:
+    min: 7.0
+    max: 15.0
+
+  # ====== boosting ======
+  temporal_poolers..ablation_utp.dutyCyclePeriod:
+    min: 2000
+    max: 10000
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+    # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
+  - --config
+  - ./configs/policy.yaml

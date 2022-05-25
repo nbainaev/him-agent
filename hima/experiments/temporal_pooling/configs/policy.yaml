@@ -104,7 +104,7 @@ temporal_poolers:
     # input
     inputDimensions: ???
     potentialRadius: ???
-    potentialPct: 0.5
+    potentialPct: 0.22
     globalInhibition: True
     # intermediate
     localAreaDensity: ???
@@ -121,8 +121,8 @@ temporal_poolers:
     synPermPreviousPredActiveInc: 0.05
     historyLength: 20
     minHistory: 3
-    boostStrength: 1.0
-    dutyCyclePeriod: 40000
+    boostStrength: 0.45
+    dutyCyclePeriod: 8000
     minPctOverlapDutyCycle: 0.0002
     numActiveColumnsPerInhArea: 0
     stimulusThreshold: 3
@@ -131,11 +131,11 @@ temporal_poolers:
     synPermInactiveDec: 0.01
     wrapAround: False
     # ablation
-    first_boosting: False
-    second_boosting: False
-    untemporal_learning: True
+    first_boosting: True
+    second_boosting: True
+    untemporal_learning: False
     union_learning: True
-    history_learning: True
+    history_learning: False
 
   custom_utp:
     _type_: CustomUtp
