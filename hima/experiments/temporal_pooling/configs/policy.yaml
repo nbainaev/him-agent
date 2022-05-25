@@ -4,7 +4,7 @@ log: True    # wandb logging
 
 run_setup: full
 policy_selection_rule: ordered
-temporal_pooler: union_tp
+temporal_pooler: ablation_utp
 seed: 42
 
 pipeline:
@@ -27,6 +27,7 @@ run_setups:
     steps_per_policy: ...
     policy_repeats: 3
     epochs: 2
+    total_repeats: ...
     sp_output_sds: [400, 10]
     tp_output_sds: [400, 10]
 
@@ -37,6 +38,7 @@ run_setups:
     steps_per_policy: ...
     policy_repeats: 20
     epochs: 4
+    total_repeats: ...
     sp_output_sds: [500, 16]
     tp_output_sds: [1000, 25]
 

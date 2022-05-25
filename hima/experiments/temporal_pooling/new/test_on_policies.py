@@ -43,15 +43,17 @@ class RunSetup:
 
     def __init__(
             self, n_policies: int, n_states: int, n_actions: int,
-            steps_per_policy: Optional[int], policy_repeats: int, epochs: int,
+            steps_per_policy: Optional[int], policy_repeats: int, epochs: int, total_repeats: int,
             tp_output_sds: Sds.TShortNotation, sp_output_sds: Sds.TShortNotation
     ):
         self.n_policies = n_policies
         self.n_states = n_states
         self.n_actions = n_actions
         self.steps_per_policy = isnone(steps_per_policy, self.n_states)
-        self.epochs = epochs
-        self.policy_repeats = policy_repeats
+        self.policy_repeats, self.epochs = resolve_epoch_runs(
+            policy_repeats, epochs, total_repeats
+        )
+
         self.tp_output_sds = Sds(short_notation=tp_output_sds)
         self.sp_output_sds = Sds(short_notation=sp_output_sds)
 
@@ -74,7 +76,7 @@ class PoliciesExperiment(Runner):
         super().__init__(config, **config)
 
         random_seed = np.random.default_rng().integers(10000)
-        self.seed = resolve_value(seed, 'seed', dict(seed=random_seed))
+        self.seed = isnone(resolve_value(seed), random_seed)
 
         self.run_setup = resolve_run_setup(config, run_setup, experiment_type='policies')
 
@@ -232,3 +234,14 @@ class PoliciesExperiment(Runner):
         for k in blocks:
             block = blocks[k]
             logger.define_metric(f'{block.tag}/epoch/*', step_metric='epoch')
+
+
+def resolve_epoch_runs(intra_epoch_repeats: int, epochs: int, total_repeats: int):
+    total_repeats = resolve_value(total_repeats)
+    intra_epoch_repeats = resolve_value(intra_epoch_repeats)
+    epochs = resolve_value(epochs)
+    if intra_epoch_repeats is None:
+        intra_epoch_repeats = total_repeats // epochs
+    if epochs is None:
+        epochs = total_repeats // intra_epoch_repeats
+    return intra_epoch_repeats, epochs

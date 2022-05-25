@@ -12,7 +12,7 @@ from hima.common.config_utils import TConfig, resolve_value
 from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import timed
+from hima.common.utils import timed, isnone
 from hima.experiments.temporal_pooling.blocks.dataset_aai import RoomObservationSequence
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator
 from hima.experiments.temporal_pooling.blocks.sp import resolve_sp
@@ -22,6 +22,7 @@ from hima.experiments.temporal_pooling.blocks.tm_sequence import (
 )
 from hima.experiments.temporal_pooling.blocks.tp import resolve_tp
 from hima.experiments.temporal_pooling.config_resolvers import resolve_run_setup
+from hima.experiments.temporal_pooling.new.test_on_policies import resolve_epoch_runs
 from hima.experiments.temporal_pooling.new.test_on_states_stats import RunProgress, ExperimentStats
 
 
@@ -35,14 +36,16 @@ class RunSetup:
     sp_output_sds: Sds
 
     def __init__(
-            self, sequence_repeats: int, epochs: int,
+            self, sequence_repeats: int, epochs: int, total_repeats: int,
             tp_output_sds: Sds.TShortNotation, sp_output_sds: Sds.TShortNotation,
             n_sequences: Optional[int] = None, n_observations_per_sequence: Optional[int] = None
     ):
         self.n_sequences = n_sequences
         self.n_observations_per_sequence = n_observations_per_sequence
-        self.epochs = epochs
-        self.sequence_repeats = sequence_repeats
+        self.sequence_repeats, self.epochs = resolve_epoch_runs(
+            sequence_repeats, epochs, total_repeats
+        )
+
         self.tp_output_sds = Sds(short_notation=tp_output_sds)
         self.sp_output_sds = Sds(short_notation=sp_output_sds)
 
@@ -65,7 +68,7 @@ class ObservationsExperiment(Runner):
         super().__init__(config, **config)
 
         random_seed = np.random.default_rng().integers(10000)
-        self.seed = resolve_value(seed, 'seed', dict(seed=random_seed))
+        self.seed = isnone(resolve_value(seed), random_seed)
 
         self.run_setup = resolve_run_setup(config, run_setup, experiment_type='observations')
 

@@ -119,7 +119,8 @@ def resolve_relative_quantity(abs_or_relative: Union[int, float], baseline: int)
 
 
 def resolve_value(
-        value: Any, key: str, induction_registry: dict, raise_if_not_resolved: bool = True
+        value: Any, key: str = None, induction_registry: dict = None,
+        raise_if_not_resolved: bool = True
 ) -> Any:
     if value == _TO_BE_NONE_VALUE:
         return None
