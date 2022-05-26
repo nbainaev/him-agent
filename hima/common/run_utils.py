@@ -57,7 +57,7 @@ class Sweep:
     shared_run_config_overrides: list[TConfigOverrideKV]
 
     def __init__(
-            self, config: dict, n_agents: int,
+            self, sweep_id: Optional[int], config: dict, n_agents: int,
             experiment_runner_registry: TExperimentRunnerRegistry,
             shared_config_overrides: list[TConfigOverrideKV],
             run_arg_parser: ArgumentParser = None,
@@ -75,7 +75,10 @@ class Sweep:
         self.shared_run_config = read_config(shared_config_filepath)
         self.shared_run_config_overrides = shared_config_overrides
 
-        self.id = wandb.sweep(self.config, project=wandb_project)
+        if id is None:
+            self.id = wandb.sweep(self.config, project=wandb_project)
+        else:
+            self.id = sweep_id
 
     def run(self):
         print(f'==> Sweep {self.id}')
@@ -150,6 +153,7 @@ def get_run_command_arg_parser() -> ArgumentParser:
     parser.add_argument('-c', '--config', dest='config_filepath', required=True)
     parser.add_argument('-e', '--entity', dest='wandb_entity', required=False, default=None)
     parser.add_argument('--sweep', dest='wandb_sweep', action='store_true', default=False)
+    parser.add_argument('--sweep_id', dest='wandb_sweep_id', default=None)
     parser.add_argument('-n', '--n_sweep_agents', type=int, default=None)
     return parser
 
@@ -172,6 +176,7 @@ def run_experiment(
 
     if args.wandb_sweep:
         Sweep(
+            sweep_id=args.wandb_sweep_id,
             config=config,
             n_agents=args.n_sweep_agents,
             experiment_runner_registry=experiment_runner_registry,
