@@ -75,7 +75,7 @@ class Sweep:
         self.shared_run_config = read_config(shared_config_filepath)
         self.shared_run_config_overrides = shared_config_overrides
 
-        if id is None:
+        if sweep_id is None:
             self.id = wandb.sweep(self.config, project=wandb_project)
         else:
             self.id = sweep_id
