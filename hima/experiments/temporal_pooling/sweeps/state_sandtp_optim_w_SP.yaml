@@ -59,7 +59,7 @@ parameters:
     max: 0.3
   spatial_pooler..boostStrength:
     min: 0.01
-    max: 0.75d
+    max: 0.75
 
 command:
   - ${env}
