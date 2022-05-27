@@ -119,6 +119,7 @@ class ObservationsExperiment(Runner):
             block = self.blocks[block_name]
 
             if block_name == 'generator':
+                block.update_stats(observation)
                 output = observation
 
             elif block_name.startswith('spatial_pooler'):

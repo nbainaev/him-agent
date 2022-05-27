@@ -16,6 +16,7 @@ from hima.experiments.temporal_pooling.new.metrics import (
     similarity_matrix,
     standardize_sample_distribution
 )
+from hima.experiments.temporal_pooling.sds_stats import SdsStats
 
 
 class RoomObservationSequence:
@@ -41,6 +42,9 @@ class AnimalAiDatasetBlockStats:
 
     _observation_sequences: list[list[set[int]]]
 
+    sds_stats: SdsStats
+
+    # epoch final metrics
     raw_similarity_matrix_elementwise: np.ndarray
     similarity_matrix_elementwise: np.ndarray
     raw_similarity_elementwise: np.ndarray
@@ -60,6 +64,7 @@ class AnimalAiDatasetBlockStats:
             for seq in observation_sequences
         ]
         self.output_sds = sds
+        self.sds_stats = SdsStats(self.output_sds)
 
     @staticmethod
     def distance_based_similarities() -> np.ndarray:
@@ -98,9 +103,14 @@ class AnimalAiDatasetBlockStats:
             self.raw_similarity_matrix_prefix
         )
 
-    @staticmethod
-    def step_metrics() -> dict[str, Any]:
-        return {}
+    def reset(self):
+        self.sds_stats = SdsStats(self.output_sds)
+
+    def update(self, current_output_sdr: SparseSdr):
+        self.sds_stats.update(current_output_sdr)
+
+    def step_metrics(self) -> dict[str, Any]:
+        return self.sds_stats.step_metrics()
 
     def final_metrics(self) -> dict[str, Any]:
         return {
@@ -146,8 +156,11 @@ class AnimalAiDatasetBlock:
     def __iter__(self) -> Iterator[RoomObservationSequence]:
         return iter(self._observation_sequences)
 
+    def update_stats(self, observation: SparseSdr):
+        self.stats.update(observation)
+
     def reset_stats(self):
-        ...
+        self.stats.reset()
 
 
 class AAIRotationsGenerator:

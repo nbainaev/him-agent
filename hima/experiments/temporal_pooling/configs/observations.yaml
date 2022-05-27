@@ -9,7 +9,7 @@ seed: 42
 
 pipeline:
   - generator
-  - spatial_pooler
+#  - spatial_pooler
   - temporal_memory
   - temporal_pooler
 #  - spatial_pooler_2
