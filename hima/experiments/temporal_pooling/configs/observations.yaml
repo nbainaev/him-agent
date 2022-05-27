@@ -32,8 +32,8 @@ run_setups:
   full:
     n_sequences: 5
     n_observations_per_sequence: 60
-    sequence_repeats: 20
-    epochs: 4
+    sequence_repeats: 10
+    epochs: 10
     total_repeats: ...
     sp_output_sds: [1000, 25]
     tp_output_sds: [1000, 25]

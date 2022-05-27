@@ -4,10 +4,11 @@ program: run.py
 project: tp_observations
 method: grid
 parameters:
-  temporal_pooler.:
-    value: ablation_utp
   seed.:
-    value: ...
+    values: [120, 121, 122, 123, 124, 125, 126, 127, 128, 129]
+
+  temporal_pooler.:
+    value: union_tp
 
   run_setups..full.tp_output_sds:
     values:

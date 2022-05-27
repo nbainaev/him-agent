@@ -8,9 +8,15 @@ metric:
   goal: minimize
 parameters:
   temporal_pooler.:
-    value: ablation_utp
+    value: union_tp
   seed.:
     value: ...
+
+  run_setups..full.sp_output_sds:
+    values:
+      - [800, 25]
+      - [1000, 25]
+      - [1200, 25]
 
   spatial_pooler..potentialPct:
     min: 0.08
