@@ -12,7 +12,7 @@ parameters:
   seed.:
     value: ...
   pipeline.:
-    value: [generator, temporal_memory, temporal_pooler, temporal_memory_2, temporal_pooler_2, temporal_pooler_3]
+    value: [generator, spatial_pooler, temporal_memory, temporal_pooler, temporal_memory_2, temporal_pooler_2, temporal_pooler_3]
 
   # ====== ablation ======
   temporal_poolers..ablation_utp.untemporal_learning:
