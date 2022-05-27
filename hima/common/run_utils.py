@@ -4,6 +4,8 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import os
+import sys
+import traceback
 from argparse import ArgumentParser
 from copy import deepcopy
 from multiprocessing import Process
@@ -57,7 +59,7 @@ class Sweep:
     shared_run_config_overrides: list[TConfigOverrideKV]
 
     def __init__(
-            self, sweep_id: Optional[int], config: dict, n_agents: int,
+            self, sweep_id: str, config: dict, n_agents: int,
             experiment_runner_registry: TExperimentRunnerRegistry,
             shared_config_overrides: list[TConfigOverrideKV],
             run_arg_parser: ArgumentParser = None,
@@ -104,6 +106,18 @@ class Sweep:
         print(f'<== Sweep {self.id}')
 
     def _wandb_agent_entry_point(self) -> None:
+        # noinspection PyBroadException
+        try:
+            self._run_provided_config()
+        except Exception as _:
+            # catch it only to print traces to the terminal as wandb doesn't do it in Agents!
+            print(traceback.print_exc(), file=sys.stderr)
+            # finish explicitly with error code (NB: I tend to think it's not necessary here)
+            wandb.finish(1)
+            # re-raise after printing so wandb catch it
+            raise
+
+    def _run_provided_config(self) -> None:
         # BE CAREFUL: this method is expected to be run in parallel — DO NOT mutate `self` here
 
         # see comments inside func
