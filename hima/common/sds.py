@@ -128,6 +128,8 @@ class Sds:
 
     @staticmethod
     def as_sds(sds: Union['Sds', TShortNotation]) -> 'Sds':
+        if sds is None:
+            return Sds(size=0, sparsity=0., active_size=0)
         if isinstance(sds, Sds):
             return sds
         return Sds(short_notation=sds)

@@ -163,7 +163,7 @@ temporal_poolers:
 temporal_memory:
   ff_sds: ???
   cells_per_column: 12
-  fb_sds: [0, 0.]
+  fb_sds: ...
   output_columns: True
   seed: ???
 

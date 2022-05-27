@@ -51,7 +51,7 @@ parameters:
   # Enable or not FB connections
   temporal_memory..fb_sds:
     values:
-      - [0, 0.]
+      - ...
       - ???
 
 command:
