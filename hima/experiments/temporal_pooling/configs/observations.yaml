@@ -95,7 +95,7 @@ temporal_poolers:
     predictedActiveOverlapWeight: 2
     exciteFunctionType: Logistic
     decayFunctionType: Exponential
-    decayTimeConst: 10.0
+    decayTimeConst: 12.0
     synPermPredActiveInc: 0.1
     synPermPreviousPredActiveInc: 0.05
     historyLength: 20
