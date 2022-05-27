@@ -9,7 +9,7 @@ seed: 42
 
 pipeline:
   - generator
-#  - spatial_pooler
+  - spatial_pooler
   - temporal_memory
   - temporal_pooler
 #  - spatial_pooler_2
@@ -40,7 +40,7 @@ run_setups:
 
 generator:
   _type_: aai_rotation
-  sds: [180, 4]
+  sds: [180, 8]
   filepath: distance.pkl
 
 temporal_poolers:
@@ -198,7 +198,7 @@ spatial_pooler:
   dutyCyclePeriod: 50000
   minPctOverlapDutyCycle: 0.0002
   numActiveColumnsPerInhArea: 0
-  stimulusThreshold: 3
+  stimulusThreshold: 1
   synPermConnected: 0.5
   synPermActiveInc: 0.1
   synPermInactiveDec: 0.01
