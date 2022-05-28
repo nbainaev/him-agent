@@ -7,6 +7,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import wandb
+from copy import deepcopy
+from itertools import product
 
 from hima.envs.biogwlab.env import BioGwLabEnvironment
 from hima.envs.biogwlab.environment import Environment
@@ -143,6 +145,25 @@ class SPMetrics(SDRMetrics):
         return self.pre_stability / self.total_sdrs
 
 
+class ExactEmpowerment:
+    def __init__(self, environment_config: dict):
+        config = deepcopy(environment_config)
+        config['terminate']['early_stop'] = False
+        config['terminate']['episode_max_steps'] = np.inf
+        self.environment = unwrap(BioGwLabEnvironment(**config))
+
+    def eval_state(self, position: tuple[int, int], horizon: int):
+        data = set()
+
+        for actions in product(range(self.environment.n_actions), repeat=horizon):
+            self.environment.agent.position = position
+            for a in actions:
+                self.environment.act(a)
+            data.add(self.environment.agent.position)
+        num_states = len(data)
+        return np.log2(num_states)
+
+
 class GwEmpowermentTest(Runner):
     def __init__(self, config: TConfig, **kwargs):
         super().__init__(config, **config)
@@ -181,6 +202,8 @@ class GwEmpowermentTest(Runner):
             sparsity=self.sp.getLocalAreaDensity(), **config['emp']
         )
         self.horizon = config['horizon']
+        self.exact_emp = ExactEmpowerment(config['environment'])
+        self.exact_emp_map = self.create_exact_empowerment_map(self.horizon)
 
         self.prev_state = None
         self.episode = 0
@@ -211,6 +234,16 @@ class GwEmpowermentTest(Runner):
         obstacle_mask = self.environment.aggregated_mask[EntityType.Obstacle]
         ob_map = np.ma.masked_where(obstacle_mask, ob_map, False)
         return ob_map
+
+    def create_exact_empowerment_map(self, horizon: int) -> np.ma.MaskedArray:
+        data = self.get_masked_obstacles_map()
+        height, width = data.shape
+        for i in range(height):
+            for j in range(width):
+                if data.mask[i, j]:
+                    continue
+                data[i, j] = self.exact_emp.eval_state((i, j), horizon)
+        return data
 
     def log_metrics(self):
         observations = self.get_all_observations()
@@ -255,7 +288,8 @@ class GwEmpowermentTest(Runner):
         ax.set_axis_off()
         fig.add_axes(ax)
         self.logger.log({
-            'empowerment': wandb.Image(ax.imshow(empowerment_map))
+            'empowerment': wandb.Image(ax.imshow(empowerment_map)),
+            'exact_emp': wandb.Image(ax.imshow(self.exact_emp_map))
         }, step=self.episode)
         plt.close(fig)
 
