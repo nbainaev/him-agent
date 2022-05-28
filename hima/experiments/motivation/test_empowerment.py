@@ -287,9 +287,15 @@ class GwEmpowermentTest(Runner):
         ax = plt.Axes(fig, [0., 0., 1., 1.])
         ax.set_axis_off()
         fig.add_axes(ax)
+        vmin = np.min([empowerment_map.min(), self.exact_emp_map.min()])
+        vmax = np.max([empowerment_map.max(), self.exact_emp_map.max()])
+        dif = self.exact_emp_map - empowerment_map
         self.logger.log({
-            'empowerment': wandb.Image(ax.imshow(empowerment_map)),
-            'exact_emp': wandb.Image(ax.imshow(self.exact_emp_map))
+            'map/empowerment': wandb.Image(ax.imshow(empowerment_map, vmin=vmin, vmax=vmax)),
+            'map/exact_emp': wandb.Image(ax.imshow(self.exact_emp_map, vmin=vmin, vmax=vmax)),
+            'map/dif_emp': wandb.Image(ax.imshow(np.abs(dif)/vmax, vmin=0, vmax=1)),
+            'empowerment/mae': np.abs(dif).mean(),
+            'empowerment/min_error': dif.min()
         }, step=self.episode)
         plt.close(fig)
 
