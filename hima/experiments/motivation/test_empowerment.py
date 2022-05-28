@@ -9,16 +9,18 @@ import matplotlib.pyplot as plt
 import wandb
 
 from hima.envs.biogwlab.env import BioGwLabEnvironment
+from hima.envs.biogwlab.environment import Environment
+from hima.envs.biogwlab.module import EntityType
+from hima.envs.biogwlab.utils.state_provider import GwAgentStateProvider
+from hima.envs.env import unwrap
+
 from htm.bindings.algorithms import SpatialPooler
 from htm.bindings.sdr import SDR
-from hima.modules.motivation import Amygdala, StriatumBlock, Policy
+
+from hima.common.sdr import SparseSdr
 from hima.common.run_utils import Runner
 from hima.common.config_utils import TConfig
-from hima.envs.biogwlab.utils.state_provider import GwAgentStateProvider
-from hima.common.sdr import SparseSdr
-from hima.envs.biogwlab.module import EntityType
-from hima.envs.env import unwrap
-from hima.envs.biogwlab.environment import Environment
+
 from hima.modules.empowerment import Empowerment
 
 
@@ -141,7 +143,7 @@ class SPMetrics(SDRMetrics):
         return self.pre_stability / self.total_sdrs
 
 
-class GwMotivationRunner(Runner):
+class GwEmpowermentTest(Runner):
     def __init__(self, config: TConfig, **kwargs):
         super().__init__(config, **config)
 

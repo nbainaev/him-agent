@@ -7,13 +7,13 @@
 from hima.common.run_utils import (
     get_run_command_arg_parser, run_experiment
 )
-from hima.experiments.motivation.runner import GwMotivationRunner
+from hima.experiments.motivation.test_empowerment import GwEmpowermentTest
 
 
 if __name__ == '__main__':
     run_experiment(
         run_command_parser=get_run_command_arg_parser(),
         experiment_runner_registry={
-            'motivation.base': GwMotivationRunner
+            'motivation.emp': GwEmpowermentTest
         }
     )
