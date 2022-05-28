@@ -252,11 +252,13 @@ class GwEmpowermentTest(Runner):
             self.sp.compute(self.sp_input, learn=False, output=self.sp_output)
             self.state_metrics.add(key, self.sp_output.sparse)
 
-        anomaly = np.mean(self.emp.anomalies[-self.steps+1:])
+        anomaly = np.mean(self.emp.anomalies[-self.steps:])
+        iou = np.mean(self.emp.IoU[-self.steps:])
         self.log_empowerment()
         self.logger.log(
             {
                 'anomaly': anomaly,
+                'IoU': iou,
                 'steps': self.steps,
                 'obs/sdr_entropy': self.metrics.rel_sdr_entropy,
                 'obs/bit_entropy': self.metrics.rel_bit_entropy,
