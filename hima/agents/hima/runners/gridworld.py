@@ -678,7 +678,7 @@ class GwHIMARunner:
 
                 if self.logger_config['log_number_of_clusters'] and (self.agent.empowerment is not None):
                     self.logger.log(
-                        {'empowerment/number_of_clusters': self.agent.empowerment.memory.number_of_clusters},
+                        {'empowerment/number_of_clusters': self.agent.empowerment.memory.stored_states},
                         step=self.episode)
 
                 self.reset_block_metrics()

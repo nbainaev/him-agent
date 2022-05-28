@@ -16,111 +16,104 @@ EPS = 1e-12
 
 class Memory:
     """
-    The Memory object saves SDR representations of states and clusterizes them using the similarity measure.
-    The SDR representation must have fixed sparsity of active cells for correct working.
+    Memory saves state representations. It compares new state with stored ones. If the new is
+    included more than 'threshold' in some of stored states, than it replaces the old one. In
+    the other case new state replace the least using state. Also every 'del_step' time step
+    using statistics of one random state is set to 0.
 
     Parameters
     ----------
+    seed : int
+        The seed for random generator.
     size : int
-        The size is the size of SDR representations, which are stored
-    threshold: float
-        The threshold is used to determine then it's necessary to create a new cluster.
+        The number of bits represented state. Should be fixed.
+    threshold : float
+        The threshold is used to determine the corresponding stored state.
+    memory_size : int
+        The maximum amount of stored states.
+    del_step : int
+        How often one of the states is deleted.
 
     Attributes
     ----------
-    size: int
-        It stores size argument.
-    kernels : np.array
-        This is the list of created clusters representations in dence form. It contains information about frequency of
-        cell's activity (for each cluster) during working. Its shape: (number of clusters, size).
-    norms: np.array
-        This is the list of representations amount for each cluster. Its shape: (munber of clusters, 1)
-    threshold: float
-        It stores threshold argument.
+    size : int
+        It stores 'size' parameter.
+    states : np.array
+        The array stores state representations. Shape: ('memory_size', 'size').
+    visits : np.array
+        The array determines the frequency of the corresponding state. Shape: ('memory_size')
+    threshold : float
+        It stores 'threshold' parameter.
+    del_step : int
+        It stores 'del_step' parameter.
+    time : int
+        The number of recordings to memory.
     """
 
-    def __init__(self, size, threshold=0.5):
-        self.kernels = None
-        self.norms = None
+    def __init__(self, seed: int, size: int, threshold: float, memory_size: int, del_step: int):
+        self._rng = np.random.default_rng(seed)
+        self.states = np.zeros((memory_size, size), dtype=int)
+        self.visits = np.zeros(memory_size, dtype=int)
         self.threshold = threshold
         self.size = size
+        self.time = 0
+        self.del_step = del_step
 
     @property
-    def number_of_clusters(self):
-        if (self.kernels is not None) and (self.kernels.ndim == 2):
-            return self.kernels.shape[0]
-        else:
-            return 0
+    def stored_states(self):
+        return len(np.flatnonzero(self.visits))
 
-    def add(self, state):
-        """ Add a new SDR representation (store and clusterize).
+    def add(self, state: SparseSdr):
+        """ Add a new state representation to memory.
 
         Parameters
         ----------
-        state: np.array
-            This is the SDR representation (sparse), that we want to store ande clusterize with other stored SDRs.
-
-        Returns
-        -------
+        state: SparseSdr
+            Representation of new state should be stored.
         """
-        state_dense = np.zeros(self.size)
-        state_dense[state] = 1
-        sims = self.similarity(state_dense)
-        if np.sum(sims > self.threshold) == 0:
-            if self.kernels is None:
-                self.kernels = state_dense.reshape((1, -1))
-                self.norms = np.array([[1]])
-            else:
-                self.kernels = np.vstack((self.kernels, state_dense))
-                self.norms = np.vstack((self.norms, [1]))
-        else:
-            self.kernels[np.argmax(sims)] += state_dense
-            self.norms[np.argmax(sims)] += 1
+        self.time += 1
+        if self.time % self.del_step == 0:
+            probs = 1 - self.visits.astype(float)/np.max(self.visits)
+            probs = probs / np.sum(probs)
+            del_ind = self._rng.choice(len(probs), p=probs)
+            self.visits[del_ind] = 0
 
-    def similarity(self, state):
-        """This function evaluate similarity measure between stored clusters and new state.
+        stored_inds = np.flatnonzero(self.visits)
+        max_inclusion = 0
+        ins = -1
+        for ind in stored_inds:
+            inclusion = len(np.intersect1d(state, self.states[ind])) / self.size
+            if inclusion > self.threshold and inclusion > max_inclusion:
+                max_inclusion = inclusion
+                ins = ind
+                if inclusion == 1:
+                    break
+        if ins < 0:
+            ins = np.argmin(self.visits)
+            self.visits[ins] = 0
+        self.states[ins] = state
+        self.visits[ins] += 1
+
+    def get_n_components(self, superposition: SparseSdr) -> int:
+        """Calculates the number of separate states in given superposition.
 
         Parameters
         ----------
-        state: np.array
-            The sparse representation of the state to be compared.
+        superposition: SparseSdr
+            Superposition representation of a set of states.
 
         Returns
         -------
-        similarities: np.array
-            The similarity measures for given state. If the Memory object don't have any saved clusters, then the empty
-            array is returned, else returned array contained similarities between the state and each cluster.
-            Its shape: (number of kernels, 1).
-
+        int:
+            The number of states in the superposition.
         """
-        if self.kernels is None:
-            return np.array([])
-        else:
-            normalised_kernels = self.kernels / self.norms
-            sims = normalised_kernels @ state.T / (
-                    np.sqrt(np.sum(normalised_kernels ** 2, axis=1)) * np.sqrt(state @ state.T))
-            similarities = sims.T
-            return similarities
-
-    def adopted_kernels(self, sparsity):
-        """This function normalises stored representations and cuts them by sparsity threshold.
-
-        Parameters
-        ----------
-        sparsity: float
-            The sparsity of active cells in stored SDR representations.
-
-        Returns
-        -------
-        clusters_representations: np.array
-            Normalised and cutted representations of each cluster. The cutting is done by choosing the most frequent
-            active cells (their number is defined by sparsity) in kernels attribute. All elements of array are
-            in [0, 1]. The shape is (number of clusters, 1).
-        """
-        data = np.copy(self.kernels)
-        data[data < np.quantile(data, 1 - sparsity, axis=1).reshape((-1, 1))] = 0
-        clusters_representations = data / self.norms
-        return clusters_representations
+        stored_inds = np.flatnonzero(self.visits)
+        n_states = 0
+        for ind in stored_inds:
+            inclusion = len(np.intersect1d(superposition, self.states[ind])) / self.size
+            if inclusion > self.threshold:
+                n_states += 1
+        return n_states
 
 
 class Empowerment:
@@ -172,7 +165,7 @@ class Empowerment:
     def __init__(
             self, seed: int, encode_size: int, tm_config: dict, sparsity: float,
             memory: bool = False, similarity_threshold: float = 0.6, evaluate: bool = True,
-            filename: str = None):
+            filename: str = None, memory_size: int = 100, memory_clean_step: int = 100):
         self.filename = filename
         if self.filename is None:
             self.evaluate = evaluate
@@ -189,7 +182,10 @@ class Empowerment:
             self.size = self.tm.getColumnDimensions()[0]
 
             if memory:
-                self.memory = Memory(self.tm.getColumnDimensions()[0], threshold=similarity_threshold)
+                self.memory = Memory(
+                    seed, int(self.size*self.sparsity), similarity_threshold,
+                    memory_size, memory_clean_step
+                )
             else:
                 self.memory = None
         else:
@@ -221,6 +217,8 @@ class Empowerment:
             superposition = self.predict(superposition)
 
         num_predicted_states = len(superposition) / (self.sparsity * self.size)
+        if self.memory:
+            num_predicted_states = self.memory.get_n_components(superposition)
         if num_predicted_states < 1:
             # the case of no predictions
             num_predicted_states = 1
@@ -263,7 +261,8 @@ class Empowerment:
         self.tm.reset()
 
         if self.memory is not None:
-            self.memory.add(self.sdr_0.sparse)
+            self.memory.add(state_0)
+            self.memory.add(state_1)
         self.tm.compute(self.sdr_0, learn=True)
 
         if self.evaluate:
