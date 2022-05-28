@@ -278,10 +278,13 @@ class GwEmpowermentTest(Runner):
     def log_empowerment(self):
         observations = self.get_all_observations()
         empowerment_map = self.get_masked_obstacles_map()
+        sp_outs = {}
         for key in observations.keys():
             self.sp_input.sparse = observations[key]
             self.sp.compute(self.sp_input, learn=False, output=self.sp_output)
+            sp_outs[key] = self.sp_output.sparse.copy()
             empowerment_map[key] = self.emp.eval_state(self.sp_output.sparse, self.horizon)
+        self.log_prediction(sp_outs)
 
         fig = plt.figure(frameon=False)
         fig.set_size_inches(5, 5)
@@ -300,6 +303,44 @@ class GwEmpowermentTest(Runner):
             'empowerment/min_error': dif.min()
         }, step=self.episode)
         plt.close(fig)
+
+    def log_prediction(self, states: dict[tuple, SparseSdr]):
+        prediction_map = self.get_masked_obstacles_map()
+        poses = np.sum(~prediction_map.mask)
+        c = self._rng.integers(0, poses)
+        i, j = np.nonzero(~prediction_map.mask)
+        pose = (i[c], j[c])
+
+        fig, ax = plt.subplots(1, self.horizon, figsize=(3*self.horizon, 3))
+        fig.set_dpi(300)
+        prediction = states[pose].copy()
+        for i in range(self.horizon):
+            prediction = self.emp.predict(prediction)
+            for key, value in states.items():
+                sim = len(np.intersect1d(prediction, value)) / len(value)
+                prediction_map[key] = sim
+
+            ax[i].set_axis_off()
+            e_emp = self.exact_emp.eval_state(pose, i+1)
+            a_emp = self.emp.eval_state(states[pose], i+1)
+            ax[i].set_title(f'E: {2**e_emp: .0f}; A: {2**a_emp: .1f}.', fontsize=8)
+            ax[i].imshow(prediction_map, vmin=0, vmax=1, cmap='copper')
+            rect = plt.Rectangle((pose[1]-0.5, pose[0]-0.5), 1, 1, ec='r', fill=False)
+            ax[i].add_patch(rect)
+            for key in states.keys():
+                ax[i].text(
+                    key[1], key[0], f'{prediction_map[key]: .1f}',
+                    va='center', ha='center', fontsize=6, c='r'
+                )
+
+        plt.tight_layout()
+        fig.canvas.draw()
+        img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+        img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        plt.close(fig)
+        self.logger.log({
+            'map/prediction': wandb.Image(img)
+        },  step=self.episode)
 
     def run(self):
         if self.strategy == 'uniform':
