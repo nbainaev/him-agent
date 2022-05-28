@@ -206,6 +206,12 @@ class GwEmpowermentTest(Runner):
         position_provider.restore()
         return encoding_scheme
 
+    def get_masked_obstacles_map(self) -> np.ma.MaskedArray:
+        ob_map = np.zeros(self.environment.shape)
+        obstacle_mask = self.environment.aggregated_mask[EntityType.Obstacle]
+        ob_map = np.ma.masked_where(obstacle_mask, ob_map, False)
+        return ob_map
+
     def log_metrics(self):
         observations = self.get_all_observations()
         for key in observations.keys():
@@ -236,9 +242,7 @@ class GwEmpowermentTest(Runner):
 
     def log_empowerment(self):
         observations = self.get_all_observations()
-        empowerment_map = np.zeros(self.environment.shape)
-        obstacle_mask = self.environment.aggregated_mask[EntityType.Obstacle]
-        empowerment_map = np.ma.masked_where(obstacle_mask, empowerment_map, False)
+        empowerment_map = self.get_masked_obstacles_map()
         for key in observations.keys():
             self.sp_input.sparse = observations[key]
             self.sp.compute(self.sp_input, learn=False, output=self.sp_output)
