@@ -153,13 +153,18 @@ class GwEmpowermentTest(Runner):
 
         self.n_episodes = config['n_episodes']
         self.evaluate_step = config['evaluate_step']
+        self.learn_epochs = config['learn_epochs']
+
+        if self.strategy == 'uniform':
+            config['environment']['terminate']['early_stop'] = False
+            config['environment']['terminate']['episode_max_steps'] = np.inf
         self.environment: Environment = unwrap(BioGwLabEnvironment(**config['environment']))
         map_image = self.environment.callmethod('render_rgb')
         if isinstance(map_image, list):
             map_image = map_image[0]
         if self.logger:
             map_image = wandb.Image(map_image)
-            self.logger.log({'map': map_image})
+            self.logger.log({'map': map_image}, step=0)
         else:
             plt.imshow(map_image)
             plt.show()
@@ -176,7 +181,6 @@ class GwEmpowermentTest(Runner):
             seed=self.seed, encode_size=state_space_size,
             sparsity=self.sp.getLocalAreaDensity(), **config['emp']
         )
-        self.learn_epochs = config['learn_epochs']
         self.horizon = config['horizon']
 
         self.prev_state = None
@@ -231,46 +235,6 @@ class GwEmpowermentTest(Runner):
         )
         self.state_metrics.reset()
 
-    def learn_empowerment(self):
-        height, width = self.environment.shape
-        obstacle_mask = self.environment.aggregated_mask[EntityType.Obstacle]
-        position_provider = GwAgentStateProvider(self.environment)
-
-        for epoch in range(self.learn_epochs):
-            for i in range(height):
-                for j in range(width):
-                    if obstacle_mask[i, j]:
-                        continue
-                    position = i, j
-                    delta = [(1, 0), (0, 1), (-1, 0), (0, -1)]
-                    for di, dj in delta:
-                        position_provider.overwrite(position)
-                        self.sp_input.sparse = self.environment.render()
-                        self.sp.compute(self.sp_input, learn=False, output=self.sp_output)
-                        sdr_0 = self.sp_output.sparse.copy()
-
-                        new_position = i + di, j + dj
-                        if new_position[0] < 0 or new_position[0] == height:
-                            new_position = i, j + dj
-                        if new_position[1] < 0 or new_position[1] == width:
-                            new_position = i + di, j
-                        if obstacle_mask[new_position]:
-                            new_position = position
-                        position_provider.overwrite(new_position)
-                        self.sp_input.sparse = self.environment.render()
-                        self.sp.compute(self.sp_input, learn=False, output=self.sp_output)
-                        sdr_1 = self.sp_output.sparse.copy()
-                        self.emp.learn(sdr_0, sdr_1)
-
-        position_provider.restore()
-
-    def learn_sp(self):
-        observations = self.get_all_observations()
-        for epoch in range(self.learn_epochs):
-            for key in observations.keys():
-                self.sp_input.sparse = observations[key]
-                self.sp.compute(self.sp_input, learn=True, output=self.sp_output)
-
     def log_empowerment(self):
         observations = self.get_all_observations()
         empowerment_map = np.zeros(self.environment.shape)
@@ -301,8 +265,27 @@ class GwEmpowermentTest(Runner):
             raise ValueError(f'Undefined strategy type: {self.strategy}')
 
     def run_uniform(self):
-        self.learn_sp()
-        self.learn_empowerment()
+        height, width = self.environment.shape
+        obstacle_mask = self.environment.aggregated_mask[EntityType.Obstacle]
+
+        for epoch in range(self.learn_epochs):
+            for i in range(height):
+                for j in range(width):
+                    if obstacle_mask[i, j]:
+                        continue
+                    position = i, j
+                    for a in range(self.environment.n_actions):
+                        self.environment.agent.position = position
+                        self.sp_input.sparse = self.environment.render()
+                        self.sp.compute(self.sp_input, learn=True, output=self.sp_output)
+                        sdr_0 = self.sp_output.sparse.copy()
+
+                        self.environment.act(a)
+                        self.sp_input.sparse = self.environment.render()
+                        self.sp.compute(self.sp_input, learn=True, output=self.sp_output)
+                        sdr_1 = self.sp_output.sparse.copy()
+                        self.emp.learn(sdr_0, sdr_1)
+
         self.log_empowerment()
 
     def run_agent(self):
