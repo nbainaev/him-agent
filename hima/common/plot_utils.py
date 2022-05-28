@@ -213,3 +213,10 @@ def annotate_heatmap(
             over_threshold = im.norm(data[i, j]) > threshold
             kw.update(color=textcolors[int(over_threshold)])
             im.axes.text(j, i, valfmt(data[i, j], None), **kw)
+
+
+def transform_fig_to_image(fig):
+    fig.canvas.draw()
+    img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    return img

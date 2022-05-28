@@ -16,6 +16,7 @@ import wandb
 import numpy as np
 
 from hima.common.run_utils import Runner
+from hima.common.plot_utils import transform_fig_to_image
 from hima.common.config_utils import TConfig
 from hima.envs.biogwlab.env import BioGwLabEnvironment
 from hima.envs.env import unwrap
@@ -43,9 +44,7 @@ def draw_masked_observation(concatenated_observation: np.ndarray, sdr_sizes: lis
         start = finish
     fig.suptitle(f'Max: {vmax: .2e}; Min: {vmin: .2e}')
     plt.tight_layout()
-    fig.canvas.draw()
-    img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-    img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    img = transform_fig_to_image(fig)
     plt.close(fig)
     return img
 
@@ -459,9 +458,7 @@ class GwExhaustibleResource(Runner):
                 if dx > 1e-2 or dy > 1e-2:
                     ax.arrow(x, y, dx, dy, width=0.05, color='red', length_includes_head=True)
             ax.arrow(x, y, *(d[m]), width=0.05, color='black', length_includes_head=True)
-        fig.canvas.draw()
-        img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        img = transform_fig_to_image(fig)
         plt.close(fig)
         self.logger.log({
             'maps/q_map': wandb.Image(img)

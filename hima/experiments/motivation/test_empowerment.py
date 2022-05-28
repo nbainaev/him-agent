@@ -22,6 +22,7 @@ from htm.bindings.sdr import SDR
 from hima.common.sdr import SparseSdr
 from hima.common.run_utils import Runner
 from hima.common.config_utils import TConfig
+from hima.common.plot_utils import transform_fig_to_image
 
 from hima.modules.empowerment import Empowerment
 
@@ -334,9 +335,7 @@ class GwEmpowermentTest(Runner):
                 )
 
         plt.tight_layout()
-        fig.canvas.draw()
-        img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        img = transform_fig_to_image(fig)
         plt.close(fig)
         self.logger.log({
             'map/prediction': wandb.Image(img)
