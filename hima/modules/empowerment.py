@@ -216,21 +216,37 @@ class Empowerment:
         float
             The empowerment value (always > 0).
         """
-        self.sdr_0.sparse = state
-        sdr = self.sdr_0
+        superposition = state.copy()
         for _ in range(horizon):
-            self.tm.reset()
-            self.tm.compute(sdr, learn=False)
-            self.tm.activateDendrites(learn=False)
-            predictive_cells = self.tm.getPredictiveCells().sparse
-            predicted_columns = [self.tm.columnForCell(i) for i in predictive_cells]
-            sdr.sparse = np.unique(predicted_columns)
+            superposition = self.predict(superposition)
 
-        num_predicted_states = sdr.getSparsity() / self.sparsity
+        num_predicted_states = len(superposition) / (self.sparsity * self.size)
         if num_predicted_states < 1:
             # the case of no predictions
             num_predicted_states = 1
         return np.log2(num_predicted_states)
+
+    def predict(self, state: SparseSdr) -> SparseSdr:
+        """This function predicts next states for given state.
+
+        Parameters
+        ----------
+        state : SparseSdr
+            The SDR representation (sparse) of the state.
+
+        Returns
+        -------
+        SparseSdr
+            The superposition of predicted states.
+        """
+        self.sdr_0.sparse = state
+        self.tm.reset()
+        self.tm.compute(self.sdr_0, learn=False)
+        self.tm.activateDendrites(learn=False)
+        predictive_cells = self.tm.getPredictiveCells().sparse
+        predicted_columns = [self.tm.columnForCell(i) for i in predictive_cells]
+        prediction = np.unique(predicted_columns)
+        return prediction
 
     def learn(self, state_0: SparseSdr, state_1: SparseSdr):
         """This function realizes learning of TM.
