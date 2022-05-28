@@ -2,9 +2,7 @@ _type_: motivation.emp
 seed: 1337
 project: empowerment
 log: True
-
-n_episodes: 100
-evaluate_step: 1
+strategy: 'uniform'
 
 environment:
   seed: 432921
@@ -50,7 +48,6 @@ environment:
     early_stop: true
     n_items_to_collect: 1
 
-
 state_space_size: 1000
 sp:
   potentialRadius: 1000
@@ -66,7 +63,6 @@ sp:
   boostStrength: 3
   wrapAround: true
 
-learn_epochs: 0
 horizon: 4
 emp:
   similarity_threshold: 0.6
@@ -84,3 +80,9 @@ emp:
     predictedSegmentDecrement: 0.001
     maxSegmentsPerCell: 20
 
+# for 'agent' strategy
+n_episodes: 10
+evaluate_step: 1
+
+# for 'uniform' strategy
+learn_epochs: 10

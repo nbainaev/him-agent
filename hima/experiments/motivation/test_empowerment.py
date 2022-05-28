@@ -149,6 +149,7 @@ class GwEmpowermentTest(Runner):
 
         self.seed = config['seed']
         self._rng = np.random.default_rng(self.seed)
+        self.strategy = config['strategy']
 
         self.n_episodes = config['n_episodes']
         self.evaluate_step = config['evaluate_step']
@@ -292,14 +293,21 @@ class GwEmpowermentTest(Runner):
         plt.close(fig)
 
     def run(self):
+        if self.strategy == 'uniform':
+            self.run_uniform()
+        elif self.strategy == 'agent':
+            self.run_agent()
+        else:
+            raise ValueError(f'Undefined strategy type: {self.strategy}')
+
+    def run_uniform(self):
+        self.learn_sp()
+        self.learn_empowerment()
+        self.log_empowerment()
+
+    def run_agent(self):
         self.episode = 0
         self.steps = 0
-
-        if self.learn_epochs > 0:
-            self.learn_sp()
-            self.learn_empowerment()
-            self.log_empowerment()
-            return
 
         while True:
 
