@@ -153,7 +153,6 @@ class GwEmpowermentTest(Runner):
 
         self.n_episodes = config['n_episodes']
         self.evaluate_step = config['evaluate_step']
-        self.learn_epochs = config['learn_epochs']
 
         if self.strategy == 'uniform':
             config['environment']['terminate']['early_stop'] = False
@@ -268,7 +267,7 @@ class GwEmpowermentTest(Runner):
         height, width = self.environment.shape
         obstacle_mask = self.environment.aggregated_mask[EntityType.Obstacle]
 
-        for epoch in range(self.learn_epochs):
+        for self.episode in range(self.n_episodes):
             for i in range(height):
                 for j in range(width):
                     if obstacle_mask[i, j]:
@@ -277,16 +276,19 @@ class GwEmpowermentTest(Runner):
                     for a in range(self.environment.n_actions):
                         self.environment.agent.position = position
                         self.sp_input.sparse = self.environment.render()
+                        self.metrics.add(self.environment.agent.position, self.sp_input.sparse)
                         self.sp.compute(self.sp_input, learn=True, output=self.sp_output)
                         sdr_0 = self.sp_output.sparse.copy()
 
                         self.environment.act(a)
                         self.sp_input.sparse = self.environment.render()
+                        self.metrics.add(self.environment.agent.position, self.sp_input.sparse)
                         self.sp.compute(self.sp_input, learn=True, output=self.sp_output)
                         sdr_1 = self.sp_output.sparse.copy()
                         self.emp.learn(sdr_0, sdr_1)
-
-        self.log_empowerment()
+                        self.steps += 1
+            self.log_metrics()
+            self.steps = 0
 
     def run_agent(self):
         self.episode = 0

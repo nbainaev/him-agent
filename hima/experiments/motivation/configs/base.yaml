@@ -3,6 +3,7 @@ seed: 1337
 project: empowerment
 log: True
 strategy: 'uniform'
+# set no food for 'uniform' strategy
 
 environment:
   seed: 432921
@@ -32,8 +33,8 @@ environment:
     density: 0.1
 
   food:
-#    rendering: false
-    n_items: 1
+    rendering: false
+    n_items: 0
     reward: 1.
 
   agent:
@@ -80,9 +81,6 @@ emp:
     predictedSegmentDecrement: 0.001
     maxSegmentsPerCell: 20
 
-# for 'agent' strategy
 n_episodes: 10
 evaluate_step: 1
 
-# for 'uniform' strategy
-learn_epochs: 10
