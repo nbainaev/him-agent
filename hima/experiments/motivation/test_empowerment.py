@@ -393,7 +393,7 @@ class GwEmpowermentTest(Runner):
             for key in states.keys():
                 ax[i].text(
                     key[1], key[0], f'{prediction_map[key]: .1f}',
-                    va='center', ha='center', fontsize=6, c='r'
+                    va='center', ha='center', fontsize=7, c='r'
                 )
 
         plt.tight_layout()
@@ -415,7 +415,7 @@ class GwEmpowermentTest(Runner):
         height, width = self.environment.shape
         obstacle_mask = self.environment.aggregated_mask[EntityType.Obstacle]
 
-        for self.episode in range(self.n_episodes):
+        for self.episode in range(1, self.n_episodes + 1):
             for i in range(height):
                 for j in range(width):
                     if obstacle_mask[i, j]:
