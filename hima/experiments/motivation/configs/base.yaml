@@ -49,12 +49,12 @@ environment:
     early_stop: true
     n_items_to_collect: 1
 
-state_space_size: 1000
+state_space_size: 5000
 sp:
   potentialRadius: 1000
   potentialPct: 0.5
   globalInhibition: true
-  localAreaDensity: 0.02
+  localAreaDensity: 0.004
   stimulusThreshold: 1
   synPermInactiveDec: 0.01
   synPermActiveInc: 0.1
@@ -64,10 +64,12 @@ sp:
   boostStrength: 3
   wrapAround: true
 
+log_empowerment_sequence: True
 horizon: 4
 emp:
-  similarity_threshold: 0.6
-  memory: false
+  similarity_threshold: 0.8
+  memory: False
+  memory_clean_step: 50
   evaluate: True
   tm_config:
     cellsPerColumn: 1

@@ -203,8 +203,14 @@ class GwEmpowermentTest(Runner):
             sparsity=self.sp.getLocalAreaDensity(), **config['emp']
         )
         self.horizon = config['horizon']
+        self.log_emp_seq = config['log_empowerment_sequence']
         self.exact_emp = ExactEmpowerment(config['environment'])
-        self.exact_emp_map = self.create_exact_empowerment_map(self.horizon)
+        if self.log_emp_seq:
+            self.exact_emp_map = []
+            for i in range(self.horizon):
+                self.exact_emp_map.append(self.create_exact_empowerment_map(i+1))
+        else:
+            self.exact_emp_map = self.create_exact_empowerment_map(self.horizon)
 
         self.prev_state = None
         self.episode = 0
@@ -277,6 +283,62 @@ class GwEmpowermentTest(Runner):
         self.state_metrics.reset()
 
     def log_empowerment(self):
+        if self.log_emp_seq:
+            self.log_empowerment_sequence()
+        else:
+            self.log_empowerment_value()
+
+    def log_empowerment_sequence(self):
+        observations = self.get_all_observations()
+        empowerment_maps = []
+        for _ in range(self.horizon):
+            empowerment_maps.append(self.get_masked_obstacles_map())
+
+        for key in observations.keys():
+            self.sp_input.sparse = observations[key]
+            self.sp.compute(self.sp_input, learn=False, output=self.sp_output)
+            for i in range(self.horizon):
+                empowerment_maps[i][key] = self.emp.eval_state(self.sp_output.sparse, i + 1)
+
+        fig, ax = plt.subplots(2, self.horizon, figsize=(3 * self.horizon, 6))
+        fig.set_dpi(300)
+
+        for i in range(self.horizon):
+            ax[0][i].set_axis_off()
+            ax[0][i].set_title(f'$\hat \epsilon_{i+1}$', fontsize=14)
+            ax[0][i].imshow(empowerment_maps[i], cmap='copper')
+            for key in observations.keys():
+                ax[0][i].text(
+                    key[1], key[0], f'{empowerment_maps[i][key]: .1f}',
+                    va='center', ha='center', fontsize=7, c='r'
+                )
+
+        for i in range(self.horizon):
+            ax[1][i].set_axis_off()
+            ax[1][i].set_title(f'$\epsilon_{i+1}$', fontsize=14)
+            ax[1][i].imshow(self.exact_emp_map[i], cmap='copper')
+            for key in observations.keys():
+                ax[1][i].text(
+                    key[1], key[0], f'{self.exact_emp_map[i][key]: .1f}',
+                    va='center', ha='center', fontsize=7, c='r'
+                )
+        plt.tight_layout()
+        img = transform_fig_to_image(fig)
+        plt.close(fig)
+        self.logger.log({
+            'map/emp_sequence': wandb.Image(img)
+        },  step=self.episode)
+
+        for i in range(self.horizon):
+            dif = self.exact_emp_map[i] - empowerment_maps[i]
+            self.logger.log(
+                {
+                    f'empowerment/mre_{i+1}': np.abs(dif / self.exact_emp_map[i]).mean(),
+                    f'empowerment/min_error_{i+1}': dif.min()
+                }, step=self.episode
+            )
+
+    def log_empowerment_value(self):
         observations = self.get_all_observations()
         empowerment_map = self.get_masked_obstacles_map()
         sp_outs = {}
