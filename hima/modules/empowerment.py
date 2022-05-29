@@ -11,8 +11,6 @@ from itertools import product
 import json
 from hima.common.sdr import SparseSdr
 
-EPS = 1e-12
-
 
 class Memory:
     """
@@ -118,8 +116,9 @@ class Memory:
 
 class Empowerment:
     """
-    The Empowerment contains all necessary things to evaluate 'empowerment' using the model
-    of environment based on Temporal Memory algorithm.
+    The Empowerment contains Temporal Memory algorithm as the model of an environment to evaluate
+    a deterministic form of empowerment. It is possible to improve evaluation by using simple form
+    of pattern memory: Memory, that stores states and helps to separate a superposition of states.
 
     Parameters
     ----------
@@ -133,33 +132,41 @@ class Empowerment:
     sparsity : float
         The sparsity of SDR representations which are used in the TemporalMemory algorithm.
     memory : bool, optional
-        This parameter defines will be used the Memory for saving and clustering of state
-        representations or not. By default is False (doesn't use the Memory).
+        Will be used the Memory for storing states or not. By default is False.
     similarity_threshold : float, optional
-        This parameter determines the threshold for cluster creation.
-        It is used then memory is True. By default: 0.6.
+        The threshold for distinguishing states. It is used then memory is True. By default: 0.6.
     evaluate : bool, optional
         This flag defines the necessity of storing some statistics to evaluate the learning process.
         By default is True.
+    filename : str, optional
+        Defines the path to the file for saved values of empowerment. By default: None.
+    memory_size : int, optional
+        Defines the memory size, then Memory is used. By default: 100.
+    memory_clean_step : int, optional
+        Defines how often Memory is cleaned. By default: 100.
 
     Attributes
     ----------
+    filename : str or None
+        Stores the same parameter.
     evaluate : bool
-        It stores the same parameter.
-    anomalies : list
-        It stores the anomaly values of TM for each time step after learning.
+        Stores the same parameter.
+    anomalies : list[float]
+        Stores the anomaly values of TM for each time step after learning.
         Only then 'evaluate' is True.
-    IoU : list
-        It stores the Intersection over Union values of TM predictions and real ones for each
+    IoU : list[float]
+        Stores the Intersection over Union values of TM predictions and real ones for each
         time step after learning. Only then 'evaluate' is True.
     sparsity : float
-        It stores the same parameter.
+        Stores the same parameter.
     tm : TemporalMemory
-        It contains the TemporalMemory object.
+        Contains the TemporalMemory object.
     size : int
-        It stores the 'encode_size' parameter.
-    memory: Memory
-        It contains the Memory object if 'memory' parameter is True, else None.
+        Stores the 'encode_size' parameter.
+    memory : Memory
+        Contains the Memory object if 'memory' parameter is True, else None.
+    empowerment_data : dict[tuple[int, int], float]
+        Contains empowerment values reading from 'filename', only if 'filename' is defined.
     """
 
     def __init__(
