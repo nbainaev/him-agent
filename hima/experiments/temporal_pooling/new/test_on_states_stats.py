@@ -14,7 +14,7 @@ from wandb.sdk.wandb_run import Run
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.new.metrics import (
     similarity_matrix,
-    standardize_sample_distribution
+    standardize_sample_distribution, simple_additive_loss, multiplicative_loss
 )
 from hima.experiments.temporal_pooling.utils import rename_dict_keys
 
@@ -177,9 +177,7 @@ class ExperimentStats:
             for sim_key in input_sims
         }
 
-        discount, pmf_alpha = .85, 0.1
-        i, gamma, loss = 0, 1, 0
-
+        i, discount, gamma, loss = 0, .85, 1, 0
         for block_tag, block_sim_metrics in diff_metrics[1:]:
             for metric_key in block_sim_metrics:
                 sim_mx = block_sim_metrics[metric_key]
@@ -195,7 +193,7 @@ class ExperimentStats:
                     metrics[f'{block_tag}/epoch/similarity_smae'] = mae
                     if block_tag.endswith('_tp'):
                         pmf_coverage = optimized_metrics[i]
-                        loss += gamma * (mae + pmf_alpha * (1 - pmf_coverage) / pmf_coverage)
+                        loss += gamma * multiplicative_loss(mae, pmf_coverage)
                         i += 1
                         gamma *= discount
 

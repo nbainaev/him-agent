@@ -277,3 +277,21 @@ def standardize_sample_distribution(x: np.ndarray) -> np.ndarray:
 def mean_absolute_error(x: np.ndarray, y: np.ndarray) -> float:
     # noinspection PyTypeChecker
     return np.mean(np.abs(x - y))
+
+
+# ==================== Loss ====================
+def simple_additive_loss(smae, pmf_coverage):
+    return smae + 0.1 * (1 - pmf_coverage) / pmf_coverage
+
+
+def multiplicative_loss(smae, pmf_coverage):
+    # Google it: y = 0.25 * ((1 - x) / (0.5 * x))^0.5 + 0.75
+    # == 1 around 0.666 pmf coverage — it's a target value
+    pmf_weight = (1 - pmf_coverage) / (0.5 * pmf_coverage)
+    # smooth with sqrt and shift it up
+    pmf_weight = 0.25 * pmf_weight ** 0.5 + 0.75
+
+    # == 1 at smae = 0.1. At ~0.2 SMAE we get almost garbage
+    smae_weight = (smae / 0.1)**1.5
+
+    return pmf_weight * smae_weight
