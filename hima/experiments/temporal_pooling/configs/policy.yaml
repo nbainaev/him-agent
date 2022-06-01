@@ -94,7 +94,7 @@ temporal_poolers:
     dutyCyclePeriod: 40000
     minPctOverlapDutyCycle: 0.0002
     numActiveColumnsPerInhArea: 0
-    stimulusThreshold: 3
+    stimulusThreshold: 1
     synPermConnected: 0.5
     synPermActiveInc: 0.1
     synPermInactiveDec: 0.01
@@ -127,7 +127,7 @@ temporal_poolers:
     dutyCyclePeriod: 8000
     minPctOverlapDutyCycle: 0.0002
     numActiveColumnsPerInhArea: 0
-    stimulusThreshold: 3
+    stimulusThreshold: 1
     synPermConnected: 0.5
     synPermActiveInc: 0.1
     synPermInactiveDec: 0.01
@@ -181,7 +181,7 @@ temporal_poolers:
       dutyCyclePeriod: 12000
       minPctOverlapDutyCycle: 0.0002
       numActiveColumnsPerInhArea: 0
-      stimulusThreshold: 3
+      stimulusThreshold: 1
       synPermConnected: 0.5
       synPermActiveInc: 0.1
       synPermInactiveDec: 0.01
@@ -200,7 +200,7 @@ temporal_poolers:
       dutyCyclePeriod: 6000
       minPctOverlapDutyCycle: 0.0002
       numActiveColumnsPerInhArea: 0
-      stimulusThreshold: 3
+      stimulusThreshold: 1
       synPermConnected: 0.5
       synPermActiveInc: 0.1
       synPermInactiveDec: 0.01

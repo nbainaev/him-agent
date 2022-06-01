@@ -52,7 +52,9 @@ def sequence_similarity(
         return sequence_similarity_as_union(s1, s2, sds=sds, symmetrical=symmetrical)
     elif algorithm == 'prefix':
         # reflects balance between the other two
-        return sequence_similarity_by_prefixes(s1, s2, discount=discount, symmetrical=symmetrical)
+        return sequence_similarity_by_prefixes(
+            s1, s2, sds=sds, discount=discount, symmetrical=symmetrical
+        )
     else:
         raise KeyError(f'Invalid algorithm: {algorithm}')
 
@@ -144,18 +146,7 @@ def sequence_similarity_elementwise(
         sim_func(s1[i], s2[i], symmetrical=symmetrical)
         for i in range(n)
     ])
-    norm = sims.size
-
-    if discount is not None and discount < 1.:
-        discounts = np.cumprod(np.repeat(discount, n))
-
-        norm = (1 - discounts[-1]) / (1 - discount)
-        # as discounts start with `discount` instead of 1 => everything is multiplied by discount
-        norm *= discount
-        # not normalized weighted mean
-        sims *= discounts[::-1]
-
-    return np.sum(sims) / norm
+    return discounted_mean(sims, gamma=discount)
 
 
 def sequence_similarity_as_union(
@@ -174,22 +165,42 @@ def sequence_similarity_as_union(
 
 
 def sequence_similarity_by_prefixes(
-        s1: list, s2: list, discount: float = None, symmetrical=False
+        seq1: list, seq2: list, sds: Sds, discount: float = None, symmetrical=False,
+        algorithm: str = 'kl-divergence'
 ) -> float:
-    n = len(s1)
-    assert n == len(s2)
+    n = len(seq1)
+    assert n == len(seq2)
     if not n:
         # arguable: empty sequences are equal
         return 1.
 
-    sims = [
-        sequence_similarity_elementwise(
-            s1[:i+1], s2[:i+1], discount=discount, symmetrical=symmetrical
+    # sims = [
+    #     sequence_similarity_elementwise(
+    #         s1[:i+1], s2[:i+1], discount=discount, symmetrical=symmetrical
+    #     )
+    #     for i in range(n)
+    # ]
+    sims = []
+    is_tuple = isinstance(seq1[0], tuple)
+    histogram1, histogram2 = np.zeros(sds.size), np.zeros(sds.size)
+    for i in range(n):
+        s1, s2 = seq1[i], seq2[i]
+        if is_tuple:
+            s1, s2 = s1[0], s2[0]
+        if isinstance(s1, set):
+            s1, s2 = list(s1), list(s2)
+        histogram1[s1] += 1
+        histogram2[s2] += 1
+        sims.append(
+            distribution_similarity(
+                histogram1 / (i+1),
+                histogram2 / (i+1),
+                algorithm=algorithm, sds=sds, symmetrical=symmetrical
+            )
         )
-        for i in range(n)
-    ]
+
     # noinspection PyTypeChecker
-    return np.mean(sims)
+    return discounted_mean(sims, gamma=discount)
 
 
 # ==================== Distributions or cluster distribution similarity ====================
@@ -295,3 +306,21 @@ def multiplicative_loss(smae, pmf_coverage):
     smae_weight = (smae / 0.1)**1.5
 
     return pmf_weight * smae_weight
+
+
+# ================== Utility ====================
+def discounted_mean(arr: np.ndarray, gamma: float = None) -> float:
+    if isinstance(arr, list):
+        arr = np.array(arr)
+
+    norm = arr.shape[0]
+    if gamma is not None and gamma < 1.:
+        # [g, g^2, g^3, ..., g^N] === g * [1, g, g^2,..., g^N-1]
+        weights = np.cumprod(np.repeat(gamma, norm))
+        # gamma * geometric sum
+        norm = gamma * (1 - weights[-1]) / (1 - gamma)
+
+        # not normalized weighted sum
+        arr *= weights[::-1]
+
+    return np.sum(arr) / norm
