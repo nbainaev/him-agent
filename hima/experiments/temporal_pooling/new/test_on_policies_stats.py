@@ -135,10 +135,10 @@ class ExperimentStats:
 
     def summarize_sp(self, block):
         raw_metrics = self._collect_block_final_stats(block)
-        metrics = self._sdr_representation_similarities(
+        metrics = sdr_representation_similarities(
             raw_metrics['representative'], block.output_sds
         )
-        metrics |= self._pmf_similarities(
+        metrics |= pmf_similarities(
             raw_metrics['distribution'], block.output_sds
         )
         metrics['mean_repr_pmf_coverage'] = np.mean(raw_metrics['representative_pmf_coverage'])
@@ -152,10 +152,10 @@ class ExperimentStats:
 
     def summarize_tp(self, block):
         raw_metrics = self._collect_block_final_stats(block)
-        metrics = self._sdr_representation_similarities(
+        metrics = sdr_representation_similarities(
             raw_metrics['representative'], block.output_sds
         )
-        metrics |= self._pmf_similarities(
+        metrics |= pmf_similarities(
             raw_metrics['distribution'], block.output_sds
         )
         metrics['mean_repr_pmf_coverage'] = np.mean(raw_metrics['representative_pmf_coverage'])
@@ -226,42 +226,6 @@ class ExperimentStats:
         plt.close(fig)
         return img
 
-    @staticmethod
-    def _sdr_representation_similarities(representations, sds: Sds):
-        raw_similarity_matrix = similarity_matrix(representations, symmetrical=False, sds=sds)
-        raw_similarity = raw_similarity_matrix.mean()
-        stand_similarity_matrix = standardize_sample_distribution(raw_similarity_matrix)
-
-        return {
-            'raw_sim_mx': raw_similarity_matrix,
-            'raw_sim': raw_similarity,
-            'sim_mx': stand_similarity_matrix,
-        }
-
-    @staticmethod
-    def _pmf_similarities(pmf_distributions, sds: Sds):
-        raw_similarity_matrix_pae = similarity_matrix(
-            pmf_distributions, algorithm='point-abs-error', symmetrical=False, sds=sds
-        )
-        raw_similarity_pae = raw_similarity_matrix_pae.mean()
-        similarity_matrix_pae = standardize_sample_distribution(raw_similarity_matrix_pae)
-
-        raw_similarity_matrix_kl = similarity_matrix(
-            pmf_distributions, algorithm='kl-divergence', symmetrical=False, sds=sds
-        )
-        raw_similarity_kl = raw_similarity_matrix_kl.mean()
-        similarity_matrix_kl = standardize_sample_distribution(raw_similarity_matrix_kl)
-
-        return {
-            'raw_sim_mx_pae': raw_similarity_matrix_pae,
-            'raw_sim_pae': raw_similarity_pae,
-            'sim_mx_pae': similarity_matrix_pae,
-
-            'raw_sim_mx_1_nkl': raw_similarity_matrix_kl,
-            'raw_sim_1_nkl': raw_similarity_kl,
-            'sim_mx_1_nkl': similarity_matrix_kl,
-        }
-
     def _collect_block_final_stats(self, block) -> dict[str, Any]:
         result = {}
         n_sequences = len(self.sequences_block_stats)
@@ -285,6 +249,42 @@ class ExperimentStats:
         img = wandb.Image(fig)
         plt.close(fig)
         return img
+
+
+def sdr_representation_similarities(representations, sds: Sds):
+    raw_similarity_matrix = similarity_matrix(representations, symmetrical=False, sds=sds)
+    raw_similarity = raw_similarity_matrix.mean()
+    stand_similarity_matrix = standardize_sample_distribution(raw_similarity_matrix)
+
+    return {
+        'raw_sim_mx': raw_similarity_matrix,
+        'raw_sim': raw_similarity,
+        'sim_mx': stand_similarity_matrix,
+    }
+
+
+def pmf_similarities(pmf_distributions, sds: Sds):
+    raw_similarity_matrix_pmf = similarity_matrix(
+        pmf_distributions, algorithm='point_similarity', symmetrical=False, sds=sds
+    )
+    raw_similarity_pmf = raw_similarity_matrix_pmf.mean()
+    similarity_matrix_pmf = standardize_sample_distribution(raw_similarity_matrix_pmf)
+
+    raw_similarity_matrix_kl = similarity_matrix(
+        pmf_distributions, algorithm='kl-divergence', symmetrical=False, sds=sds
+    )
+    raw_similarity_kl = raw_similarity_matrix_kl.mean()
+    similarity_matrix_kl = standardize_sample_distribution(raw_similarity_matrix_kl)
+
+    return {
+        'raw_sim_mx_pmf': raw_similarity_matrix_pmf,
+        'raw_sim_pmf': raw_similarity_pmf,
+        'sim_mx_pmf': similarity_matrix_pmf,
+
+        'raw_sim_mx_1_nkl': raw_similarity_matrix_kl,
+        'raw_sim_1_nkl': raw_similarity_kl,
+        'sim_mx_1_nkl': similarity_matrix_kl,
+    }
 
 
 def plot_heatmap(heatmap: np.ndarray, ax):

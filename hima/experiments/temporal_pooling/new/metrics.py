@@ -68,8 +68,8 @@ def distribution_similarity(
     if algorithm == 'kl-divergence':
         # We take 1 - KL to make it similarity metric. NB: normalized KL div for SDS can be > 1
         return 1 - kl_divergence(p, q, sds, symmetrical=symmetrical)
-    elif algorithm == 'point-abs-error':
-        return 1 - point_abs_error(p, q, sds=sds)
+    elif algorithm == 'point_similarity':
+        return point_similarity(p, q, sds=sds)
     elif algorithm == 'wasserstein':
         return -wasserstein_distance(p, q, sds=sds)
     else:
@@ -285,7 +285,7 @@ def wasserstein_distance(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float
     return res
 
 
-def point_abs_error(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float:
+def point_similarity(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float:
     # -> [0, active_size]
     err = np.fmin(p, q).sum()
     if sds is not None:
