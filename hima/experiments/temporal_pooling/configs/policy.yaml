@@ -49,7 +49,7 @@ generator:
   active_size: 10
   state_encoder: random
   action_encoder: random
-  policy_similarity: 0.4
+  policy_similarity: 0.35
   policy_similarity_std: 0.35
   seed: ???
 

@@ -209,8 +209,8 @@ class ExperimentStats:
         result['loss'] = loss
         return result
 
-    @staticmethod
-    def _plot_similarity_matrices(**sim_matrices):
+    @classmethod
+    def _plot_similarity_matrices(cls, **sim_matrices):
         n = len(sim_matrices)
         heatmap_size = 6
         fig, axes = plt.subplots(
@@ -219,14 +219,7 @@ class ExperimentStats:
         )
 
         for ax, (name, sim_matrix) in zip(axes, sim_matrices.items()):
-            vmin = 0 if np.min(sim_matrix) >= 0 else -1
-            if isinstance(sim_matrix, np.ma.MaskedArray):
-                sns.heatmap(
-                    sim_matrix, mask=sim_matrix.mask,
-                    vmin=vmin, vmax=1, cmap='plasma', ax=ax, annot=True
-                )
-            else:
-                sns.heatmap(sim_matrix, vmin=vmin, vmax=1, cmap='plasma', ax=ax, annot=True)
+            plot_heatmap(sim_matrix, ax)
             ax.set_title(name, size=10)
 
         img = wandb.Image(axes[0])
@@ -246,27 +239,27 @@ class ExperimentStats:
         }
 
     @staticmethod
-    def _pmf_similarities(representations, sds: Sds):
+    def _pmf_similarities(pmf_distributions, sds: Sds):
+        raw_similarity_matrix_pae = similarity_matrix(
+            pmf_distributions, algorithm='point-abs-error', symmetrical=False, sds=sds
+        )
+        raw_similarity_pae = raw_similarity_matrix_pae.mean()
+        similarity_matrix_pae = standardize_sample_distribution(raw_similarity_matrix_pae)
+
         raw_similarity_matrix_kl = similarity_matrix(
-            representations, algorithm='kl-divergence', symmetrical=False, sds=sds
+            pmf_distributions, algorithm='kl-divergence', symmetrical=False, sds=sds
         )
         raw_similarity_kl = raw_similarity_matrix_kl.mean()
         similarity_matrix_kl = standardize_sample_distribution(raw_similarity_matrix_kl)
 
-        raw_similarity_matrix_was = similarity_matrix(
-            representations, algorithm='wasserstein', symmetrical=False, sds=sds
-        )
-        raw_similarity_was = raw_similarity_matrix_was.mean()
-        similarity_matrix_was = standardize_sample_distribution(raw_similarity_matrix_kl)
-
         return {
-            'raw_sim_mx_kl': raw_similarity_matrix_kl,
-            'raw_sim_kl': raw_similarity_kl,
-            'sim_mx_kl': similarity_matrix_kl,
+            'raw_sim_mx_pae': raw_similarity_matrix_pae,
+            'raw_sim_pae': raw_similarity_pae,
+            'sim_mx_pae': similarity_matrix_pae,
 
-            'raw_sim_mx_was': raw_similarity_matrix_was,
-            'raw_sim_was': raw_similarity_was,
-            'sim_mx_was': similarity_matrix_was,
+            'raw_sim_mx_1_nkl': raw_similarity_matrix_kl,
+            'raw_sim_1_nkl': raw_similarity_kl,
+            'sim_mx_1_nkl': similarity_matrix_kl,
         }
 
     def _collect_block_final_stats(self, block) -> dict[str, Any]:
@@ -285,18 +278,35 @@ class ExperimentStats:
                 result[metric_key] = np.vstack(result[metric_key])
         return result
 
-    @staticmethod
-    def plot_representations(repr_matrix):
+    @classmethod
+    def plot_representations(cls, repr_matrix):
         fig, ax = plt.subplots(1, 1, figsize=(16, 8))
-
-        vmin = 0 if np.min(repr_matrix) >= 0 else -1
-        if isinstance(repr_matrix, np.ma.MaskedArray):
-            sns.heatmap(
-                repr_matrix, mask=repr_matrix.mask,
-                vmin=vmin, vmax=1, cmap='plasma', ax=ax, annot=True
-            )
-        else:
-            sns.heatmap(repr_matrix, vmin=vmin, vmax=1, cmap='plasma', ax=ax, annot=True)
+        plot_heatmap(repr_matrix, ax)
         img = wandb.Image(fig)
         plt.close(fig)
         return img
+
+
+def plot_heatmap(heatmap: np.ndarray, ax):
+    v_min, v_max = calculate_heatmap_value_boundaries(heatmap)
+    if isinstance(heatmap, np.ma.MaskedArray):
+        sns.heatmap(
+            heatmap, mask=heatmap.mask,
+            vmin=v_min, vmax=v_max, cmap='plasma', ax=ax, annot=True
+        )
+    else:
+        sns.heatmap(heatmap, vmin=v_min, vmax=v_max, cmap='plasma', ax=ax, annot=True)
+
+
+def calculate_heatmap_value_boundaries(arr: np.ndarray) -> tuple[float, float]:
+    v_min, v_max = np.min(arr), np.max(arr)
+    if -1 <= v_min < 0:
+        v_min = -1
+    elif v_min >= 0:
+        v_min = 0
+
+    if v_max < 0:
+        v_max = 0
+    elif v_max < 1:
+        v_max = 1
+    return v_min, v_max

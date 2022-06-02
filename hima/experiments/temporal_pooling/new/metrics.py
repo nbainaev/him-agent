@@ -49,11 +49,14 @@ def sequence_similarity(
         return sequence_similarity_elementwise(s1, s2, discount=discount, symmetrical=symmetrical)
     elif algorithm == 'union':
         # reflects unordered (=set) similarity
-        return sequence_similarity_as_union(s1, s2, sds=sds, symmetrical=symmetrical)
+        return sequence_similarity_as_union(
+            s1, s2, sds=sds, algorithm='point-abs-error', symmetrical=symmetrical
+        )
     elif algorithm == 'prefix':
         # reflects balance between the other two
         return sequence_similarity_by_prefixes(
-            s1, s2, sds=sds, discount=discount, symmetrical=symmetrical
+            s1, s2, sds=sds, algorithm='point-abs-error',
+            discount=discount, symmetrical=symmetrical
         )
     else:
         raise KeyError(f'Invalid algorithm: {algorithm}')
@@ -63,9 +66,12 @@ def distribution_similarity(
         p: np.ndarray, q: np.ndarray, algorithm: str, sds: Sds = None, symmetrical: bool = False
 ) -> float:
     if algorithm == 'kl-divergence':
-        return kl_divergence(p, q, sds, symmetrical=symmetrical)
+        # We take 1 - KL to make it similarity metric. NB: normalized KL div for SDS can be > 1
+        return 1 - kl_divergence(p, q, sds, symmetrical=symmetrical)
+    elif algorithm == 'point-abs-error':
+        return 1 - point_abs_error(p, q, sds=sds)
     elif algorithm == 'wasserstein':
-        return wasserstein_distance(p, q, sds=sds)
+        return -wasserstein_distance(p, q, sds=sds)
     else:
         raise KeyError(f'Invalid algorithm: {algorithm}')
 
@@ -150,7 +156,7 @@ def sequence_similarity_elementwise(
 
 
 def sequence_similarity_as_union(
-        s1: list, s2: list, sds: Sds, symmetrical: bool = False, algorithm: str = 'kl-divergence'
+        s1: list, s2: list, sds: Sds, algorithm: str, symmetrical: bool = False
 ) -> float:
     n = len(s1)
     assert n == len(s2)
@@ -165,8 +171,8 @@ def sequence_similarity_as_union(
 
 
 def sequence_similarity_by_prefixes(
-        seq1: list, seq2: list, sds: Sds, discount: float = None, symmetrical=False,
-        algorithm: str = 'kl-divergence'
+        seq1: list, seq2: list, sds: Sds, algorithm: str,
+        discount: float = None, symmetrical=False,
 ) -> float:
     n = len(seq1)
     assert n == len(seq2)
@@ -277,6 +283,15 @@ def wasserstein_distance(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float
     res = abs(res)
     # noinspection PyTypeChecker
     return res
+
+
+def point_abs_error(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float:
+    # -> [0, active_size]
+    err = np.fmin(p, q).sum()
+    if sds is not None:
+        # -> [0, 1]
+        err /= sds.active_size
+    return err
 
 
 # ==================== Errors ====================
