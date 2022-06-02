@@ -87,8 +87,6 @@ class SyntheticDatasetBlockStats:
         self.similarity_matrix_prefix = standardize_sample_distribution(
             self.raw_similarity_matrix_prefix
         )
-        print(self.raw_similarity_matrix_elementwise)
-        print(self.raw_similarity_matrix_prefix)
 
     @staticmethod
     def step_metrics() -> dict[str, Any]:
