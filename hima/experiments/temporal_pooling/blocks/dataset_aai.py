@@ -87,7 +87,8 @@ class AnimalAiDatasetBlockStats:
         )
 
         self.raw_similarity_matrix_union = similarity_matrix(
-            self._observation_sequences, algorithm='union', symmetrical=False, sds=self.output_sds
+            self._observation_sequences, algorithm='union.point_similarity',
+            symmetrical=False, sds=self.output_sds
         )
         self.raw_similarity_union = self.raw_similarity_matrix_union.mean()
         self.similarity_matrix_union = standardize_sample_distribution(
@@ -95,7 +96,7 @@ class AnimalAiDatasetBlockStats:
         )
 
         self.raw_similarity_matrix_prefix = similarity_matrix(
-            self._observation_sequences, algorithm='prefix', discount=0.92,
+            self._observation_sequences, algorithm='prefix.point_similarity', discount=0.92,
             symmetrical=False, sds=self.output_sds
         )
         self.raw_similarity_prefix = self.raw_similarity_matrix_prefix.mean()

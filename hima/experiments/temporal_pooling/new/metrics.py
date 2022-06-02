@@ -47,16 +47,17 @@ def sequence_similarity(
     if algorithm == 'elementwise':
         # reflects strictly ordered similarity
         return sequence_similarity_elementwise(s1, s2, discount=discount, symmetrical=symmetrical)
-    elif algorithm == 'union':
+    elif algorithm.startswith('union'):
         # reflects unordered (=set) similarity
+        algorithm = algorithm[6:]
         return sequence_similarity_as_union(
-            s1, s2, sds=sds, algorithm='point_similarity', symmetrical=symmetrical
+            s1, s2, sds=sds, algorithm=algorithm, symmetrical=symmetrical
         )
-    elif algorithm == 'prefix':
+    elif algorithm.startswith('prefix'):
         # reflects balance between the other two
+        algorithm = algorithm[7:]
         return sequence_similarity_by_prefixes(
-            s1, s2, sds=sds, algorithm='point_similarity',
-            discount=discount, symmetrical=symmetrical
+            s1, s2, sds=sds, algorithm=algorithm, discount=discount, symmetrical=symmetrical
         )
     else:
         raise KeyError(f'Invalid algorithm: {algorithm}')
@@ -180,33 +181,37 @@ def sequence_similarity_by_prefixes(
         # arguable: empty sequences are equal
         return 1.
 
-    # sims = [
-    #     sequence_similarity_elementwise(
-    #         s1[:i+1], s2[:i+1], discount=discount, symmetrical=symmetrical
-    #     )
-    #     for i in range(n)
-    # ]
-    sims = []
-    is_tuple = isinstance(seq1[0], tuple)
-    histogram1, histogram2 = np.zeros(sds.size), np.zeros(sds.size)
-    for i in range(n):
-        s1, s2 = seq1[i], seq2[i]
-        if is_tuple:
-            s1, s2 = s1[0], s2[0]
-        if isinstance(s1, set):
-            s1, s2 = list(s1), list(s2)
-        histogram1[s1] += 1
-        histogram2[s2] += 1
-        sims.append(
-            distribution_similarity(
-                histogram1 / (i+1),
-                histogram2 / (i+1),
-                algorithm=algorithm, sds=sds, symmetrical=symmetrical
+    if algorithm == 'elementwise':
+        sims = [
+            sequence_similarity_elementwise(
+                seq1[:i+1], seq2[:i+1], discount=discount, symmetrical=symmetrical
             )
-        )
+            for i in range(n)
+        ]
+    else:
+        sims = []
+        histogram1, histogram2 = np.zeros(sds.size), np.zeros(sds.size)
+        for i in range(n):
+            s1, s2 = seq1[i], seq2[i]
+            if isinstance(s1, set):
+                s1, s2 = list(s1), list(s2)
+            if i == 0:
+                histogram1[s1] = 1
+                histogram2[s2] = 1
+            else:
+                histogram1 *= discount
+                histogram2 *= discount
+                histogram1[s1] += 1 - discount
+                histogram2[s2] += 1 - discount
+
+            sims.append(
+                distribution_similarity(
+                    histogram1, histogram2, algorithm=algorithm, sds=sds, symmetrical=symmetrical
+                )
+            )
 
     # noinspection PyTypeChecker
-    return discounted_mean(sims, gamma=discount)
+    return np.mean(sims)
 
 
 # ==================== Distributions or cluster distribution similarity ====================
@@ -287,11 +292,11 @@ def wasserstein_distance(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float
 
 def point_similarity(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float:
     # -> [0, active_size]
-    err = np.fmin(p, q).sum()
+    similarity = np.fmin(p, q).sum()
     if sds is not None:
         # -> [0, 1]
-        err /= sds.active_size
-    return err
+        similarity /= sds.active_size
+    return similarity
 
 
 # ==================== Errors ====================
