@@ -50,12 +50,12 @@ def sequence_similarity(
     elif algorithm == 'union':
         # reflects unordered (=set) similarity
         return sequence_similarity_as_union(
-            s1, s2, sds=sds, algorithm='point-abs-error', symmetrical=symmetrical
+            s1, s2, sds=sds, algorithm='point_similarity', symmetrical=symmetrical
         )
     elif algorithm == 'prefix':
         # reflects balance between the other two
         return sequence_similarity_by_prefixes(
-            s1, s2, sds=sds, algorithm='point-abs-error',
+            s1, s2, sds=sds, algorithm='point_similarity',
             discount=discount, symmetrical=symmetrical
         )
     else:
