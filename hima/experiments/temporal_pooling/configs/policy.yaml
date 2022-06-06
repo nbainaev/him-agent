@@ -119,8 +119,6 @@ temporal_poolers:
     exciteFunctionType: Logistic
     decayFunctionType: Exponential
     decayTimeConst: 10.0
-    synPermPredActiveInc: 0.1
-    synPermPreviousPredActiveInc: 0.05
     historyLength: 20
     minHistory: 3
     boostStrength: 0.5
@@ -131,13 +129,15 @@ temporal_poolers:
     synPermConnected: 0.5
     synPermActiveInc: 0.1
     synPermInactiveDec: 0.01
+    synPermPredActiveInc: 0.1
+    synPermPreviousPredActiveInc: 0.05
     wrapAround: False
     # ablation
     first_boosting: True
     second_boosting: True
-    untemporal_learning: False
+    untemporal_learning: True
     union_learning: True
-    history_learning: False
+    history_learning: True
 
   custom_utp:
     _type_: CustomUtp
@@ -174,6 +174,7 @@ temporal_poolers:
       potentialPct: 0.26
       globalInhibition: True
       # output
+      # check bigger
       columnDimensions: ???
       localAreaDensity: ???
 

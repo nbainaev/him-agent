@@ -228,7 +228,10 @@ class AblationUtp(SpatialPooler):
             # Increase permanence of connections from predicted active inputs to cells in the union SDR
             # This is Hebbian learning applied to the current time step
             if self.union_learning:
-                self._adaptSynapses(correctly_predicted_input, self._unionSDR, self._synPermPredActiveInc, 0.0)
+                self._adaptSynapses(
+                    correctly_predicted_input, self._unionSDR,
+                    self._synPermPredActiveInc, 0.0
+                )
 
             # adapt permanence of connections from previously predicted inputs to newly active cells
             # This is a reinforcement learning rule that considers previous input to the current cell

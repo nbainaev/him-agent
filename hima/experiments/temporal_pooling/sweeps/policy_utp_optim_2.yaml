@@ -12,20 +12,55 @@ parameters:
   seed.:
     value: ...
 
+
+  temporal_poolers..ablation_utp.union_learning:
+    values: [True, False]
+
+
+  # ====== history learning ======
+  temporal_poolers..ablation_utp.history_learning:
+    values: [True, False]
+
+  temporal_poolers..ablation_utp.historyLength:
+    values:
+      - 3
+      - 5
+      - 10
+
   # ====== receptive field ======
   temporal_poolers..ablation_utp.potentialPct:
-    min: 0.2
-    max: 0.4
+    values:
+      - 0.1
+      - 0.14
+      - 0.18
 
   # ====== pooling window ======
   temporal_poolers..ablation_utp.decayTimeConst:
-    min: 7.0
-    max: 15.0
+    values:
+      - 5.0
+      - 10.0
+      - 15.0
 
   # ====== boosting ======
+  temporal_poolers..ablation_utp.boostStrength:
+    values:
+      - 0.2
+      - 0.6
+      - 1.0
   temporal_poolers..ablation_utp.dutyCyclePeriod:
-    min: 2000
-    max: 10000
+    values:
+      - 8000
+      - 12000
+
+  # ====== learning rates ======
+  temporal_poolers..ablation_utp.synPermPredActiveInc:
+    values:
+      - 0.1
+      - 0.04
+  temporal_poolers..ablation_utp.synPermPreviousPredActiveInc:
+    values:
+      - 0.05
+      - 0.02
 
 command:
   - ${env}
