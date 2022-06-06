@@ -118,11 +118,11 @@ temporal_poolers:
     predictedActiveOverlapWeight: 2
     exciteFunctionType: Logistic
     decayFunctionType: Exponential
-    decayTimeConst: 10.0
+    decayTimeConst: 15.0
     historyLength: 20
     minHistory: 3
-    boostStrength: 0.5
-    dutyCyclePeriod: 8000
+    boostStrength: 0.6
+    dutyCyclePeriod: 10000
     minPctOverlapDutyCycle: 0.0002
     numActiveColumnsPerInhArea: 0
     stimulusThreshold: 1
@@ -166,7 +166,7 @@ temporal_poolers:
     _type_: SandwichTp
     seed: ???
     initial_pooling: 1.
-    pooling_decay: 0.015
+    pooling_decay: 0.1
     lower_sp_conf:
       # input
       inputDimensions: ???

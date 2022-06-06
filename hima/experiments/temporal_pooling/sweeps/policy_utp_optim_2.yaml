@@ -13,20 +13,6 @@ parameters:
     value: ...
 
 
-  temporal_poolers..ablation_utp.union_learning:
-    values: [True, False]
-
-
-  # ====== history learning ======
-  temporal_poolers..ablation_utp.history_learning:
-    values: [True, False]
-
-  temporal_poolers..ablation_utp.historyLength:
-    values:
-      - 3
-      - 5
-      - 10
-
   # ====== receptive field ======
   temporal_poolers..ablation_utp.potentialPct:
     values:
@@ -34,23 +20,11 @@ parameters:
       - 0.14
       - 0.18
 
-  # ====== pooling window ======
-  temporal_poolers..ablation_utp.decayTimeConst:
+  temporal_poolers..ablation_utp.historyLength:
     values:
-      - 5.0
-      - 10.0
-      - 15.0
-
-  # ====== boosting ======
-  temporal_poolers..ablation_utp.boostStrength:
-    values:
-      - 0.2
-      - 0.6
-      - 1.0
-  temporal_poolers..ablation_utp.dutyCyclePeriod:
-    values:
-      - 8000
-      - 12000
+      - 4
+      - 10
+      - 20
 
   # ====== learning rates ======
   temporal_poolers..ablation_utp.synPermPredActiveInc:
