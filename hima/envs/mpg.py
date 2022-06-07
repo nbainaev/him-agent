@@ -10,12 +10,10 @@ import numpy as np
 class MarkovProcessGrammar:
     def __init__(
             self,
-            n_states,
             transition_probs,
             transition_letters,
             alphabet,
             initial_state,
-            terminal_state,
             autoreset=False,
             seed=None
     ):
@@ -26,18 +24,25 @@ class MarkovProcessGrammar:
             where=(norm != 0),
             out=np.zeros_like(transition_probs)
         )
+
+        self.terminal_states = np.flatnonzero(norm == 0)
+
         self.transition_probs = norm_transition_probs
         self.transition_letters = transition_letters
         self.alphabet = alphabet
         self.char_to_num = {x: i for i, x in enumerate(alphabet)}
 
-        self.states = np.arange(n_states)
+        self.states = np.arange(transition_probs.shape[0])
         self.initial_state = initial_state
-        self.terminal_state = terminal_state
 
         self.current_state = initial_state
-
         self.autoreset = autoreset
+
+        self.letter_probs = np.zeros((len(self.states), len(self.alphabet)))
+        for state in self.states:
+            for i, letter in enumerate(self.transition_letters[state]):
+                if letter != 0:
+                    self.letter_probs[state, self.char_to_num[letter]] = self.transition_probs[state, i]
 
         self.rng = np.random.default_rng(seed)
 
@@ -48,7 +53,7 @@ class MarkovProcessGrammar:
         self.current_state = self.initial_state
 
     def next_state(self):
-        if self.current_state == self.terminal_state:
+        if np.any(self.current_state == self.terminal_states):
             if self.autoreset:
                 self.reset()
             else:
@@ -63,3 +68,15 @@ class MarkovProcessGrammar:
         self.current_state = new_state
 
         return letter
+
+    def predict_states(self, from_state=None, steps=0):
+        if from_state is None:
+            from_state = self.current_state
+        return np.linalg.matrix_power(self.transition_probs, steps)[from_state]
+
+    def predict_letters(self, from_state=None, steps=0):
+        if from_state is None:
+            from_state = self.current_state
+        states_probs = np.linalg.matrix_power(self.transition_probs, steps)
+        return np.dot(states_probs, self.letter_probs)[from_state]
+
