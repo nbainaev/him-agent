@@ -106,7 +106,7 @@ temporal_poolers:
     # input
     inputDimensions: ???
     potentialRadius: ???
-    potentialPct: 0.26
+    potentialPct: 0.18
     globalInhibition: True
     # intermediate
     localAreaDensity: ???
@@ -119,7 +119,7 @@ temporal_poolers:
     exciteFunctionType: Logistic
     decayFunctionType: Exponential
     decayTimeConst: 15.0
-    historyLength: 20
+    historyLength: 5
     minHistory: 3
     boostStrength: 0.6
     dutyCyclePeriod: 10000
@@ -129,8 +129,8 @@ temporal_poolers:
     synPermConnected: 0.5
     synPermActiveInc: 0.1
     synPermInactiveDec: 0.01
-    synPermPredActiveInc: 0.1
-    synPermPreviousPredActiveInc: 0.05
+    synPermPredActiveInc: 0.04
+    synPermPreviousPredActiveInc: 0.02
     wrapAround: False
     # ablation
     first_boosting: True
@@ -171,15 +171,15 @@ temporal_poolers:
       # input
       inputDimensions: ???
       potentialRadius: ???
-      potentialPct: 0.26
+      potentialPct: 0.18
       globalInhibition: True
       # output
       # check bigger
       columnDimensions: ???
       localAreaDensity: ???
 
-      boostStrength: 0.5
-      dutyCyclePeriod: 12000
+      boostStrength: 0.15
+      dutyCyclePeriod: 10000
       minPctOverlapDutyCycle: 0.0002
       numActiveColumnsPerInhArea: 0
       stimulusThreshold: 1
@@ -191,14 +191,14 @@ temporal_poolers:
       # input: lower output
       inputDimensions: ???
       potentialRadius: ???
-      potentialPct: 0.26
+      potentialPct: 0.14
       globalInhibition: True
       # output
       columnDimensions: ???
       localAreaDensity: ???
 
-      boostStrength: 0.65
-      dutyCyclePeriod: 6000
+      boostStrength: 0.2
+      dutyCyclePeriod: 4000
       minPctOverlapDutyCycle: 0.0002
       numActiveColumnsPerInhArea: 0
       stimulusThreshold: 1

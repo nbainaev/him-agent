@@ -44,22 +44,6 @@ parameters:
       - 4000
       - 10000
 
-  # values reminder
-#  temporal_poolers..sandwich_tp.lower_sp_conf.dutyCyclePeriod:
-#    values:
-#      - 3000
-#      - 8000
-#      - 13000
-
-  # ====== pooling window ======
-#  temporal_poolers..sandwich_tp.pooling_decay:
-#    values:
-#      - 0.015
-#      - 0.1
-#      - 0.15
-
-# synPermActiveInc + synPermInactiveDec for both
-
 command:
   - ${env}
   - python
