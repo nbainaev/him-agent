@@ -15,9 +15,7 @@ parameters:
 
   temporal_pooler.:
     values:
-      - union_tp
-#      - ablation_utp
-#      - custom_utp
+      - ablation_utp
       - sandwich_tp
 
 command:

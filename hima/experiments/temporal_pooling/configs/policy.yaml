@@ -185,7 +185,7 @@ temporal_poolers:
       stimulusThreshold: 1
       synPermConnected: 0.5
       synPermActiveInc: 0.1
-      synPermInactiveDec: 0.01
+      synPermInactiveDec: 0.005
       wrapAround: False
     upper_sp_conf:
       # input: lower output
@@ -203,7 +203,7 @@ temporal_poolers:
       numActiveColumnsPerInhArea: 0
       stimulusThreshold: 1
       synPermConnected: 0.5
-      synPermActiveInc: 0.1
+      synPermActiveInc: 0.05
       synPermInactiveDec: 0.01
       wrapAround: False
 
