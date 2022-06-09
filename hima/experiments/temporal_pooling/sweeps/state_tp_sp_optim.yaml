@@ -8,7 +8,7 @@ metric:
   goal: minimize
 parameters:
   temporal_pooler.:
-    value: union_tp
+    value: ablation_utp
   seed.:
     value: ...
 
@@ -19,20 +19,28 @@ parameters:
       - [1200, 25]
 
   spatial_pooler..potentialPct:
-    min: 0.08
-    max: 0.3
+    values:
+      - 0.15
+      - 0.3
+      - 0.45
   spatial_pooler..boostStrength:
-    min: 0.01
-    max: 0.75
+    values:
+      - 0.1
+      - 0.35
+      - 0.7
   spatial_pooler..dutyCyclePeriod:
-    min: 1000
-    max: 50000
-  spatial_pooler..synPermActiveInc:
-    min: 0.01
-    max: 0.1
-  spatial_pooler..synPermInactiveDec:
-    min: 0.001
-    max: 0.02
+    values:
+      - 3000
+      - 10000
+      - 25000
+#  spatial_pooler..synPermActiveInc:
+#    values:
+#      - 0.1
+#      - 0.05
+#  spatial_pooler..synPermInactiveDec:
+#    values:
+#      - 0.01
+#      - 0.005
 
 command:
   - ${env}
