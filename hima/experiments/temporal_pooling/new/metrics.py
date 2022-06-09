@@ -301,7 +301,7 @@ def point_similarity(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float:
 
 # ==================== Errors ====================
 def standardize_sample_distribution(x: np.ndarray) -> np.ndarray:
-    unbiased_x = x - np.min(x)
+    unbiased_x = x - np.mean(x)
     return safe_divide(unbiased_x, np.max(x) - np.min(x), default=unbiased_x)
 
 
