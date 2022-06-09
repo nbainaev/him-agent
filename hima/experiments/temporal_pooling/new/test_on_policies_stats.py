@@ -177,7 +177,7 @@ class ExperimentStats:
             for sim_key in input_sims
         }
 
-        i, discount, gamma, loss = 0, .85, 1, 0
+        i, discount, gamma, loss = 0, .8, 1, 0
         for block_tag, block_sim_metrics in diff_metrics[1:]:
             for metric_key in block_sim_metrics:
                 sim_mx = block_sim_metrics[metric_key]
