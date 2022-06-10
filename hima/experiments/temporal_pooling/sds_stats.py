@@ -104,7 +104,9 @@ class SdsStats:
         agg_pmf = self.aggregate_pmf()
 
         agg_relative_sparsity = safe_divide(agg_sdr_size, self.sds.active_size)
-        representative_pmf_coverage = agg_pmf[representative_sdr_lst].sum() / agg_pmf.sum()
+        representative_pmf_coverage = safe_divide(
+            agg_pmf[representative_sdr_lst].sum(), agg_pmf.sum()
+        )
         return {
             'representative': representative_sdr,
             'distribution': distribution,
@@ -113,4 +115,7 @@ class SdsStats:
         }
 
     def aggregate_pmf(self) -> np.ndarray:
-        return self.aggregate_histogram / self.aggregate_steps
+        return safe_divide(
+            self.aggregate_histogram, self.aggregate_steps,
+            default=self.aggregate_histogram
+        )

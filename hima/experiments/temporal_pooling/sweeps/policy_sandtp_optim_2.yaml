@@ -14,30 +14,35 @@ parameters:
 
   # ====== receptive field ======
   temporal_poolers..sandwich_tp.lower_sp_conf.potentialPct:
-    min: 0.05
-    max: 0.2
+    values:
+      - 0.1
+      - 0.14
+      - 0.18
   temporal_poolers..sandwich_tp.upper_sp_conf.potentialPct:
-    min: 0.05
-    max: 0.25
-
-  # ====== pooling window ======
-  temporal_poolers..sandwich_tp.pooling_decay:
-    min: 0.01
-    max: 0.15
+    values:
+      - 0.09
+      - 0.12
+      - 0.14
 
   # ====== boosting ======
   temporal_poolers..sandwich_tp.lower_sp_conf.boostStrength:
-    min: 0.15
-    max: 0.95
+    values:
+      - 0.15
+      - 0.3
+      - 0.5
   temporal_poolers..sandwich_tp.lower_sp_conf.dutyCyclePeriod:
-    min: 3000
-    max: 15000
+    values:
+      - 4000
+      - 10000
   temporal_poolers..sandwich_tp.upper_sp_conf.boostStrength:
-    min: 0.15
-    max: 0.95
+    values:
+      - 0.2
+      - 0.6
+      - 1.0
   temporal_poolers..sandwich_tp.upper_sp_conf.dutyCyclePeriod:
-    min: 3000
-    max: 15000
+    values:
+      - 4000
+      - 10000
 
 command:
   - ${env}

@@ -71,7 +71,8 @@ class SyntheticDatasetBlockStats:
         )
 
         self.raw_similarity_matrix_union = similarity_matrix(
-            self._policies, algorithm='union', symmetrical=False, sds=self.actions_sds
+            self._policies, algorithm='union.point_similarity',
+            symmetrical=False, sds=self.actions_sds
         )
         self.raw_similarity_union = self.raw_similarity_matrix_union.mean()
         self.similarity_matrix_union = standardize_sample_distribution(
@@ -79,7 +80,7 @@ class SyntheticDatasetBlockStats:
         )
 
         self.raw_similarity_matrix_prefix = similarity_matrix(
-            self._policies, algorithm='prefix', discount=0.92,
+            self._policies, algorithm='prefix.elementwise', discount=0.92,
             symmetrical=False, sds=self.actions_sds
         )
         self.raw_similarity_prefix = self.raw_similarity_matrix_prefix.mean()

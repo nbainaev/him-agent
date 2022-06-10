@@ -12,20 +12,29 @@ parameters:
   seed.:
     value: ...
 
+
   # ====== receptive field ======
   temporal_poolers..ablation_utp.potentialPct:
-    min: 0.2
-    max: 0.4
+    values:
+      - 0.1
+      - 0.14
+      - 0.18
 
-  # ====== pooling window ======
-  temporal_poolers..ablation_utp.decayTimeConst:
-    min: 7.0
-    max: 15.0
+  temporal_poolers..ablation_utp.historyLength:
+    values:
+      - 4
+      - 10
+      - 20
 
-  # ====== boosting ======
-  temporal_poolers..ablation_utp.dutyCyclePeriod:
-    min: 2000
-    max: 10000
+  # ====== learning rates ======
+  temporal_poolers..ablation_utp.synPermPredActiveInc:
+    values:
+      - 0.1
+      - 0.04
+  temporal_poolers..ablation_utp.synPermPreviousPredActiveInc:
+    values:
+      - 0.05
+      - 0.02
 
 command:
   - ${env}

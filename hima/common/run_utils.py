@@ -77,6 +77,11 @@ class Sweep:
         self.shared_run_config = read_config(shared_config_filepath)
         self.shared_run_config_overrides = shared_config_overrides
 
+        # on Linux machines there's some kind of problem with running sweeps in threads?
+        # see https://github.com/wandb/client/issues/1409#issuecomment-870174971
+        # and https://github.com/wandb/client/issues/3045#issuecomment-1010435868
+        os.environ['WANDB_START_METHOD'] = 'thread'
+
         if sweep_id is None:
             self.id = wandb.sweep(self.config, project=wandb_project)
         else:

@@ -47,12 +47,18 @@ def sequence_similarity(
     if algorithm == 'elementwise':
         # reflects strictly ordered similarity
         return sequence_similarity_elementwise(s1, s2, discount=discount, symmetrical=symmetrical)
-    elif algorithm == 'union':
+    elif algorithm.startswith('union'):
         # reflects unordered (=set) similarity
-        return sequence_similarity_as_union(s1, s2, sds=sds, symmetrical=symmetrical)
-    elif algorithm == 'prefix':
+        algorithm = algorithm[6:]
+        return sequence_similarity_as_union(
+            s1, s2, sds=sds, algorithm=algorithm, symmetrical=symmetrical
+        )
+    elif algorithm.startswith('prefix'):
         # reflects balance between the other two
-        return sequence_similarity_by_prefixes(s1, s2, discount=discount, symmetrical=symmetrical)
+        algorithm = algorithm[7:]
+        return sequence_similarity_by_prefixes(
+            s1, s2, sds=sds, algorithm=algorithm, discount=discount, symmetrical=symmetrical
+        )
     else:
         raise KeyError(f'Invalid algorithm: {algorithm}')
 
@@ -61,9 +67,12 @@ def distribution_similarity(
         p: np.ndarray, q: np.ndarray, algorithm: str, sds: Sds = None, symmetrical: bool = False
 ) -> float:
     if algorithm == 'kl-divergence':
-        return kl_divergence(p, q, sds, symmetrical=symmetrical)
+        # We take 1 - KL to make it similarity metric. NB: normalized KL div for SDS can be > 1
+        return 1 - kl_divergence(p, q, sds, symmetrical=symmetrical)
+    elif algorithm == 'point_similarity':
+        return point_similarity(p, q, sds=sds)
     elif algorithm == 'wasserstein':
-        return wasserstein_distance(p, q, sds=sds)
+        return -wasserstein_distance(p, q, sds=sds)
     else:
         raise KeyError(f'Invalid algorithm: {algorithm}')
 
@@ -144,22 +153,11 @@ def sequence_similarity_elementwise(
         sim_func(s1[i], s2[i], symmetrical=symmetrical)
         for i in range(n)
     ])
-    norm = sims.size
-
-    if discount is not None and discount < 1.:
-        discounts = np.cumprod(np.repeat(discount, n))
-
-        norm = (1 - discounts[-1]) / (1 - discount)
-        # as discounts start with `discount` instead of 1 => everything is multiplied by discount
-        norm *= discount
-        # not normalized weighted mean
-        sims *= discounts[::-1]
-
-    return np.sum(sims) / norm
+    return discounted_mean(sims, gamma=discount)
 
 
 def sequence_similarity_as_union(
-        s1: list, s2: list, sds: Sds, symmetrical: bool = False, algorithm: str = 'kl-divergence'
+        s1: list, s2: list, sds: Sds, algorithm: str, symmetrical: bool = False
 ) -> float:
     n = len(s1)
     assert n == len(s2)
@@ -174,20 +172,44 @@ def sequence_similarity_as_union(
 
 
 def sequence_similarity_by_prefixes(
-        s1: list, s2: list, discount: float = None, symmetrical=False
+        seq1: list, seq2: list, sds: Sds, algorithm: str,
+        discount: float = None, symmetrical=False,
 ) -> float:
-    n = len(s1)
-    assert n == len(s2)
+    n = len(seq1)
+    assert n == len(seq2)
     if not n:
         # arguable: empty sequences are equal
         return 1.
 
-    sims = [
-        sequence_similarity_elementwise(
-            s1[:i+1], s2[:i+1], discount=discount, symmetrical=symmetrical
-        )
-        for i in range(n)
-    ]
+    if algorithm == 'elementwise':
+        sims = [
+            sequence_similarity_elementwise(
+                seq1[:i+1], seq2[:i+1], discount=discount, symmetrical=symmetrical
+            )
+            for i in range(n)
+        ]
+    else:
+        sims = []
+        histogram1, histogram2 = np.zeros(sds.size), np.zeros(sds.size)
+        for i in range(n):
+            s1, s2 = seq1[i], seq2[i]
+            if isinstance(s1, set):
+                s1, s2 = list(s1), list(s2)
+            if i == 0:
+                histogram1[s1] = 1
+                histogram2[s2] = 1
+            else:
+                histogram1 *= discount
+                histogram2 *= discount
+                histogram1[s1] += 1 - discount
+                histogram2[s2] += 1 - discount
+
+            sims.append(
+                distribution_similarity(
+                    histogram1, histogram2, algorithm=algorithm, sds=sds, symmetrical=symmetrical
+                )
+            )
+
     # noinspection PyTypeChecker
     return np.mean(sims)
 
@@ -268,6 +290,15 @@ def wasserstein_distance(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float
     return res
 
 
+def point_similarity(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float:
+    # -> [0, active_size]
+    similarity = np.fmin(p, q).sum()
+    if sds is not None:
+        # -> [0, 1]
+        similarity /= sds.active_size
+    return similarity
+
+
 # ==================== Errors ====================
 def standardize_sample_distribution(x: np.ndarray) -> np.ndarray:
     unbiased_x = x - np.mean(x)
@@ -277,3 +308,39 @@ def standardize_sample_distribution(x: np.ndarray) -> np.ndarray:
 def mean_absolute_error(x: np.ndarray, y: np.ndarray) -> float:
     # noinspection PyTypeChecker
     return np.mean(np.abs(x - y))
+
+
+# ==================== Loss ====================
+def simple_additive_loss(smae, pmf_coverage):
+    return smae + 0.1 * (1 - pmf_coverage) / pmf_coverage
+
+
+def multiplicative_loss(smae, pmf_coverage):
+    # Google it: y = 0.25 * ((1 - x) / (0.5 * x))^0.5 + 0.75
+    # == 1 around 0.666 pmf coverage — it's a target value
+    pmf_weight = (1 - pmf_coverage) / (0.5 * pmf_coverage)
+    # smooth with sqrt and shift it up
+    pmf_weight = 0.25 * (pmf_weight ** 0.5) + 0.75
+
+    # == 1 at smae = 0.1. At ~0.2 SMAE we get almost garbage
+    smae_weight = (smae / 0.1)**1.5
+
+    return pmf_weight * smae_weight
+
+
+# ================== Utility ====================
+def discounted_mean(arr: np.ndarray, gamma: float = None) -> float:
+    if isinstance(arr, list):
+        arr = np.array(arr)
+
+    norm = arr.shape[0]
+    if gamma is not None and gamma < 1.:
+        # [g, g^2, g^3, ..., g^N] === g * [1, g, g^2,..., g^N-1]
+        weights = np.cumprod(np.repeat(gamma, norm))
+        # gamma * geometric sum
+        norm = gamma * (1 - weights[-1]) / (1 - gamma)
+
+        # not normalized weighted sum
+        arr *= weights[::-1]
+
+    return np.sum(arr) / norm
