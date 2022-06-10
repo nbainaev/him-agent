@@ -84,10 +84,10 @@ def run(tm, tp, policy, state_encoder, action_encoder, learn=True, prev_dense=No
         if counter % window_size == window_size - 1:
             my_log['difference'] = (window_error / window_size)
             try:
-                my_log['nonzero_pooling'] = np.count_nonzero(tp._pooling_activations)
+                my_log['nonzero`_pooling'] = np.count_nonzero(tp._pooling_activations)
                 my_log['lower_bound'] = np.partition(
-                    tp._pooling_activations.flatten(), -tp.cells_in_union-1
-                )[-tp.cells_in_union-1]
+                    tp._pooling_activations.flatten(), -tp.cells_in_union - 1
+                )[-tp.cells_in_union - 1]
             except BaseException:
                 pass
             window_error = 0
@@ -260,16 +260,15 @@ def all_seq(tm, tp, data, epochs):
     wandb.finish(quiet=True)
 
 
-def vis_what(data, representations):
-    similarity_matrix = np.zeros((len(representations), len(representations)))
-    pure_similarity = np.zeros(similarity_matrix.shape)
-    for i, policy1 in enumerate(data):
-        for j, policy2 in enumerate(data):
-            pure_similarity[i][j] = row_similarity(policy1, policy2)
-            similarity_matrix[i][j] = abs(
-                representation_similarity(representations[i].dense, representations[j].dense)
-            )
+def standardize(matrix: np.ndarray):
+    non_diagonal = np.logical_not(np.identity(matrix.shape[0]))
+    res = matrix
+    res -= res[non_diagonal].mean()
+    res /= res[non_diagonal].max() - res[non_diagonal].min()
+    return res
 
+
+def vis_sim(similarity_matrix, pure_similarity, title):
     fig = plt.figure(figsize=(40, 10))
     ax1 = fig.add_subplot(131)
     ax1.set_title('representational', size=40)
@@ -280,15 +279,34 @@ def vis_what(data, representations):
 
     sns.heatmap(similarity_matrix, vmin=0, vmax=1, cmap='plasma', ax=ax1)
     sns.heatmap(pure_similarity, vmin=0, vmax=1, cmap='plasma', ax=ax2)
-
     sns.heatmap(abs(pure_similarity - similarity_matrix), vmin=0, vmax=1, cmap='plasma', ax=ax3, annot=True)
-    wandb.log({'representations similarity': wandb.Image(ax1)})
+    wandb.log({title: wandb.Image(ax1)})
+
+
+def vis_what(data, representations):
+    similarity_matrix = np.zeros((len(representations), len(representations)))
+    pure_similarity = np.zeros(similarity_matrix.shape)
+    for i, policy1 in enumerate(data):
+        for j, policy2 in enumerate(data):
+            pure_similarity[i][j] = row_similarity(policy1, policy2)
+            similarity_matrix[i][j] = abs(
+                representation_similarity(representations[i].dense, representations[j].dense)
+            )
+
+    vis_sim(similarity_matrix, pure_similarity, 'representations_similarity')
     wandb.run.summary['mae'] = similarity_mae(pure_similarity, similarity_matrix)
+    plt.show()
+
+    similarity_matrix = standardize(similarity_matrix)
+    pure_similarity = standardize(pure_similarity)
+
+    vis_sim(similarity_matrix, pure_similarity, 'standardized_similarity')
+    wandb.run.summary['mae_std'] = similarity_mae(pure_similarity, similarity_matrix)
+
     plt.show()
 
 
 def stp_all_seq_3_epochs(data):
-
     tm = DelayedFeedbackTM(**config_tm)
     stp = SandwichTp(**stp_config)
 
@@ -327,10 +345,12 @@ def custom_no_history_l(data):
     tm = DelayedFeedbackTM(**config_tm)
     all_seq(tm, tp, data, epochs=5)
 
+
 # ---------------------------------------------------------------
 
 
-def run_states_seq(tm: ClassicTemporalMemory, tp, states, state_encoder, learn=True, prev_dense=None, whole_active: SDR=None):
+def run_states_seq(tm: ClassicTemporalMemory, tp, states, state_encoder, learn=True, prev_dense=None,
+                   whole_active: SDR = None):
     tp_prev_union = tp.getUnionSDR().sparse.copy()
     tp_input = SDR(tp.getNumInputs())
     tp_predictive = SDR(tp.getNumInputs())
@@ -369,8 +389,8 @@ def run_states_seq(tm: ClassicTemporalMemory, tp, states, state_encoder, learn=T
             try:
                 my_log['nonzero_pooling'] = np.count_nonzero(tp._pooling_activations)
                 my_log['lower_bound'] = np.partition(
-                    tp._pooling_activations.flatten(), -tp.cells_in_union-1
-                )[-tp.cells_in_union-1]
+                    tp._pooling_activations.flatten(), -tp.cells_in_union - 1
+                )[-tp.cells_in_union - 1]
             except BaseException:
                 pass
 
@@ -402,7 +422,8 @@ def states_seqs_test(dataset):
             run_states_seq(tm, tp, states, state_encoder_)
         representations.append(tp.getUnionSDR())
 
-    wandb.run.summary['rooms similarity'] = representation_similarity(representations[0].dense, representations[1].dense)
+    wandb.run.summary['rooms similarity'] = representation_similarity(representations[0].dense,
+                                                                      representations[1].dense)
     wandb.finish()
 
 
@@ -422,14 +443,26 @@ def _run_tests():
     wandb.login()
     np.random.seed(31)
 
-    row_data, data = generate_data(5, n_actions, n_states, randomness=0.5)
+    row_data, data = generate_data(5, n_actions, n_states, randomness=0.7)
     np.random.shuffle(data)
+
+    plt.figure(figsize=(15, 8))
+    plt.gca().set_facecolor('lightgrey')
+    #
+    # for policy in row_data:
+    #     plt.plot(range(len(policy)), policy)
+
+    # plt.title('Synthetic policies', size=20)
+    # plt.xlabel('state', size=20)
+    # plt.ylabel('action', size=20)
+    # plt.legend(['policy 1', 'policy 2', 'policy 3', 'policy 4', 'policy 5'], prop={'size': 20})
+    # plt.show()
     # common_utp_one_seq(data)
     # custom_utp_one_seq(data)
     # only_custom_utp_test(row_data)
     # custom_utp_all_seq_5_epochs(data)
     # stp_all_seq_3_epochs(data)
-    common_utp_all_seq_5_epochs(data)
+    # common_utp_all_seq_5_epochs(data)
     # no_second_boosting(data)
     # no_history_learning_5_epochs(data)
     # no_history_learning_15_epochs(data)
@@ -449,4 +482,3 @@ def _run_tests():
 
 if __name__ == '__main__':
     _run_tests()
-

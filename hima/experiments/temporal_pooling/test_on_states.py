@@ -34,6 +34,13 @@ from hima.experiments.temporal_pooling.metrics import sdrs_similarity, symetric_
 
 from hima.experiments.temporal_pooling.test_on_policies import ExperimentStats, similarity_cmp
 
+
+def standardize_sim(matrix):
+    n = matrix.shape[0]
+    non_diag = np.logical_not(np.identity(n))
+    return (matrix - np.mean(matrix[non_diag]))/(np.max(matrix[non_diag]) - np.min(matrix[non_diag]))
+
+
 def similarity_matrix(representations: list):
     matrix = np.empty((len(representations), len(representations)))
     for i, representation1 in enumerate(representations):
@@ -75,16 +82,23 @@ class ObservationsExperiment(Runner):
             representations = self.train_epoch(observations)
         sim_matrix = similarity_matrix(representations)
         self.log_summary(self.data_generator.v1_similarities(), sim_matrix)
+
+        std_pure = standardize_sim(self.data_generator.v1_similarities())
+        std_sim = standardize_sim(sim_matrix)
+
+        self.log_summary(std_pure, std_sim)
+
         print('<==')
 
     def log_summary(self, input_similarity_matrix, output_similarity_matrix):
-        non_diag_mask = np.logical_not(np.identity(input_similarity_matrix.shape[0]))
+        n = input_similarity_matrix.shape[0]
+        non_diag_mask = np.logical_not(np.identity(n))
         diff = np.abs(input_similarity_matrix - output_similarity_matrix)
         mae = np.mean(diff[non_diag_mask])
         self.logger.summary['mae'] = mae
 
         self.logger.log({
-            'similarities': wandb.Image(similarity_cmp(input_similarity_matrix, output_similarity_matrix))
+            'similarities': wandb.Image(similarity_cmp(input_similarity_matrix, output_similarity_matrix, np.identity(n)))
         })
 
 
@@ -116,7 +130,7 @@ class ObservationsExperiment(Runner):
             )
             self.compute_tp_step(
                 active_input=tm.get_active_columns(),
-                predicted_input=tm.get_correctly_predicted_columns(),
+                predicted_input=tm.get_active_columns(),
                 learn=learn
             )
             if i == len(room_observations) - 1:

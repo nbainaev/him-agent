@@ -43,6 +43,11 @@ class ExperimentStats:
     def on_policy_change(self, policy_id, temporal_pooler):
         # self.tp_prev_policy_union = self.tp_prev_union.copy()
         self.tp_prev_union = set(temporal_pooler.getUnionSDR().sparse)
+        # FIXME or not. This union is
+        # FIXME not from prev representation, but from
+        # FIXME first representation in current policy
+
+
         self.policy_id = policy_id
         self.window_size = 1
         self.window_error = 0
@@ -116,7 +121,7 @@ class ExperimentStats:
         }
 
 
-def similarity_cmp(input_similarity_matrix, output_similarity_matrix):
+def similarity_cmp(input_similarity_matrix, output_similarity_matrix, mask):
     fig = plt.figure(figsize=(40, 10))
     ax1 = fig.add_subplot(131)
     ax1.set_title('output', size=40)
@@ -125,21 +130,266 @@ def similarity_cmp(input_similarity_matrix, output_similarity_matrix):
     ax3 = fig.add_subplot(133)
     ax3.set_title('diff', size=40)
 
-    sns.heatmap(output_similarity_matrix, vmin=0, vmax=1, cmap='plasma', ax=ax1)
-    sns.heatmap(input_similarity_matrix, vmin=0, vmax=1, cmap='plasma', ax=ax2)
+    vmin = -1 if np.min(output_similarity_matrix) < 0 else 0
+
+    sns.heatmap(output_similarity_matrix, vmin=vmin, vmax=1, cmap='plasma', ax=ax1, annot=True, mask=mask)
+    sns.heatmap(input_similarity_matrix, vmin=vmin, vmax=1, cmap='plasma', ax=ax2, annot=True, mask=mask)
 
     sns.heatmap(
         np.abs(output_similarity_matrix - input_similarity_matrix),
-        vmin=0, vmax=1, cmap='plasma', ax=ax3, annot=True
+        vmin=0, vmax=1, cmap='plasma', ax=ax3, annot=True, mask=mask
     )
     return plt.gca()
 
 
+# <<<<<<< Updated upstream
+# =======
+# class PoliciesExperiment(Runner):
+#     config: TConfig
+#     logger: Optional[Run]
+#
+#     n_policies: int
+#     epochs: int
+#     policy_repeats: int
+#     steps_per_policy: int
+#
+#     stats: ExperimentStats
+#
+#     _tp_active_input: SDR
+#     _tp_predicted_input: SDR
+#
+#     def __init__(
+#             self, config: TConfig, n_policies: int, epochs: int, policy_repeats: int,
+#             steps_per_policy: int, temporal_pooler: str, **_
+#     ):
+#         super().__init__(config, **config)
+#
+#         self.n_policies = n_policies
+#         self.epochs = epochs
+#         self.policy_repeats = policy_repeats
+#         # --------------------------------------
+#         self.steps_per_policy = steps_per_policy
+#         # ---- is this field really needed? ----
+#
+#         print('==> Init')
+#         self.data_generator = resolve_data_generator(config)
+#         self.temporal_memory = resolve_tm(
+#             self.config,
+#             action_encoder=self.data_generator.action_encoder,
+#             state_encoder=self.data_generator.state_encoder
+#         )
+#         self.temporal_pooler = resolve_tp(
+#             self.config, temporal_pooler,
+#             temporal_memory=self.temporal_memory
+#         )
+#         self.stats = ExperimentStats(self.temporal_pooler)
+#
+#         # pre-allocated SDR
+#         tp_input_size = self.temporal_pooler.getNumInputs()
+#         self._tp_active_input = SDR(tp_input_size)
+#         self._tp_predicted_input = SDR(tp_input_size)
+#
+#     def run(self):
+#         print('==> Generate policies')
+#         policies = self.data_generator.generate_policies(self.n_policies)
+#
+#         print('==> Run')
+#         for epoch in range(self.epochs):
+#             self.train_epoch(policies)
+#
+#         self.log_summary(policies)
+#         print('<==')
+#
+#     def train_epoch(self, policies):
+#         representations = []
+#
+#         for policy in policies:
+#             self.temporal_pooler.reset()
+#             for i in range(self.policy_repeats):
+#                 self.run_policy(policy, learn=True)
+#
+#             representations.append(self.temporal_pooler.getUnionSDR())
+#         return representations
+#
+#     def run_policy(self, policy, learn=True):
+#         tm, tp = self.temporal_memory, self.temporal_pooler
+#
+#         for state, action in policy:
+#             self.compute_tm_step(
+#                 feedforward_input=action,
+#                 basal_context=state,
+#                 apical_feedback=self.temporal_pooler.getUnionSDR().sparse,
+#                 learn=learn
+#             )
+#             self.compute_tp_step(
+#                 active_input=tm.get_active_cells(),
+#                 predicted_input=tm.get_correctly_predicted_cells(),
+#                 learn=learn
+#             )
+#             self.stats.on_step(
+#                 policy_id=policy.id,
+#                 temporal_memory=self.temporal_memory,
+#                 temporal_pooler=self.temporal_pooler,
+#                 logger=self.logger
+#             )
+#
+#     def log_summary(self, policies):
+#         def centralize_sim_matrix(sim_matrix):
+#             # mean row sim ==> diag
+#             sim_matrix[diag_mask] = sim_matrix[non_diag_mask].mean(axis=-1)
+#             # centralize
+#             sim_matrix[diag_mask] -= sim_matrix[non_diag_mask].mean()
+#
+#         if not self.logger:
+#             return
+#
+#         n_policies = len(policies)
+#         diag_mask = np.identity(n_policies, dtype=bool)
+#         non_diag_mask = np.logical_not(np.identity(n_policies))
+#
+#         input_similarity_matrix = self._get_policy_action_similarity(policies)
+#         output_similarity_matrix = self._get_output_similarity_union(
+#             self.stats.last_representations
+#         )
+#         centralize_sim_matrix(input_similarity_matrix)
+#         centralize_sim_matrix(output_similarity_matrix)
+#         diff = np.abs(input_similarity_matrix - output_similarity_matrix)
+#         mae = np.mean(diff[non_diag_mask])
+#         self.logger.summary['mae'] = mae
+#         self.vis_similarity(
+#             input_similarity_matrix,
+#             output_similarity_matrix,
+#             'representations_similarity'
+#         )
+#
+#         input_similarity_matrix = self._get_input_similarity(policies)
+#         output_similarity_matrix = self._get_output_similarity(self.stats.last_representations)
+#         centralize_sim_matrix(input_similarity_matrix)
+#         centralize_sim_matrix(output_similarity_matrix)
+#         diff = np.abs(input_similarity_matrix - output_similarity_matrix)
+#         mae = np.mean(diff[non_diag_mask])
+#         self.logger.summary['mae_alt'] = mae
+#         self.vis_similarity(
+#             input_similarity_matrix,
+#             output_similarity_matrix,
+#             'representations_similarity_alt'
+#         )
+#
+#     def compute_tm_step(
+#             self, feedforward_input: SparseSdr, basal_context: SparseSdr,
+#             apical_feedback: SparseSdr, learn: bool
+#     ):
+#         tm = self.temporal_memory
+#
+#         tm.set_active_context_cells(basal_context)
+#         tm.activate_basal_dendrites(learn)
+#
+#         tm.set_active_feedback_cells(apical_feedback)
+#         tm.activate_apical_dendrites(learn)
+#         tm.propagate_feedback()
+#
+#         tm.predict_cells()
+#
+#         tm.set_active_columns(feedforward_input)
+#         tm.activate_cells(learn)
+#
+#     def compute_tp_step(self, active_input: SparseSdr, predicted_input: SparseSdr, learn: bool):
+#         self._tp_active_input.sparse = active_input.copy()
+#         self._tp_predicted_input.sparse = predicted_input.copy()
+#
+#         self.temporal_pooler.compute(self._tp_active_input, self._tp_predicted_input, learn)
+#
+#     @staticmethod
+#     def _get_policy_action_similarity(policies):
+#         n_policies = len(policies)
+#         similarity_matrix = np.zeros((n_policies, n_policies))
+#
+#         for i in range(n_policies):
+#             for j in range(n_policies):
+#
+#                 counter = 0
+#                 size = 0
+#                 for p1, p2 in zip(policies[i], policies[j]):
+#                     _, a1 = p1
+#                     _, a2 = p2
+#
+#                     size += 1
+#                     # such comparison works only for bucket encoding
+#                     if a1[0] == a2[0]:
+#                         counter += 1
+#
+#                 similarity_matrix[i, j] = safe_divide(counter, size)
+#         return similarity_matrix
+#
+#     @staticmethod
+#     def _get_input_similarity(policies):
+#         def elem_sim(x1, x2):
+#             overlap = np.intersect1d(x1, x2, assume_unique=True).size
+#             return safe_divide(overlap, x2.size)
+#
+#         def reduce_elementwise_similarity(similarities):
+#             return np.mean(similarities)
+#
+#         n_policies = len(policies)
+#         similarity_matrix = np.zeros((n_policies, n_policies))
+#         for i in range(n_policies):
+#             for j in range(n_policies):
+#                 if i == j:
+#                     continue
+#
+#                 similarities = []
+#                 for p1, p2 in zip(policies[i], policies[j]):
+#                     p1_sim = [elem_sim(p1[k], p2[k]) for k in range(len(p1))]
+#                     sim = reduce_elementwise_similarity(p1_sim)
+#                     similarities.append(sim)
+#
+#                 similarity_matrix[i, j] = reduce_elementwise_similarity(similarities)
+#         return similarity_matrix
+#
+#     @staticmethod
+#     def _get_output_similarity_union(representations):
+#         n_policies = len(representations.keys())
+#         similarity_matrix = np.zeros((n_policies, n_policies))
+#         for i in range(n_policies):
+#             for j in range(n_policies):
+#                 if i == j:
+#                     continue
+#
+#                 repr1: set = representations[i]
+#                 repr2: set = representations[j]
+#                 similarity_matrix[i, j] = safe_divide(
+#                     len(repr1 & repr2),
+#                     len(repr2 | repr2)
+#                 )
+#         return similarity_matrix
+#
+#     @staticmethod
+#     def _get_output_similarity(representations):
+#         n_policies = len(representations.keys())
+#         similarity_matrix = np.zeros((n_policies, n_policies))
+#         for i in range(n_policies):
+#             for j in range(n_policies):
+#                 if i == j:
+#                     continue
+#
+#                 repr1: set = representations[i]
+#                 repr2: set = representations[j]
+#                 similarity_matrix[i, j] = safe_divide(
+#                     len(repr1 & repr2),
+#                     len(repr2)
+#                 )
+#         return similarity_matrix
+#
+#     def vis_similarity(self, input_similarity_matrix, output_similarity_matrix, title):
+#         self.logger.log({title: wandb.Image(similarity_cmp(input_similarity_matrix, output_similarity_matrix))})
+#
+#
+# >>>>>>> Stashed changes
 def resolve_tp(config, temporal_pooler: str, temporal_memory):
     base_config_tp = config['temporal_poolers'][temporal_pooler]
     seed = config['seed']
     input_size = temporal_memory.columns * temporal_memory.cells_per_column if not \
-        isinstance(temporal_memory, ClassicApicalTemporalMemory)  \
+        isinstance(temporal_memory, ClassicApicalTemporalMemory) \
         else temporal_memory.columns
 
     config_tp = dict(
