@@ -384,7 +384,7 @@ def similarity_cmp(input_similarity_matrix, output_similarity_matrix, mask):
 #         self.logger.log({title: wandb.Image(similarity_cmp(input_similarity_matrix, output_similarity_matrix))})
 #
 #
-# >>>>>>> Stashed changes
+
 def resolve_tp(config, temporal_pooler: str, temporal_memory):
     base_config_tp = config['temporal_poolers'][temporal_pooler]
     seed = config['seed']
