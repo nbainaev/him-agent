@@ -11,9 +11,14 @@ from htm.bindings.sdr import SDR
 
 class SandwichTp:
     def __init__(self, seed: int, **kwargs):
+
+        self.only_upper = kwargs['only_upper']
+
         self.initial_pooling = kwargs['initial_pooling']
         self.pooling_decay = kwargs['pooling_decay']
-        self.lower_sp = SpatialPooler(seed=seed, **kwargs['lower_sp_conf'])
+        if not self.only_upper:
+            self.lower_sp = SpatialPooler(seed=seed, **kwargs['lower_sp_conf'])
+
         if not kwargs['upper_sp_conf'].get('inputDimensions', None):
             # FIXME: dangerous kwargs['upper_sp_conf'] mutation here! We should work with its copy
             upper_sp_input_size = self.lower_sp.getNumColumns()
@@ -25,6 +30,8 @@ class SandwichTp:
         self._unionSDR = SDR(kwargs['upper_sp_conf']['columnDimensions'])
         self._unionSDR.dense = np.zeros(kwargs['upper_sp_conf']['columnDimensions'])
         self._pooling_activations = np.zeros(kwargs['upper_sp_conf']['inputDimensions'])
+
+
 
         # FIXME: hack to get SandwichTp compatible with other TPs
         # maximum TP active output cells
@@ -40,7 +47,12 @@ class SandwichTp:
         self._pooling_decay_step()
 
         input_representation = SDR(self._pooling_activations.shape)
-        self.lower_sp.compute(predicted_neurons, learn=learn, output=input_representation)
+
+        if not self.only_upper:
+            self.lower_sp.compute(predicted_neurons, learn=learn, output=input_representation)
+        else:
+            input_representation = predicted_neurons
+
         self._pooling_activations[input_representation.sparse] += self.initial_pooling
         self._pooling_activations = self._pooling_activations.clip(0, 1)
 

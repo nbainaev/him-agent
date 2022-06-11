@@ -120,18 +120,27 @@ def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
     elif tp_type == 'SandwichTp':
         from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
         tp_config = resolve_init_params(tp_config, seed=seed)
-        tp_config['lower_sp_conf'] = resolve_init_params(
-            tp_config['lower_sp_conf'],
-            inputDimensions=feedforward_sds.shape,
-            columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
-            potentialRadius=feedforward_sds.size
-        )
-        tp_config['upper_sp_conf'] = resolve_init_params(
-            tp_config['upper_sp_conf'],
-            inputDimensions=output_sds.shape,
-            columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
-            potentialRadius=output_sds.size
-        )
+        if not tp_config['only_upper']:
+            tp_config['lower_sp_conf'] = resolve_init_params(
+                tp_config['lower_sp_conf'],
+                inputDimensions=feedforward_sds.shape,
+                columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
+                potentialRadius=feedforward_sds.size
+            )
+            tp_config['upper_sp_conf'] = resolve_init_params(
+                tp_config['upper_sp_conf'],
+                inputDimensions=output_sds.shape,
+                columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
+                potentialRadius=output_sds.size
+            )
+        else:
+            tp_config['upper_sp_conf'] = resolve_init_params(
+                tp_config['upper_sp_conf'],
+                inputDimensions=feedforward_sds.shape,
+                columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
+                potentialRadius=output_sds.size
+            )
+
         tp = SandwichTp(**tp_config)
 
     else:
