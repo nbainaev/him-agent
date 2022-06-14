@@ -3,14 +3,15 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import numpy as np
 
+from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.new.metrics import (
     standardize_sample_distribution,
-    similarity_matrix, sequence_similarity_elementwise, distribution_similarity, DISTR_SIM_PMF,
+    sequence_similarity_elementwise, distribution_similarity, DISTR_SIM_PMF,
     DISTR_SIM_KL
 )
 from hima.experiments.temporal_pooling.sdr_seq_stats import SdrSequenceStats
@@ -19,22 +20,27 @@ from hima.experiments.temporal_pooling.sdr_seq_stats import SdrSequenceStats
 class SimilarityMatrix:
     tag: str
 
-    raw_mx: np.ndarray
-    mx: np.ndarray
-    raw_mean: float
+    _raw_mx: np.ma.MaskedArray
+    _mx: Optional[np.ndarray]
 
-    def __init__(self, tag: str, raw_mx: np.ndarray, unbias_func: str):
+    unbias_func: str
+    online: bool
+
+    def __init__(self, tag: str, raw_mx: np.ma.MaskedArray, unbias_func: str, online: bool = False):
         self.tag = tag
-        self.raw_mx = raw_mx
-        self.mx = standardize_sample_distribution(self.raw_mx, unbias_func=unbias_func)
-        # self.raw_mean = self.raw_mx.mean()
+        self.online = online
+        self.unbias_func = unbias_func
+        self._raw_mx = raw_mx
+        self._mx = None
 
     def final_metrics(self) -> dict[str, Any]:
         tag = self.tag
+        if self.online or self._mx is None:
+            self._mx = standardize_sample_distribution(self._raw_mx, unbias_func=self.unbias_func)
+
         return {
-            f'raw_sim_mx_{tag}': self.raw_mx,
-            f'sim_mx_{tag}': self.mx,
-            # f'avg/raw_sim_{tag}': self.raw_mean,
+            f'raw_sim_mx_{tag}': self._raw_mx,
+            f'sim_mx_{tag}': self._mx,
         }
 
 
@@ -91,81 +97,134 @@ class OfflinePmfSimilarityMatrix(SimilarityMatrix):
         )
 
 
-class OnlineSimilarityMatrix:
-    tag: str
+class OnlineElementwiseSimilarityMatrix(SimilarityMatrix):
+    symmetrical: Optional[bool]
+    discount: Optional[float]
 
     sequences_stats: list[Optional[SdrSequenceStats]]
+    cum_sim: np.ndarray
+    counts: np.ndarray
 
-    raw_mx: np.ndarray
-    mx: np.ndarray
-    raw_mean: float
-
-    def __init__(
-            self,
-            sequences: Union[list[set[int]], list[np.ndarray], list[list]],
-            tag: str, unbias_func: str,
-            prefix_algorithm: str, prefix_discount: float,
-            symmetrical: bool = False, sds: Sds = None
-    ):
-        self.tag = tag
-        self.raw_mx = similarity_matrix(
-            sequences, algorithm=algorithm, symmetrical=symmetrical, sds=sds
-        )
-        self.mx = standardize_sample_distribution(self.raw_mx, unbias_func=unbias_func)
-        self.raw_mean = self.raw_mx.mean()
-
-    def final_metrics(self) -> dict[str, Any]:
-        tag = self.tag
-        return {
-            f'raw/sim_mx_{tag}': self.raw_mx,
-            f'avg/raw_sim_{tag}': self.raw_mean,
-            f'sim_mx_{tag}': self.mx
-        }
-
-
-class SdrSequencesOfflineCrossStats:
-    """Computes similarity matrices in offline fashion, as if all sequences are known ATM."""
-    sds: Sds
-
-    sim_mx_elementwise: SimilarityMatrix
-    sim_mx_union: SimilarityMatrix
-    sim_mx_prefix: SimilarityMatrix
+    current_i_seq: Optional[int]
+    current_stats: Optional[SdrSequenceStats]
 
     def __init__(
-            self, sequences: list[list], sds: Sds,
-            prefix_algorithm: str, prefix_discount: float, unbias_func: str
+            self, n_sequences: int, unbias_func: str, discount: float, symmetrical: bool = False
     ):
-        self.sds = sds
+        self.symmetrical = symmetrical
+        self.discount = discount
 
-        raw_sim_mx_elementwise = similarity_matrix(
-            sequences, algorithm='elementwise', symmetrical=False, sds=sds
+        self.sequences_stats = [None] * n_sequences
+        self.current_i_seq = -1
+        self.current_stats = None
+
+        raw_mx = np.empty((n_sequences, n_sequences))
+        full_mask = np.ones_like(raw_mx, dtype=bool)
+
+        self.cum_sim = np.zeros_like(raw_mx)
+        self.counts = np.zeros_like(raw_mx, dtype=int)
+
+        raw_mx = np.ma.array(raw_mx, mask=full_mask)
+        super(OnlineElementwiseSimilarityMatrix, self).__init__(
+            tag='prfx_el', raw_mx=raw_mx, unbias_func=unbias_func, online=True
         )
-        raw_sim_mx_union = similarity_matrix(
-            sequences, algorithm='union.point_similarity', symmetrical=False, sds=sds
+
+    def new_sequence(self, sequence_id: int, stats: SdrSequenceStats):
+        if self.current_stats is not None:
+            self.sequences_stats[self.current_i_seq] = self.current_stats
+
+        self.current_stats = stats
+        self.current_i_seq = sequence_id
+
+    def update(self):
+        # NB: current stats has already been updated
+        n = len(self.sequences_stats)
+        x = self.current_stats.sdr_history
+        for j in range(n):
+            if self.sequences_stats[j] is None:
+                continue
+
+            y = self.sequences_stats[j].sdr_history[:len(x)]
+            sim = sequence_similarity_elementwise(
+                x, y, discount=self.discount, symmetrical=self.symmetrical
+            )
+            self._update(j, sim)
+
+    def _update(self, j, sim):
+        i = self.current_i_seq
+
+        self.cum_sim[i, j] += sim
+        self.counts[i, j] += 1
+        self._raw_mx[i, j] = self.cum_sim[i, j] / self.counts[i, j]
+        self._raw_mx.mask[i, j] = False
+
+
+class OnlinePmfSimilarityMatrix(SimilarityMatrix):
+    SdrSequence = Optional[list[SparseSdr]]
+
+    symmetrical: Optional[bool]
+    discount: Optional[float]
+
+    sequences: list[SdrSequence]
+    cum_sim: np.ndarray
+    counts: np.ndarray
+
+    current_i_seq: Optional[int]
+    current_seq: SdrSequence
+
+    def __init__(
+            self, n_sequences: int, unbias_func: str, discount: float, symmetrical: bool = False
+    ):
+        self.symmetrical = symmetrical
+        self.discount = discount
+
+        self.sequences = [None] * n_sequences
+        self.current_i_seq = -1
+        self.current_seq = None
+
+        raw_mx = np.empty((n_sequences, n_sequences))
+        full_mask = np.ones_like(raw_mx, dtype=bool)
+
+        self.cum_sim = np.zeros_like(raw_mx)
+        self.counts = np.zeros_like(raw_mx, dtype=int)
+
+        raw_mx = np.ma.array(raw_mx, mask=full_mask)
+        super(OnlinePmfSimilarityMatrix, self).__init__(
+            tag='prfx_el', raw_mx=raw_mx, unbias_func=unbias_func, online=True
         )
-        raw_sim_mx_prefix = similarity_matrix(
-            sequences, algorithm=prefix_algorithm, discount=prefix_discount,
-            symmetrical=False, sds=sds
-        )
 
-        self.sim_mx_elementwise = SimilarityMatrix(raw_sim_mx_elementwise, unbias_func=unbias_func)
-        self.sim_mx_union = SimilarityMatrix(raw_sim_mx_union, unbias_func=unbias_func)
-        self.sim_mx_prefix = SimilarityMatrix(raw_sim_mx_prefix, unbias_func=unbias_func)
+    def new_sequence(self, sequence_id: int):
+        if self.current_seq is not None:
+            self.sequences[self.current_i_seq] = self.current_seq
 
-    def final_metrics(self) -> dict[str, Any]:
-        return {
-            'raw/sim_mx_el': self.sim_mx_elementwise.raw_mx,
-            'raw/sim_mx_un': self.sim_mx_union.raw_mx,
-            'raw/sim_mx_prfx': self.sim_mx_prefix.raw_mx,
+        self.current_seq = []
+        self.current_i_seq = sequence_id
 
-            'avg/raw_sim_el': self.sim_mx_elementwise.raw_mean,
-            'avg/raw_sim_un': self.sim_mx_union.raw_mean,
-            'avg/raw_sim_prfx': self.sim_mx_prefix.raw_mean,
+    def update(self, sdr: SparseSdr):
+        self.current_seq.append(set(sdr))
 
-            'sim_mx_el': self.sim_mx_elementwise.mx,
-            'sim_mx_un': self.sim_mx_union.mx,
-            'sim_mx_prfx': self.sim_mx_prefix.mx,
-        }
+        # update metrics
+        n_seqs = len(self.sequences)
+        prefix_size = len(self.current_seq)
+
+        x = self.current_seq
+        for j in range(n_seqs):
+            if self.sequences[j] is None:
+                continue
+
+            y = self.sequences[j][:prefix_size]
+            sim = sequence_similarity_elementwise(
+                x, y, discount=self.discount, symmetrical=self.symmetrical
+            )
+            self._update(j, sim)
+
+    def _update(self, j, sim):
+        i = self.current_i_seq
+
+        self.cum_sim[i, j] += sim
+        self.counts[i, j] += 1
+        self._raw_mx[i, j] = self.cum_sim[i, j] / self.counts[i, j]
+        self._raw_mx.mask[i, j] = False
 
 
 class SdrSequencesOnlineCrossStats:
@@ -205,15 +264,15 @@ class SdrSequencesOnlineCrossStats:
 
     def final_metrics(self) -> dict[str, Any]:
         return {
-            'raw_sim_mx_el': self.sim_mx_elementwise.raw_mx,
+            'raw_sim_mx_el': self.sim_mx_elementwise._raw_mx,
             'raw_sim_el': self.sim_mx_elementwise.raw_mean,
-            'sim_mx_el': self.sim_mx_elementwise.mx,
+            'sim_mx_el': self.sim_mx_elementwise._mx,
 
-            'raw_sim_mx_un': self.sim_mx_union.raw_mx,
+            'raw_sim_mx_un': self.sim_mx_union._raw_mx,
             'raw_sim_un': self.sim_mx_union.raw_mean,
-            'sim_mx_un': self.sim_mx_union.mx,
+            'sim_mx_un': self.sim_mx_union._mx,
 
-            'raw_sim_mx_prfx': self.sim_mx_prefix.raw_mx,
+            'raw_sim_mx_prfx': self.sim_mx_prefix._raw_mx,
             'raw_sim_prfx': self.sim_mx_prefix.raw_mean,
-            'sim_mx_prfx': self.sim_mx_prefix.mx,
+            'sim_mx_prfx': self.sim_mx_prefix._mx,
         }
