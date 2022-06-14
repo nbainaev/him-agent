@@ -10,12 +10,10 @@ from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import safe_divide, clip
+from hima.common.utils import clip
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_encoder
-from hima.experiments.temporal_pooling.new.metrics import (
-    similarity_matrix,
-    standardize_sample_distribution
-)
+from hima.experiments.temporal_pooling.sdr_seq_cross_stats import SdrSequencesOfflineCrossStats
+from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
 
 
 class Policy:
@@ -37,55 +35,21 @@ class Policy:
 class SyntheticDatasetBlockStats:
     n_policies: int
     actions_sds: Sds
+    policies: list[list[set[int]]]
+    cross_stats: SdrSequencesOfflineCrossStats
 
-    _policies: list[list[set[int]]]
-
-    raw_similarity_matrix_elementwise: np.ndarray
-    similarity_matrix_elementwise: np.ndarray
-    raw_similarity_elementwise: np.ndarray
-
-    raw_similarity_matrix_union: np.ndarray
-    similarity_matrix_union: np.ndarray
-    raw_similarity_union: np.ndarray
-
-    raw_similarity_matrix_prefix: np.ndarray
-    similarity_matrix_prefix: np.ndarray
-    raw_similarity_prefix: np.ndarray
-
-    def __init__(self, policies: list[Policy], actions_sds: Sds):
+    def __init__(self, policies: list[Policy], actions_sds: Sds, stats_config: StatsMetricsConfig):
         self.n_policies = len(policies)
-        self._policies = [
+        self.policies = [
             [set(a) for a, s in p]
             for p in policies
         ]
         self.actions_sds = actions_sds
-
-    def compute(self):
-        self.raw_similarity_matrix_elementwise = similarity_matrix(
-            self._policies, algorithm='elementwise',
-            symmetrical=False, sds=self.actions_sds
-        )
-        self.raw_similarity_elementwise = self.raw_similarity_matrix_elementwise.mean()
-        self.similarity_matrix_elementwise = standardize_sample_distribution(
-            self.raw_similarity_matrix_elementwise
-        )
-
-        self.raw_similarity_matrix_union = similarity_matrix(
-            self._policies, algorithm='union.point_similarity',
-            symmetrical=False, sds=self.actions_sds
-        )
-        self.raw_similarity_union = self.raw_similarity_matrix_union.mean()
-        self.similarity_matrix_union = standardize_sample_distribution(
-            self.raw_similarity_matrix_union
-        )
-
-        self.raw_similarity_matrix_prefix = similarity_matrix(
-            self._policies, algorithm='prefix.elementwise', discount=0.92,
-            symmetrical=False, sds=self.actions_sds
-        )
-        self.raw_similarity_prefix = self.raw_similarity_matrix_prefix.mean()
-        self.similarity_matrix_prefix = standardize_sample_distribution(
-            self.raw_similarity_matrix_prefix
+        self.cross_stats = SdrSequencesOfflineCrossStats(
+            sequences=self.policies, sds=self.actions_sds,
+            prefix_algorithm='prefix.elementwise',
+            prefix_discount=stats_config.prefix_similarity_discount,
+            unbias_func=stats_config.normalization_unbias
         )
 
     @staticmethod
@@ -93,19 +57,7 @@ class SyntheticDatasetBlockStats:
         return {}
 
     def final_metrics(self) -> dict[str, Any]:
-        return {
-            'raw_sim_mx_el': self.raw_similarity_matrix_elementwise,
-            'raw_sim_el': self.raw_similarity_elementwise,
-            'sim_mx_el': self.similarity_matrix_elementwise,
-
-            'raw_sim_mx_un': self.raw_similarity_matrix_union,
-            'raw_sim_un': self.raw_similarity_union,
-            'sim_mx_un': self.similarity_matrix_union,
-
-            'raw_sim_mx_prfx': self.raw_similarity_matrix_prefix,
-            'raw_sim_prfx': self.raw_similarity_prefix,
-            'sim_mx_prfx': self.similarity_matrix_prefix,
-        }
+        return self.cross_stats.final_metrics()
 
 
 class SyntheticDatasetBlock:
@@ -124,7 +76,7 @@ class SyntheticDatasetBlock:
 
     def __init__(
             self, n_states: int, states_sds: Sds, n_actions: int, actions_sds: Sds,
-            policies: list[Policy], seed: int
+            policies: list[Policy], seed: int, stats_config: StatsMetricsConfig
     ):
         self.n_states = n_states
         self.n_actions = n_actions
@@ -132,8 +84,7 @@ class SyntheticDatasetBlock:
         self.output_sds = actions_sds
         self._policies = policies
 
-        self.stats = SyntheticDatasetBlockStats(self._policies, self.output_sds)
-        self.stats.compute()
+        self.stats = SyntheticDatasetBlockStats(self._policies, self.output_sds, stats_config)
         self._rng = np.random.default_rng(seed)
 
     @property
@@ -189,7 +140,7 @@ class SyntheticGenerator:
         self.seed = seed
         self._rng = np.random.default_rng(seed)
 
-    def generate_policies(self, n_policies) -> SyntheticDatasetBlock:
+    def generate_policies(self, n_policies, stats_config: StatsMetricsConfig) -> SyntheticDatasetBlock:
         n_states, n_actions = self.n_states, self.n_actions
         rng = self._rng
 
@@ -237,5 +188,5 @@ class SyntheticGenerator:
         return SyntheticDatasetBlock(
             n_states=self.n_states, states_sds=self.states_sds,
             n_actions=self.n_actions, actions_sds=self.actions_sds,
-            policies=encoded_policies, seed=self.seed
+            policies=encoded_policies, seed=self.seed, stats_config=stats_config
         )
