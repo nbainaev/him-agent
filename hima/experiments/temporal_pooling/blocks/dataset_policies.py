@@ -140,7 +140,9 @@ class SyntheticGenerator:
         self.seed = seed
         self._rng = np.random.default_rng(seed)
 
-    def generate_policies(self, n_policies, stats_config: StatsMetricsConfig) -> SyntheticDatasetBlock:
+    def generate_policies(
+            self, n_policies, stats_config: StatsMetricsConfig
+    ) -> SyntheticDatasetBlock:
         n_states, n_actions = self.n_states, self.n_actions
         rng = self._rng
 

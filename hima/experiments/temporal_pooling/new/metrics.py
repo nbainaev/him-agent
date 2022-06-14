@@ -12,6 +12,11 @@ from hima.common.sds import Sds
 from hima.common.utils import safe_divide
 
 
+SEQ_SIM_ELEMENTWISE = 'elementwise'
+DISTR_SIM_PMF = 'pmf_pointwise'
+DISTR_SIM_KL = 'kl-divergence'
+
+
 # ==================== Sdr [sequence] similarity ====================
 def dense_similarity(x1: DenseSdr, x2: DenseSdr, symmetrical: bool = False) -> float:
     overlap = np.count_nonzero(x1 == x2)
@@ -70,7 +75,7 @@ def distribution_similarity(
         # We take 1 - KL to make it similarity metric. NB: normalized KL div for SDS can be > 1
         return 1 - kl_divergence(p, q, sds, symmetrical=symmetrical)
     elif algorithm == 'point_similarity':
-        return point_similarity(p, q, sds=sds)
+        return point_pmf_similarity(p, q, sds=sds)
     elif algorithm == 'wasserstein':
         return -wasserstein_distance(p, q, sds=sds)
     else:
@@ -290,7 +295,7 @@ def wasserstein_distance(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float
     return res
 
 
-def point_similarity(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float:
+def point_pmf_similarity(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float:
     # -> [0, active_size]
     similarity = np.fmin(p, q).sum()
     if sds is not None:
