@@ -188,7 +188,7 @@ def sequence_similarity_by_prefixes(
             )
             for i in range(n)
         ]
-    else:
+    else:   # distribution (with specified `algorithm`)
         sims = []
         histogram1, histogram2 = np.zeros(sds.size), np.zeros(sds.size)
         for i in range(n):
@@ -300,9 +300,15 @@ def point_similarity(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float:
 
 
 # ==================== Errors ====================
-def standardize_sample_distribution(x: np.ndarray) -> np.ndarray:
-    unbiased_x = x - np.mean(x)
-    return safe_divide(unbiased_x, np.max(x) - np.min(x), default=unbiased_x)
+def standardize_sample_distribution(x: np.ndarray, unbias_func: str) -> np.ndarray:
+    if unbias_func == 'mean':
+        unbiased_x = x - np.mean(x)
+        return safe_divide(unbiased_x, np.std(x), default=unbiased_x)
+    elif unbias_func == 'min':
+        unbiased_x = x - np.min(x)
+        return safe_divide(unbiased_x, np.max(x) - np.min(x), default=unbiased_x)
+    else:
+        raise KeyError(f'Unbias func {unbias_func} is not supported')
 
 
 def mean_absolute_error(x: np.ndarray, y: np.ndarray) -> float:
