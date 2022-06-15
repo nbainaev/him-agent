@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 from htm.bindings.sdr import SDR
 
-from hima.common.config_utils import extracted_type, resolve_init_params
+from hima.common.config_utils import extracted_type, resolve_init_params, resolve_absolute_quantity
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
@@ -119,6 +119,13 @@ def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
     elif tp_type == 'SandwichTp':
         from hima.experiments.temporal_pooling.sandwich_tp import SandwichTp
         tp_config = resolve_init_params(tp_config, seed=seed)
+
+        # hacky hack to set pooling restriction propagated to upper SP
+        if 'max_intermediate_used' in tp_config and tp_config['max_intermediate_used'] is not None:
+            tp_config['max_intermediate_used'] = resolve_absolute_quantity(
+                tp_config['max_intermediate_used'], feedforward_sds.active_size
+            )
+
         if not tp_config['only_upper']:
             tp_config['lower_sp_conf'] = resolve_init_params(
                 tp_config['lower_sp_conf'],
