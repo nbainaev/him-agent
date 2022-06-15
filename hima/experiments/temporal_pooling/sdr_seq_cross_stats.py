@@ -139,7 +139,10 @@ class OnlineElementwiseSimilarityMatrix(SimilarityMatrix):
         self.current_seq = []
         self.current_i_seq = sequence_id
 
-    def update(self, sdr: SparseSdr):
+    def update(self, sequence_id: int, sdr: SparseSdr):
+        if self.current_i_seq != sequence_id:
+            self.new_sequence(sequence_id)
+
         self.current_seq.append(set(sdr))
         self.step += 1
 
@@ -220,7 +223,10 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
         self.current_seq_hist = np.zeros(self.sds.size)
         self.current_i_seq = sequence_id
 
-    def update(self, sdr: SparseSdr):
+    def update(self, sequence_id: int, sdr: SparseSdr):
+        if self.current_i_seq != sequence_id:
+            self.new_sequence(sequence_id)
+
         # discount preserving `hist / step = 1 * active_size`
         self.current_seq_hist *= self.discount
         self.step *= self.discount

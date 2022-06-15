@@ -11,11 +11,18 @@ import wandb
 from matplotlib import pyplot as plt
 from wandb.sdk.wandb_run import Run
 
+from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
+from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
 from hima.experiments.temporal_pooling.new.metrics import (
     similarity_matrix,
-    standardize_sample_distribution, multiplicative_loss
+    standardize_sample_distribution, multiplicative_loss, DISTR_SIM_PMF, DISTR_SIM_KL
 )
+from hima.experiments.temporal_pooling.sdr_seq_cross_stats import (
+    OnlineElementwiseSimilarityMatrix,
+    OnlinePmfSimilarityMatrix, OfflinePmfSimilarityMatrix
+)
+from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
 from hima.experiments.temporal_pooling.utils import rename_dict_keys
 
 
@@ -35,29 +42,51 @@ class RunProgress:
 
 
 class ExperimentStats:
+    n_sequences: int
     progress: RunProgress
     logger: Optional[Run]
     blocks: dict[str, Any]
-    sequence_ids_order: list[int]
-    sequences_block_stats: dict[int, dict[str, Any]]
+    stats_config: StatsMetricsConfig
 
-    def __init__(self, progress: RunProgress, logger: Optional[Run], blocks: dict[str, Any]):
+    sequence_ids_order: list[int]
+    sequences_block_stats: dict[int, dict[str, BlockStats]]
+    sequences_block_cross_stats: dict
+
+    debug: bool
+
+    def __init__(
+            self, n_sequences: int, progress: RunProgress, logger: Optional[Run],
+            blocks: dict[str, Any], stats_config: StatsMetricsConfig, debug: bool
+    ):
+        self.n_sequences = n_sequences
         self.progress = progress
         self.logger = logger
         self.blocks = blocks
+        self.stats_config = stats_config
+        self.debug = debug
+
         self.sequences_block_stats = {}
+        self.sequences_block_cross_stats = {}
         self.sequence_ids_order = []
+
+    def on_new_epoch(self):
+        self.sequences_block_stats.clear()
+        self.sequence_ids_order.clear()
 
     def on_new_sequence(self, sequence_id: int):
         if sequence_id == self.current_sequence_id:
             return
-        self.sequence_ids_order.append(sequence_id)
-        self.sequences_block_stats[sequence_id] = {}
 
+        self.sequence_ids_order.append(sequence_id)
+
+        self.sequences_block_stats[sequence_id] = {}
         for block_name in self.blocks:
             block = self.blocks[block_name]
             block.reset_stats()
             self.current_block_stats[block.name] = block.stats
+
+        if sequence_id not in self.sequences_block_cross_stats:
+            self._init_cross_stats(sequence_id)
 
     @property
     def current_sequence_id(self):
@@ -71,8 +100,15 @@ class ExperimentStats:
     def current_block_stats(self):
         return self.sequences_block_stats[self.current_sequence_id]
 
+    @property
+    def current_block_cross_stats(self):
+        return self.sequences_block_cross_stats[self.current_sequence_id]
+
+    def on_block_step(self, block, block_output_sdr: SparseSdr):
+        self.update_block_cross_stats(block, block_output_sdr)
+
     def on_step(self):
-        if self.logger is None:
+        if self.logger is None and not self.debug:
             return
 
         metrics = {
@@ -89,7 +125,7 @@ class ExperimentStats:
             self.logger.log(metrics, step=self.progress.step)
 
     def on_finish(self):
-        if not self.logger:
+        if not self.logger and not self.debug:
             return
 
         metrics = {}
@@ -97,78 +133,91 @@ class ExperimentStats:
         optimized_metrics = []
         for block_name in self.current_block_stats:
             block = self.blocks[block_name]
-            block_metrics, block_diff_metrics = {}, {}
             if block_name.startswith('generator'):
-                block_metrics, block_diff_metrics = self.summarize_input(block)
+                self.summarize_input(block, metrics, diff_metrics)
             elif block_name.startswith('spatial_pooler'):
-                block_metrics = self.summarize_sp(block)
+                self.summarize_sp(block, metrics)
             elif block_name.startswith('temporal_memory'):
                 ...
-            else:   # temporal_pooler
-                block_metrics, block_diff_metrics, repr_pmf_cov = self.summarize_tp(block)
-                optimized_metrics.append(repr_pmf_cov)
-
-            block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/epoch/')
-            metrics |= block_metrics
-            diff_metrics.append((block.tag, block_diff_metrics))
+            elif block.name.startswith('temporal_pooler'):
+                self.summarize_tp(block, metrics, diff_metrics, optimized_metrics)
+            else:
+                raise KeyError(f'Block {block.name} is not supported')
 
         metrics |= self.summarize_similarity_errors(diff_metrics, optimized_metrics)
 
         if self.logger:
             self.logger.log(metrics, step=self.progress.step)
 
-    def summarize_input(self, block):
-        block_stats = self.current_block_stats[block.name]
-        metrics = block_stats.final_metrics()
-        diff_metrics = {}
-        for metric_key in metrics:
-            metric_value = metrics[metric_key]
+    def summarize_input(self, block, metrics: dict, diff_metrics: list):
+        offline_metrics = self.current_block_stats[block.name].final_metrics()
 
-            if metric_key == 'raw_sim_mx_el':
-                diff_metrics['raw_sim_mx'] = metric_value
-            if metric_key == 'sim_mx_el':
-                diff_metrics['sim_mx'] = metric_value
+        block_diff_metrics = {
+            'raw_sim_mx': offline_metrics['raw_sim_mx_el'],
+            'sim_mx': offline_metrics['sim_mx_el']
+        }
+        diff_metrics.append((block.tag, block_diff_metrics))
 
-            if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
-                metrics[metric_key] = self.plot_representations(metric_value)
-        return metrics, diff_metrics
+        self.transform_sim_mx_to_plots(offline_metrics)
+        metrics |= offline_metrics
 
-    def summarize_sp(self, block):
-        raw_metrics = self._collect_block_final_stats(block)
-        metrics = sdr_representation_similarities(
-            raw_metrics['representative'], block.output_sds
+    def summarize_sp(self, block, metrics: dict):
+        block_metrics = self._collect_block_final_stats(block)
+
+        # noinspection PyUnresolvedReferences
+        pmfs = [
+            self.sequences_block_stats[seq_id][block.name].seq_stats.aggregate_pmf()
+            for seq_id in range(self.n_sequences)
+        ]
+        # offline pmf similarity matrices sim_mx
+        offline_pmf_similarity = OfflinePmfSimilarityMatrix(
+            pmfs, sds=block.output_sds,
+            unbias_func=self.stats_config.normalization_unbias,
+            algorithm=DISTR_SIM_PMF, symmetrical=self.stats_config.symmetrical_similarity
         )
-        metrics |= pmf_similarities(
-            raw_metrics['distribution'], block.output_sds
-        )
-        metrics['mean_repr_pmf_coverage'] = np.mean(raw_metrics['representative_pmf_coverage'])
-        metrics['mean_relative_sparsity'] = np.mean(raw_metrics['relative_sparsity'])
+        block_metrics |= offline_pmf_similarity.final_metrics()
 
-        for metric_key in metrics:
-            metric_value = metrics[metric_key]
-            if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
-                metrics[metric_key] = self.plot_representations(metric_value)
-        return metrics
+        # online pmf similarity matrices
+        for block_online_similarity_matrix in self.current_block_cross_stats[block.name].values():
+            block_metrics |= block_online_similarity_matrix.final_metrics()
 
-    def summarize_tp(self, block):
-        raw_metrics = self._collect_block_final_stats(block)
-        metrics = sdr_representation_similarities(
-            raw_metrics['representative'], block.output_sds
-        )
-        metrics |= pmf_similarities(
-            raw_metrics['distribution'], block.output_sds
-        )
-        metrics['mean_repr_pmf_coverage'] = np.mean(raw_metrics['representative_pmf_coverage'])
-        metrics['mean_relative_sparsity'] = np.mean(raw_metrics['relative_sparsity'])
+        block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/epoch/')
 
-        diff_metrics = {}
-        for metric_key in metrics:
-            metric_value = metrics[metric_key]
-            if metric_key in {'raw_sim_mx', 'sim_mx'}:
-                diff_metrics[metric_key] = metric_value
-            if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
-                metrics[metric_key] = self.plot_representations(metric_value)
-        return metrics, diff_metrics, metrics['mean_repr_pmf_coverage']
+        self.transform_sim_mx_to_plots(block_metrics)
+
+        metrics |= block_metrics
+
+    def summarize_tp(self, block, metrics: dict, diff_metrics: list, optimized_metrics: list):
+        block_metrics = self._collect_block_final_stats(block)
+        optimized_metrics.append(block_metrics['mean_pmf_coverage'])
+
+        # noinspection PyUnresolvedReferences
+        pmfs = [
+            self.sequences_block_stats[seq_id][block.name].seq_stats.aggregate_pmf()
+            for seq_id in range(self.n_sequences)
+        ]
+        # offline pmf similarity matrices sim_mx
+        offline_pmf_similarity_matrix = OfflinePmfSimilarityMatrix(
+            pmfs, sds=block.output_sds,
+            unbias_func=self.stats_config.normalization_unbias,
+            algorithm=DISTR_SIM_PMF, symmetrical=self.stats_config.symmetrical_similarity
+        )
+        offline_pmf_similarity = offline_pmf_similarity_matrix.final_metrics()
+
+        block_metrics |= offline_pmf_similarity
+        block_diff_metrics = {
+            'raw_sim_mx': offline_pmf_similarity['raw_sim_mx_pmf'],
+            'sim_mx': offline_pmf_similarity['sim_mx_pmf']
+        }
+        diff_metrics.append((block.tag, block_diff_metrics))
+
+        # online pmf similarity matrices
+        for block_online_similarity_matrix in self.current_block_cross_stats[block.name].values():
+            block_metrics |= block_online_similarity_matrix.final_metrics()
+
+        block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/epoch/')
+        self.transform_sim_mx_to_plots(block_metrics)
+        metrics |= block_metrics
 
     def summarize_similarity_errors(self, diff_metrics, optimized_metrics):
         input_tag, input_sims = diff_metrics[0]
@@ -177,7 +226,8 @@ class ExperimentStats:
             for sim_key in input_sims
         }
 
-        i, discount, gamma, loss = 0, .8, 1, 0
+        discount = self.stats_config.loss_layer_discount
+        i, gamma, loss = 0, 1, 0
         for block_tag, block_sim_metrics in diff_metrics[1:]:
             for metric_key in block_sim_metrics:
                 sim_mx = block_sim_metrics[metric_key]
@@ -212,7 +262,7 @@ class ExperimentStats:
     @classmethod
     def _plot_similarity_matrices(cls, **sim_matrices):
         n = len(sim_matrices)
-        heatmap_size = 6
+        heatmap_size = 4
         fig, axes = plt.subplots(
             nrows=1, ncols=n, sharey='all',
             figsize=(heatmap_size * n, heatmap_size)
@@ -228,23 +278,115 @@ class ExperimentStats:
 
     def _collect_block_final_stats(self, block) -> dict[str, Any]:
         result = {}
-        n_sequences = len(self.sequences_block_stats)
-        for seq_ind in self.sequences_block_stats:
-            block_stat = self.sequences_block_stats[seq_ind][block.name]
+        # collect/reorder from (seq_id, block, metric) -> (block, metric, seq_id)
+        for seq_id in range(self.n_sequences):
+            block_stat = self.sequences_block_stats[seq_id][block.name]
             final_metrics = block_stat.final_metrics()
             for metric_key in final_metrics:
                 if metric_key not in result:
-                    result[metric_key] = [None]*n_sequences
-                result[metric_key][seq_ind] = final_metrics[metric_key]
+                    result[metric_key] = [None]*self.n_sequences
+                result[metric_key][seq_id] = final_metrics[metric_key]
 
         for metric_key in result:
             if isinstance(result[metric_key][0], np.ndarray):
                 result[metric_key] = np.vstack(result[metric_key])
+            else:
+                result[metric_key] = np.mean(result[metric_key])
         return result
+
+    def update_block_cross_stats(self, block, block_output_sdr: SparseSdr):
+        current_block_cross_stats = self.current_block_cross_stats[block.name]
+
+        if block.name.startswith('generator'):
+            ...
+        elif block.name.startswith('spatial_pooler'):
+            for block_online_similarity_matrix in current_block_cross_stats.values():
+                block_online_similarity_matrix.update(
+                    sequence_id=self.current_sequence_id, sdr=block_output_sdr
+                )
+        elif block.name.startswith('temporal_memory'):
+            ...
+        elif block.name.startswith('temporal_pooler'):
+            for block_online_similarity_matrix in current_block_cross_stats.values():
+                block_online_similarity_matrix.update(
+                    sequence_id=self.current_sequence_id, sdr=block_output_sdr
+                )
+        else:
+            raise KeyError(f'Block {block.name} is not supported')
+
+    def _init_cross_stats(self, sequence_id):
+        self.sequences_block_cross_stats[sequence_id] = {}
+        current_cross_stats = self.sequences_block_cross_stats[sequence_id]
+
+        for block_name in self.blocks:
+            block = self.blocks[block_name]
+
+            if block_name.startswith('generator'):
+                ...
+            elif block_name.startswith('spatial_pooler'):
+                current_cross_stats[block.name] = {
+                    'online_el': OnlineElementwiseSimilarityMatrix(
+                        n_sequences=self.n_sequences,
+                        unbias_func=self.stats_config.normalization_unbias,
+                        discount=self.stats_config.prefix_similarity_discount,
+                        symmetrical=self.stats_config.symmetrical_similarity
+                    ),
+                    'online_pmf': OnlinePmfSimilarityMatrix(
+                        n_sequences=self.n_sequences,
+                        sds=block.output_sds,
+                        unbias_func=self.stats_config.normalization_unbias,
+                        discount=self.stats_config.prefix_similarity_discount,
+                        symmetrical=self.stats_config.symmetrical_similarity,
+                        algorithm=DISTR_SIM_PMF
+                    ),
+                    'online_kl': OnlinePmfSimilarityMatrix(
+                        n_sequences=self.n_sequences,
+                        sds=block.output_sds,
+                        unbias_func=self.stats_config.normalization_unbias,
+                        discount=self.stats_config.prefix_similarity_discount,
+                        symmetrical=self.stats_config.symmetrical_similarity,
+                        algorithm=DISTR_SIM_KL
+                    )
+                }
+            elif block_name.startswith('temporal_memory'):
+                ...
+            elif block.name.startswith('temporal_pooler'):
+                current_cross_stats[block.name] = {
+                    'online_el': OnlineElementwiseSimilarityMatrix(
+                        n_sequences=self.n_sequences,
+                        unbias_func=self.stats_config.normalization_unbias,
+                        discount=self.stats_config.prefix_similarity_discount,
+                        symmetrical=self.stats_config.symmetrical_similarity
+                    ),
+                    'online_pmf': OnlinePmfSimilarityMatrix(
+                        n_sequences=self.n_sequences,
+                        sds=block.output_sds,
+                        unbias_func=self.stats_config.normalization_unbias,
+                        discount=self.stats_config.prefix_similarity_discount,
+                        symmetrical=self.stats_config.symmetrical_similarity,
+                        algorithm=DISTR_SIM_PMF
+                    ),
+                    'online_kl': OnlinePmfSimilarityMatrix(
+                        n_sequences=self.n_sequences,
+                        sds=block.output_sds,
+                        unbias_func=self.stats_config.normalization_unbias,
+                        discount=self.stats_config.prefix_similarity_discount,
+                        symmetrical=self.stats_config.symmetrical_similarity,
+                        algorithm=DISTR_SIM_KL
+                    )
+                }
+            else:
+                raise KeyError(f'Block {block.name} is not supported')
+
+    def transform_sim_mx_to_plots(self, metrics):
+        for metric_key in metrics:
+            metric_value = metrics[metric_key]
+            if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
+                metrics[metric_key] = self.plot_representations(metric_value)
 
     @classmethod
     def plot_representations(cls, repr_matrix):
-        fig, ax = plt.subplots(1, 1, figsize=(16, 8))
+        fig, ax = plt.subplots(1, 1, figsize=(9, 6))
         plot_heatmap(repr_matrix, ax)
         img = wandb.Image(fig)
         plt.close(fig)
@@ -292,7 +434,7 @@ def plot_heatmap(heatmap: np.ndarray, ax):
     if isinstance(heatmap, np.ma.MaskedArray):
         sns.heatmap(
             heatmap, mask=heatmap.mask,
-            vmin=v_min, vmax=v_max, cmap='plasma', ax=ax, annot=True
+            vmin=v_min, vmax=v_max, cmap='plasma', ax=ax, annot=True, annot_kws={"size": 6}
         )
     else:
         sns.heatmap(heatmap, vmin=v_min, vmax=v_max, cmap='plasma', ax=ax, annot=True)

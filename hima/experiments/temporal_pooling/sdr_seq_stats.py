@@ -30,6 +30,7 @@ class SdrSequenceStats:
 
     # aggregate cluster/sequence/set data or metrics
     sdr_history: list[set]
+    pmf_coverage_history: list[float]
     aggregate_histogram: np.ndarray
     aggregate_sparsity: float
     aggregate_relative_sparsity: float
@@ -38,6 +39,7 @@ class SdrSequenceStats:
     def __init__(self, sds: Sds):
         self.sds = sds
         self.sdr_history = []
+        self.pmf_coverage_history = []
         self.aggregate_histogram = np.zeros(self.sds.size)
 
     def aggregate_pmf(self) -> np.ndarray:
@@ -81,6 +83,8 @@ class SdrSequenceStats:
         self.pmf_coverage = safe_divide(covered_pmf.sum(), aggregate_pmf.sum())
         self.entropy_coverage = safe_divide(covered_entropy, self.aggregate_entropy)
 
+        self.pmf_coverage_history.append(self.pmf_coverage)
+
     def step_metrics(self) -> dict[str, Any]:
         return {
             'step/sparsity': self.sparsity,
@@ -96,24 +100,6 @@ class SdrSequenceStats:
         }
 
     def final_metrics(self) -> dict[str, Any]:
-        distribution = self.aggregate_pmf()
-
-        # noinspection PyTypeChecker
-        representative_sdr_lst: list = representation_from_pmf(
-            pmf=distribution, sds=self.sds
-        ).tolist()
-        representative_sdr = set(representative_sdr_lst)
-
-        agg_sdr_size = np.count_nonzero(self.aggregate_histogram)
-        agg_pmf = self.aggregate_pmf()
-
-        agg_relative_sparsity = safe_divide(agg_sdr_size, self.sds.active_size)
-        representative_pmf_coverage = safe_divide(
-            agg_pmf[representative_sdr_lst].sum(), agg_pmf.sum()
-        )
         return {
-            'representative': representative_sdr,
-            'distribution': distribution,
-            'relative_sparsity': agg_relative_sparsity,
-            'representative_pmf_coverage': representative_pmf_coverage
+            'mean_pmf_coverage': np.mean(self.pmf_coverage_history)
         }

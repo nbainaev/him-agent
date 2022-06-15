@@ -6,6 +6,7 @@ run_setup: full
 policy_selection_rule: ordered
 temporal_pooler: sandwich_tp
 seed: 42
+debug: False
 
 pipeline:
   - generator
@@ -46,6 +47,7 @@ stats_and_metrics:
   normalization_unbias: mean
   prefix_similarity_discount: 0.9
   loss_layer_discount: 0.75
+  symmetrical_similarity: False
 
 generator:
   _type_: synthetic

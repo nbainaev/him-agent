@@ -11,6 +11,7 @@ from numpy.random import Generator
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import clip
+from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_encoder
 from hima.experiments.temporal_pooling.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
 from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
@@ -32,13 +33,15 @@ class Policy:
         return len(self._policy)
 
 
-class SyntheticDatasetBlockStats:
+class SyntheticDatasetBlockStats(BlockStats):
     n_policies: int
     actions_sds: Sds
     policies: list[list[set[int]]]
     cross_stats: OfflineElementwiseSimilarityMatrix
 
     def __init__(self, policies: list[Policy], actions_sds: Sds, stats_config: StatsMetricsConfig):
+        super(SyntheticDatasetBlockStats, self).__init__(output_sds=actions_sds)
+
         self.n_policies = len(policies)
         self.policies = [
             [set(a) for a, s in p]
@@ -51,10 +54,6 @@ class SyntheticDatasetBlockStats:
             discount=stats_config.prefix_similarity_discount,
             symmetrical=False
         )
-
-    @staticmethod
-    def step_metrics() -> dict[str, Any]:
-        return {}
 
     def final_metrics(self) -> dict[str, Any]:
         return self.cross_stats.final_metrics()

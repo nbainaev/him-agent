@@ -11,10 +11,13 @@ class StatsMetricsConfig:
     prefix_similarity_discount: float
     loss_layer_discount: float
 
+    symmetrical_similarity: bool
+
     def __init__(
             self, normalization_unbias: str, prefix_similarity_discount: float,
-            loss_layer_discount: float
+            loss_layer_discount: float, symmetrical_similarity: bool
     ):
         self.normalization_unbias = normalization_unbias
         self.prefix_similarity_discount = prefix_similarity_discount
         self.loss_layer_discount = loss_layer_discount
+        self.symmetrical_similarity = symmetrical_similarity

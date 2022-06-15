@@ -12,26 +12,25 @@ from htm.bindings.sdr import SDR
 from hima.common.config_utils import resolve_init_params, extracted
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.sds_stats import SdsStats
+from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
+from hima.experiments.temporal_pooling.sdr_seq_stats import SdrSequenceStats
 
 
-class SpatialPoolerBlockStats:
-    output_sds: Sds
-
-    sds_stats: SdsStats
+class SpatialPoolerBlockStats(BlockStats):
+    seq_stats: SdrSequenceStats
 
     def __init__(self, output_sds: Sds):
-        self.output_sds = output_sds
-        self.sds_stats = SdsStats(self.output_sds)
+        super(SpatialPoolerBlockStats, self).__init__(output_sds)
+        self.seq_stats = SdrSequenceStats(self.output_sds)
 
     def update(self, current_output_sdr: SparseSdr):
-        self.sds_stats.update(current_output_sdr)
+        self.seq_stats.update(current_output_sdr)
 
     def step_metrics(self) -> dict[str, Any]:
-        return self.sds_stats.step_metrics()
+        return self.seq_stats.step_metrics()
 
     def final_metrics(self) -> dict[str, Any]:
-        return self.sds_stats.final_metrics()
+        return self.seq_stats.final_metrics()
 
 
 class SpatialPoolerBlock:
@@ -90,7 +89,8 @@ def resolve_sp(sp_config, ff_sds: Sds, output_sds: Sds, seed: int):
         ff_sds=ff_sds, output_sds=output_sds, seed=seed
     )
     sp_config, ff_sds, output_sds = extracted(sp_config, 'ff_sds', 'output_sds')
-    # if FF/Out SDS was defined in config, they aren't Sds objects
+
+    # if FF/Out SDS was defined in config, they aren't Sds objects, hence explicit conversion
     ff_sds = Sds.as_sds(ff_sds)
     output_sds = Sds.as_sds(output_sds)
 

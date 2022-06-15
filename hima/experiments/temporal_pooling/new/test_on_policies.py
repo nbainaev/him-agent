@@ -75,7 +75,7 @@ class PoliciesExperiment(Runner):
 
     def __init__(
             self, config: TConfig, run_setup: Union[dict, str], seed: int,
-            pipeline: list[str], temporal_pooler: str, stats_and_metrics: dict,
+            pipeline: list[str], temporal_pooler: str, stats_and_metrics: dict, debug: bool,
             **_
     ):
         super().__init__(config, **config)
@@ -91,6 +91,12 @@ class PoliciesExperiment(Runner):
         self.blocks = self.build_blocks(temporal_pooler)
         self.input_data = self.blocks[self.pipeline[0]]
         self.progress = RunProgress()
+        self.stats = ExperimentStats(
+            n_sequences=self.run_setup.n_policies,
+            progress=self.progress, logger=self.logger, blocks=self.blocks,
+            stats_config=self.stats_config,
+            debug=debug
+        )
 
     def run(self):
         print('==> Run')
@@ -104,10 +110,7 @@ class PoliciesExperiment(Runner):
     @timed
     def train_epoch(self):
         self.progress.next_epoch()
-        self.stats = ExperimentStats(
-            progress=self.progress, logger=self.logger, blocks=self.blocks
-        )
-        self.reset_blocks_stats()
+        self.stats.on_new_epoch()
 
         for policy in self.input_data:
             for i in range(self.run_setup.policy_repeats):
@@ -169,10 +172,6 @@ class PoliciesExperiment(Runner):
         for block_name in self.pipeline:
             if block_name.startswith(block_type):
                 self.blocks[block_name].reset()
-
-    def reset_blocks_stats(self):
-        for block_name in self.pipeline:
-            self.blocks[block_name].reset_stats()
 
     def build_blocks(self, temporal_pooler: str) -> dict:
         blocks = {}

@@ -11,13 +11,15 @@ from hima.common.config_utils import resolve_init_params, extracted, resolve_abs
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import safe_divide
+from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
 from hima.modules.htm.temporal_memory import DelayedFeedbackTM
 
 
-class TemporalMemoryBlockStats:
+class TemporalMemoryBlockStats(BlockStats):
     recall: float
 
-    def __init__(self):
+    def __init__(self, output_sds: Sds):
+        super(TemporalMemoryBlockStats, self).__init__(output_sds=output_sds)
         self.recall = 0.
 
     def update(self, active_cells: SparseSdr, correctly_predicted_cells: SparseSdr):
@@ -27,11 +29,6 @@ class TemporalMemoryBlockStats:
         return {
             'recall': self.recall
         }
-
-    @staticmethod
-    def final_metrics() -> dict[str, Any]:
-        # TODO: collect repr and distr
-        return {}
 
 
 class ContextTemporalMemoryBlock:
@@ -61,7 +58,7 @@ class ContextTemporalMemoryBlock:
             active_size=self.feedforward_sds.active_size
         )
         self.tm_config = partially_resolved_tm_config
-        self.stats = TemporalMemoryBlockStats()
+        self.stats = TemporalMemoryBlockStats(output_sds=self.output_sds)
 
     @property
     def tag(self) -> str:
@@ -85,7 +82,7 @@ class ContextTemporalMemoryBlock:
         self._apical_feedback = []
 
     def reset_stats(self):
-        self.stats = TemporalMemoryBlockStats()
+        self.stats = TemporalMemoryBlockStats(output_sds=self.output_sds)
 
     def compute(
             self, feedforward_input: SparseSdr, basal_context: SparseSdr, learn: bool

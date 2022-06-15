@@ -12,11 +12,8 @@ from htm.bindings.sdr import SDR
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone
-from hima.experiments.temporal_pooling.new.metrics import (
-    similarity_matrix,
-    standardize_sample_distribution
-)
-from hima.experiments.temporal_pooling.sds_stats import SdsStats
+from hima.experiments.temporal_pooling.sdr_seq_stats import SdrSequenceStats
+from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
 
 
 class RoomObservationSequence:
@@ -38,33 +35,28 @@ class RoomObservationSequence:
 
 class AnimalAiDatasetBlockStats:
     n_sequences: int
-    output_sds: Sds
+    observations_sds: Sds
+    observation_sequences: list[list[set[int]]]
+    sds_stats: SdrSequenceStats
+    # cross_stats: SdrSequencesOfflineCrossStats
 
-    _observation_sequences: list[list[set[int]]]
-
-    sds_stats: SdsStats
-
-    # epoch final metrics
-    raw_similarity_matrix_elementwise: np.ndarray
-    similarity_matrix_elementwise: np.ndarray
-    raw_similarity_elementwise: np.ndarray
-
-    raw_similarity_matrix_union: np.ndarray
-    similarity_matrix_union: np.ndarray
-    raw_similarity_union: np.ndarray
-
-    raw_similarity_matrix_prefix: np.ndarray
-    similarity_matrix_prefix: np.ndarray
-    raw_similarity_prefix: np.ndarray
-
-    def __init__(self, observation_sequences: list[RoomObservationSequence], sds: Sds):
+    def __init__(
+            self, observation_sequences: list[RoomObservationSequence], sds: Sds,
+            stats_config: StatsMetricsConfig
+    ):
         self.n_sequences = len(observation_sequences)
-        self._observation_sequences = [
+        self.observation_sequences = [
             [set(obs) for obs in seq]
             for seq in observation_sequences
         ]
-        self.output_sds = sds
-        self.sds_stats = SdsStats(self.output_sds)
+        self.observations_sds = sds
+        self.sds_stats = SdrSequenceStats(self.observations_sds)
+        # self.cross_stats = SdrSequencesOfflineCrossStats(
+        #     sequences=self.observation_sequences, sds=self.observations_sds,
+        #     prefix_algorithm='prefix.point_similarity',
+        #     prefix_discount=stats_config.prefix_similarity_discount,
+        #     unbias_func=stats_config.normalization_unbias
+        # )
 
     @staticmethod
     def distance_based_similarities() -> np.ndarray:
@@ -76,36 +68,8 @@ class AnimalAiDatasetBlockStats:
              [0.625, 0.68, 0.69, 0.62, 1]]
         )
 
-    def compute(self):
-        self.raw_similarity_matrix_elementwise = similarity_matrix(
-            self._observation_sequences, algorithm='elementwise',
-            symmetrical=False, sds=self.output_sds
-        )
-        self.raw_similarity_elementwise = self.raw_similarity_matrix_elementwise.mean()
-        self.similarity_matrix_elementwise = standardize_sample_distribution(
-            self.raw_similarity_matrix_elementwise
-        )
-
-        self.raw_similarity_matrix_union = similarity_matrix(
-            self._observation_sequences, algorithm='union.point_similarity',
-            symmetrical=False, sds=self.output_sds
-        )
-        self.raw_similarity_union = self.raw_similarity_matrix_union.mean()
-        self.similarity_matrix_union = standardize_sample_distribution(
-            self.raw_similarity_matrix_union
-        )
-
-        self.raw_similarity_matrix_prefix = similarity_matrix(
-            self._observation_sequences, algorithm='prefix.point_similarity', discount=0.92,
-            symmetrical=False, sds=self.output_sds
-        )
-        self.raw_similarity_prefix = self.raw_similarity_matrix_prefix.mean()
-        self.similarity_matrix_prefix = standardize_sample_distribution(
-            self.raw_similarity_matrix_prefix
-        )
-
     def reset(self):
-        self.sds_stats = SdsStats(self.output_sds)
+        self.sds_stats = SdrSequenceStats(self.observations_sds)
 
     def update(self, current_output_sdr: SparseSdr):
         self.sds_stats.update(current_output_sdr)
@@ -114,19 +78,7 @@ class AnimalAiDatasetBlockStats:
         return self.sds_stats.step_metrics()
 
     def final_metrics(self) -> dict[str, Any]:
-        return {
-            'raw_sim_mx_el': self.raw_similarity_matrix_elementwise,
-            'raw_sim_el': self.raw_similarity_elementwise,
-            'sim_mx_el': self.similarity_matrix_elementwise,
-
-            'raw_sim_mx_un': self.raw_similarity_matrix_union,
-            'raw_sim_un': self.raw_similarity_union,
-            'sim_mx_un': self.similarity_matrix_union,
-
-            'raw_sim_mx_prfx': self.raw_similarity_matrix_prefix,
-            'raw_sim_prfx': self.raw_similarity_prefix,
-            'sim_mx_prfx': self.similarity_matrix_prefix,
-        }
+        return self.cross_stats.final_metrics()
 
 
 class AnimalAiDatasetBlock:
@@ -141,14 +93,18 @@ class AnimalAiDatasetBlock:
 
     _observation_sequences: list[RoomObservationSequence]
 
-    def __init__(self, sds: Sds, observation_sequences: list[RoomObservationSequence]):
+    def __init__(
+            self, sds: Sds, observation_sequences: list[RoomObservationSequence],
+            stats_config: StatsMetricsConfig
+    ):
         self.output_sds = sds
         self._observation_sequences = observation_sequences
         self.n_sequences = len(self._observation_sequences)
         self.n_observations_per_sequence = len(self._observation_sequences[0])
 
-        self.stats = AnimalAiDatasetBlockStats(self._observation_sequences, self.output_sds)
-        self.stats.compute()
+        self.stats = AnimalAiDatasetBlockStats(
+            self._observation_sequences, self.output_sds, stats_config
+        )
 
     @property
     def tag(self) -> str:
@@ -181,7 +137,10 @@ class AAIRotationsGenerator:
         self.n_sequences = len(self.v1_output_sequences)
         self.n_rotations = len(self.v1_output_sequences[0])
 
-    def generate_data(self, n_sequences: int = None, n_observations_per_sequence: int = None):
+    def generate_data(
+            self, stats_config: StatsMetricsConfig,
+            n_sequences: int = None, n_observations_per_sequence: int = None
+    ):
         n_sequences = isnone(n_sequences, self.n_sequences)
         n_rotations = isnone(n_observations_per_sequence, self.n_rotations)
 
@@ -199,6 +158,7 @@ class AAIRotationsGenerator:
         return AnimalAiDatasetBlock(
             sds=self.v1_output_sds,
             observation_sequences=observation_sequences,
+            stats_config=stats_config
         )
 
     @staticmethod
