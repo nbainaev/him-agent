@@ -213,6 +213,12 @@ class ExperimentStats:
         for block_online_similarity_matrix in self.sequences_block_cross_stats[block.name].values():
             block_metrics |= block_online_similarity_matrix.final_metrics()
 
+        # track first TP pmf coverage
+        if block.tag[0] in {'2', 3}:
+            pmf_coverage = block_metrics['mean_pmf_coverage']
+            key = f'{block.tag}_mean_pmf_coverage'
+            metrics[key] = pmf_coverage
+
         block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/epoch/')
         self.transform_sim_mx_to_plots(block_metrics)
         metrics |= block_metrics
@@ -224,6 +230,7 @@ class ExperimentStats:
             for sim_key in input_sims
         }
 
+        tracking_metrics = {}
         discount = self.stats_config.loss_layer_discount
         i, gamma, loss = 0, 1, 0
         for block_tag, block_sim_metrics in diff_metrics[1:]:
@@ -239,6 +246,7 @@ class ExperimentStats:
                     metrics[f'{block_tag}/epoch/similarity_mae'] = mae
                 else:
                     metrics[f'{block_tag}/epoch/similarity_smae'] = mae
+                    metrics[f'{block_tag}_similarity_smae'] = mae
                     if block_tag.endswith('_tp'):
                         pmf_coverage = optimized_metrics[i]
                         loss += gamma * multiplicative_loss(mae, pmf_coverage)
@@ -250,29 +258,12 @@ class ExperimentStats:
             metric = metrics[metric_key]
             if isinstance(metric, dict):
                 # dict of similarity matrices
-                result[f'diff/{metric_key}'] = self._plot_similarity_matrices(**metric)
+                result[f'diff/{metric_key}'] = plot_heatmaps_row(**metric)
             else:
                 result[metric_key] = metric
 
         result['loss'] = loss
         return result
-
-    @classmethod
-    def _plot_similarity_matrices(cls, **sim_matrices):
-        n = len(sim_matrices)
-        heatmap_size = 4
-        fig, axes = plt.subplots(
-            nrows=1, ncols=n, sharey='all',
-            figsize=(heatmap_size * n, heatmap_size)
-        )
-
-        for ax, (name, sim_matrix) in zip(axes, sim_matrices.items()):
-            plot_heatmap(sim_matrix, ax)
-            ax.set_title(name, size=10)
-
-        img = wandb.Image(axes[0])
-        plt.close(fig)
-        return img
 
     def _collect_block_final_stats(self, block) -> dict[str, Any]:
         result = {}
@@ -330,14 +321,15 @@ class ExperimentStats:
                         symmetrical=self.stats_config.symmetrical_similarity,
                         algorithm=DISTR_SIM_PMF
                     ),
-                    'online_kl': OnlinePmfSimilarityMatrix(
-                        n_sequences=self.n_sequences,
-                        sds=block.output_sds,
-                        unbias_func=self.stats_config.normalization_unbias,
-                        discount=self.stats_config.prefix_similarity_discount,
-                        symmetrical=self.stats_config.symmetrical_similarity,
-                        algorithm=DISTR_SIM_KL
-                    )
+                    # FIXME: kl-div shows peculiar similarity matrix, investigate later
+                    # 'online_kl': OnlinePmfSimilarityMatrix(
+                    #     n_sequences=self.n_sequences,
+                    #     sds=block.output_sds,
+                    #     unbias_func=self.stats_config.normalization_unbias,
+                    #     discount=self.stats_config.prefix_similarity_discount,
+                    #     symmetrical=self.stats_config.symmetrical_similarity,
+                    #     algorithm=DISTR_SIM_KL
+                    # )
                 }
             elif block_name.startswith('temporal_memory'):
                 self.sequences_block_cross_stats[block.name] = {}
@@ -357,14 +349,15 @@ class ExperimentStats:
                         symmetrical=self.stats_config.symmetrical_similarity,
                         algorithm=DISTR_SIM_PMF
                     ),
-                    'online_kl': OnlinePmfSimilarityMatrix(
-                        n_sequences=self.n_sequences,
-                        sds=block.output_sds,
-                        unbias_func=self.stats_config.normalization_unbias,
-                        discount=self.stats_config.prefix_similarity_discount,
-                        symmetrical=self.stats_config.symmetrical_similarity,
-                        algorithm=DISTR_SIM_KL
-                    )
+                    # FIXME: kl-div shows peculiar similarity matrix, investigate later
+                    # 'online_kl': OnlinePmfSimilarityMatrix(
+                    #     n_sequences=self.n_sequences,
+                    #     sds=block.output_sds,
+                    #     unbias_func=self.stats_config.normalization_unbias,
+                    #     discount=self.stats_config.prefix_similarity_discount,
+                    #     symmetrical=self.stats_config.symmetrical_similarity,
+                    #     algorithm=DISTR_SIM_KL
+                    # )
                 }
             else:
                 raise KeyError(f'Block {block.name} is not supported')
@@ -373,15 +366,37 @@ class ExperimentStats:
         for metric_key in metrics:
             metric_value = metrics[metric_key]
             if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
-                metrics[metric_key] = self.plot_representations(metric_value)
+                metrics[metric_key] = plot_single_heatmap(metric_value)
 
-    @classmethod
-    def plot_representations(cls, repr_matrix):
-        fig, ax = plt.subplots(1, 1, figsize=(9, 6))
-        plot_heatmap(repr_matrix, ax)
-        img = wandb.Image(fig)
-        plt.close(fig)
-        return img
+
+HEATMAP_SIDE_SIZE = 7
+
+
+def plot_single_heatmap(repr_matrix):
+    fig, ax = plt.subplots(1, 1, figsize=(HEATMAP_SIDE_SIZE+1, HEATMAP_SIDE_SIZE-1))
+    plot_heatmap(repr_matrix, ax)
+
+    fig.tight_layout()
+    img = wandb.Image(fig)
+    plt.close(fig)
+    return img
+
+
+def plot_heatmaps_row(**sim_matrices):
+    n = len(sim_matrices)
+    fig, axes = plt.subplots(
+        nrows=1, ncols=n, sharey='all',
+        figsize=(HEATMAP_SIDE_SIZE * n + 1, HEATMAP_SIDE_SIZE - 1)
+    )
+
+    for ax, (name, sim_matrix) in zip(axes, sim_matrices.items()):
+        plot_heatmap(sim_matrix, ax)
+        ax.set_title(name, size=10)
+
+    fig.tight_layout()
+    img = wandb.Image(fig)
+    plt.close(fig)
+    return img
 
 
 def sdr_representation_similarities(representations, sds: Sds):
