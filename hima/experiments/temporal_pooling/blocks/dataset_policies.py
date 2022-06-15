@@ -12,7 +12,7 @@ from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import clip
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_encoder
-from hima.experiments.temporal_pooling.sdr_seq_cross_stats import SdrSequencesOfflineCrossStats
+from hima.experiments.temporal_pooling.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
 from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
 
 
@@ -36,7 +36,7 @@ class SyntheticDatasetBlockStats:
     n_policies: int
     actions_sds: Sds
     policies: list[list[set[int]]]
-    cross_stats: SdrSequencesOfflineCrossStats
+    cross_stats: OfflineElementwiseSimilarityMatrix
 
     def __init__(self, policies: list[Policy], actions_sds: Sds, stats_config: StatsMetricsConfig):
         self.n_policies = len(policies)
@@ -45,11 +45,11 @@ class SyntheticDatasetBlockStats:
             for p in policies
         ]
         self.actions_sds = actions_sds
-        self.cross_stats = SdrSequencesOfflineCrossStats(
-            sequences=self.policies, sds=self.actions_sds,
-            prefix_algorithm='prefix.elementwise',
-            prefix_discount=stats_config.prefix_similarity_discount,
-            unbias_func=stats_config.normalization_unbias
+        self.cross_stats = OfflineElementwiseSimilarityMatrix(
+            sequences=self.policies,
+            unbias_func=stats_config.normalization_unbias,
+            discount=stats_config.prefix_similarity_discount,
+            symmetrical=False
         )
 
     @staticmethod
