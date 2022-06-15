@@ -74,7 +74,7 @@ def distribution_similarity(
     if algorithm == 'kl-divergence':
         # We take 1 - KL to make it similarity metric. NB: normalized KL div for SDS can be > 1
         return 1 - kl_divergence(p, q, sds, symmetrical=symmetrical)
-    elif algorithm == 'point_similarity':
+    elif algorithm == 'pmf_pointwise':
         return point_pmf_similarity(p, q, sds=sds)
     elif algorithm == 'wasserstein':
         return -wasserstein_distance(p, q, sds=sds)
