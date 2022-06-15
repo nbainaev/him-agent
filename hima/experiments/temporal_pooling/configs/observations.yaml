@@ -38,6 +38,12 @@ run_setups:
     sp_output_sds: [1000, 25]
     tp_output_sds: [1000, 25]
 
+stats_and_metrics:
+  normalization_unbias: mean
+  prefix_similarity_discount: 0.9
+  loss_layer_discount: 0.75
+  symmetrical_similarity: False
+
 generator:
   _type_: aai_rotation
   sds: [180, 8]

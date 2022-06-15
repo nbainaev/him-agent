@@ -20,7 +20,7 @@ from hima.experiments.temporal_pooling.new.metrics import (
 )
 from hima.experiments.temporal_pooling.sdr_seq_cross_stats import (
     OnlineElementwiseSimilarityMatrix,
-    OnlinePmfSimilarityMatrix, OfflinePmfSimilarityMatrix
+    OnlinePmfSimilarityMatrix, OfflinePmfSimilarityMatrix, SimilarityMatrix
 )
 from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
 from hima.experiments.temporal_pooling.utils import rename_dict_keys
@@ -50,7 +50,7 @@ class ExperimentStats:
 
     sequence_ids_order: list[int]
     sequences_block_stats: dict[int, dict[str, BlockStats]]
-    sequences_block_cross_stats: dict
+    sequences_block_cross_stats: dict[str, dict[str, SimilarityMatrix]]
 
     debug: bool
 
@@ -66,8 +66,10 @@ class ExperimentStats:
         self.debug = debug
 
         self.sequences_block_stats = {}
-        self.sequences_block_cross_stats = {}
         self.sequence_ids_order = []
+
+        self.sequences_block_cross_stats = {}
+        self._init_cross_stats()
 
     def on_new_epoch(self):
         self.sequences_block_stats.clear()
@@ -85,8 +87,7 @@ class ExperimentStats:
             block.reset_stats()
             self.current_block_stats[block.name] = block.stats
 
-        if sequence_id not in self.sequences_block_cross_stats:
-            self._init_cross_stats(sequence_id)
+        self.notify_cross_stats_new_sequence(sequence_id)
 
     @property
     def current_sequence_id(self):
@@ -99,10 +100,6 @@ class ExperimentStats:
     @property
     def current_block_stats(self):
         return self.sequences_block_stats[self.current_sequence_id]
-
-    @property
-    def current_block_cross_stats(self):
-        return self.sequences_block_cross_stats[self.current_sequence_id]
 
     def on_block_step(self, block, block_output_sdr: SparseSdr):
         self.update_block_cross_stats(block, block_output_sdr)
@@ -150,16 +147,18 @@ class ExperimentStats:
             self.logger.log(metrics, step=self.progress.step)
 
     def summarize_input(self, block, metrics: dict, diff_metrics: list):
-        offline_metrics = self.current_block_stats[block.name].final_metrics()
+        block_metrics = self.current_block_stats[block.name].final_metrics()
 
         block_diff_metrics = {
-            'raw_sim_mx': offline_metrics['raw_sim_mx_el'],
-            'sim_mx': offline_metrics['sim_mx_el']
+            'raw_sim_mx': block_metrics['raw_sim_mx_el'],
+            'sim_mx': block_metrics['sim_mx_el']
         }
         diff_metrics.append((block.tag, block_diff_metrics))
 
-        self.transform_sim_mx_to_plots(offline_metrics)
-        metrics |= offline_metrics
+        block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/epoch/')
+        self.transform_sim_mx_to_plots(block_metrics)
+
+        metrics |= block_metrics
 
     def summarize_sp(self, block, metrics: dict):
         block_metrics = self._collect_block_final_stats(block)
@@ -178,11 +177,10 @@ class ExperimentStats:
         block_metrics |= offline_pmf_similarity.final_metrics()
 
         # online pmf similarity matrices
-        for block_online_similarity_matrix in self.current_block_cross_stats[block.name].values():
+        for block_online_similarity_matrix in self.sequences_block_cross_stats[block.name].values():
             block_metrics |= block_online_similarity_matrix.final_metrics()
 
         block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/epoch/')
-
         self.transform_sim_mx_to_plots(block_metrics)
 
         metrics |= block_metrics
@@ -212,7 +210,7 @@ class ExperimentStats:
         diff_metrics.append((block.tag, block_diff_metrics))
 
         # online pmf similarity matrices
-        for block_online_similarity_matrix in self.current_block_cross_stats[block.name].values():
+        for block_online_similarity_matrix in self.sequences_block_cross_stats[block.name].values():
             block_metrics |= block_online_similarity_matrix.final_metrics()
 
         block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/epoch/')
@@ -294,37 +292,30 @@ class ExperimentStats:
                 result[metric_key] = np.mean(result[metric_key])
         return result
 
+    def notify_cross_stats_new_sequence(self, sequence_id: int):
+        for block_name in self.blocks:
+            current_block_cross_stats = self.sequences_block_cross_stats[block_name]
+            for block_online_similarity_matrix in current_block_cross_stats.values():
+                block_online_similarity_matrix.new_sequence(
+                    sequence_id=sequence_id
+                )
+
     def update_block_cross_stats(self, block, block_output_sdr: SparseSdr):
-        current_block_cross_stats = self.current_block_cross_stats[block.name]
+        current_block_cross_stats = self.sequences_block_cross_stats[block.name]
+        for block_online_similarity_matrix in current_block_cross_stats.values():
+            block_online_similarity_matrix.update(sdr=block_output_sdr)
 
-        if block.name.startswith('generator'):
-            ...
-        elif block.name.startswith('spatial_pooler'):
-            for block_online_similarity_matrix in current_block_cross_stats.values():
-                block_online_similarity_matrix.update(
-                    sequence_id=self.current_sequence_id, sdr=block_output_sdr
-                )
-        elif block.name.startswith('temporal_memory'):
-            ...
-        elif block.name.startswith('temporal_pooler'):
-            for block_online_similarity_matrix in current_block_cross_stats.values():
-                block_online_similarity_matrix.update(
-                    sequence_id=self.current_sequence_id, sdr=block_output_sdr
-                )
-        else:
-            raise KeyError(f'Block {block.name} is not supported')
-
-    def _init_cross_stats(self, sequence_id):
-        self.sequences_block_cross_stats[sequence_id] = {}
-        current_cross_stats = self.sequences_block_cross_stats[sequence_id]
+    def _init_cross_stats(self):
+        self.sequences_block_cross_stats = {}
 
         for block_name in self.blocks:
             block = self.blocks[block_name]
 
             if block_name.startswith('generator'):
-                ...
+                self.sequences_block_cross_stats[block.name] = {}
             elif block_name.startswith('spatial_pooler'):
-                current_cross_stats[block.name] = {
+                self.sequences_block_cross_stats[block.name] = {}
+                self.sequences_block_cross_stats[block.name] = {
                     'online_el': OnlineElementwiseSimilarityMatrix(
                         n_sequences=self.n_sequences,
                         unbias_func=self.stats_config.normalization_unbias,
@@ -349,9 +340,9 @@ class ExperimentStats:
                     )
                 }
             elif block_name.startswith('temporal_memory'):
-                ...
+                self.sequences_block_cross_stats[block.name] = {}
             elif block.name.startswith('temporal_pooler'):
-                current_cross_stats[block.name] = {
+                self.sequences_block_cross_stats[block.name] = {
                     'online_el': OnlineElementwiseSimilarityMatrix(
                         n_sequences=self.n_sequences,
                         unbias_func=self.stats_config.normalization_unbias,

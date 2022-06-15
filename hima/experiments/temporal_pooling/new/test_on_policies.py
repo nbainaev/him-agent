@@ -38,6 +38,7 @@ class RunSetup:
     steps_per_policy: int
     policy_repeats: int
     epochs: int
+    log_schedule: int
 
     tp_output_sds: Sds
     sp_output_sds: Sds
@@ -45,7 +46,8 @@ class RunSetup:
     def __init__(
             self, n_policies: int, n_states: int, n_actions: int,
             steps_per_policy: Optional[int], policy_repeats: int, epochs: int, total_repeats: int,
-            tp_output_sds: Sds.TShortNotation, sp_output_sds: Sds.TShortNotation
+            tp_output_sds: Sds.TShortNotation, sp_output_sds: Sds.TShortNotation,
+            log_schedule: int = 1
     ):
         self.n_policies = n_policies
         self.n_states = n_states
@@ -54,6 +56,7 @@ class RunSetup:
         self.policy_repeats, self.epochs = resolve_epoch_runs(
             policy_repeats, epochs, total_repeats
         )
+        self.log_schedule = log_schedule
 
         self.tp_output_sds = Sds(short_notation=tp_output_sds)
         self.sp_output_sds = Sds(short_notation=sp_output_sds)
@@ -116,7 +119,8 @@ class PoliciesExperiment(Runner):
             for i in range(self.run_setup.policy_repeats):
                 self.run_policy(policy, learn=True)
 
-        self.stats.on_finish()
+        if self.progress.epoch == 0 or (self.progress.epoch + 1) % self.run_setup.log_schedule == 0:
+            self.stats.on_finish()
 
     def run_policy(self, policy: Policy, learn=True):
         self.reset_blocks(block_type='temporal_memory')
@@ -163,6 +167,7 @@ class PoliciesExperiment(Runner):
                         active_input=feedforward, predicted_input=feedforward, learn=learn
                     )
 
+            self.stats.on_block_step(block, output)
             feedforward = output
             prev_block = block
 

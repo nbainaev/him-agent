@@ -32,9 +32,15 @@ class SimilarityMatrix:
         self._raw_mx = raw_mx
         self._mx = None
 
+    def new_sequence(self, sequence_id: int):
+        ...
+
+    def update(self, **kwargs):
+        ...
+
     def final_metrics(self) -> dict[str, Any]:
         tag = self.tag
-        if self.online or self._mx is None:
+        if self._mx is None:
             self._mx = standardize_sample_distribution(self._raw_mx, unbias_func=self.unbias_func)
 
         return {
@@ -123,8 +129,9 @@ class OnlineElementwiseSimilarityMatrix(SimilarityMatrix):
         self.step = 0
 
         raw_mx = np.empty((n_sequences, n_sequences))
-        full_mask = np.ones_like(raw_mx, dtype=bool)
-        raw_mx = np.ma.array(raw_mx, mask=full_mask)
+        mask = np.ones_like(raw_mx, dtype=bool)
+        raw_mx = np.ma.array(raw_mx, mask=mask)
+        raw_mx.soften_mask()
 
         super(OnlineElementwiseSimilarityMatrix, self).__init__(
             tag='prfx_el', raw_mx=raw_mx, unbias_func=unbias_func, online=True
@@ -133,16 +140,13 @@ class OnlineElementwiseSimilarityMatrix(SimilarityMatrix):
     def new_sequence(self, sequence_id: int):
         if self.current_seq is not None:
             self.sequences[self.current_i_seq] = self.current_seq
-            self.cum_sim.fill(0)
-            self.step = 0
 
+        self.cum_sim.fill(0)
+        self.step = 0
         self.current_seq = []
         self.current_i_seq = sequence_id
 
-    def update(self, sequence_id: int, sdr: SparseSdr):
-        if self.current_i_seq != sequence_id:
-            self.new_sequence(sequence_id)
-
+    def update(self, sdr: SparseSdr):
         self.current_seq.append(set(sdr))
         self.step += 1
 
@@ -165,7 +169,10 @@ class OnlineElementwiseSimilarityMatrix(SimilarityMatrix):
         i = self.current_i_seq
         self.cum_sim[j] += sim
         self._raw_mx[i, j] = self.cum_sim[j] / self.step
-        self._raw_mx.mask[i, j] = False
+
+    def final_metrics(self) -> dict[str, Any]:
+        self._mx = standardize_sample_distribution(self._raw_mx, unbias_func=self.unbias_func)
+        return super(OnlineElementwiseSimilarityMatrix, self).final_metrics()
 
 
 class OnlinePmfSimilarityMatrix(SimilarityMatrix):
@@ -207,8 +214,8 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
             raise KeyError(f'Algorithm {algorithm} is not supported')
 
         raw_mx = np.empty((n_sequences, n_sequences))
-        full_mask = np.ones_like(raw_mx, dtype=bool)
-        raw_mx = np.ma.array(raw_mx, mask=full_mask)
+        mask = np.ones_like(raw_mx, dtype=bool)
+        raw_mx = np.ma.array(raw_mx, mask=mask, hard_mask=False)
 
         super(OnlinePmfSimilarityMatrix, self).__init__(
             tag=f'prfx_{tag}', raw_mx=raw_mx, unbias_func=unbias_func, online=True
@@ -217,16 +224,13 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
     def new_sequence(self, sequence_id: int):
         if self.current_seq_hist is not None:
             self.histograms[self.current_i_seq] = self.current_seq_hist
-            self.cum_sim.fill(0)
-            self.step = 0
 
+        self.cum_sim.fill(0)
+        self.step = 0
         self.current_seq_hist = np.zeros(self.sds.size)
         self.current_i_seq = sequence_id
 
-    def update(self, sequence_id: int, sdr: SparseSdr):
-        if self.current_i_seq != sequence_id:
-            self.new_sequence(sequence_id)
-
+    def update(self, sdr: SparseSdr):
         # discount preserving `hist / step = 1 * active_size`
         self.current_seq_hist *= self.discount
         self.step *= self.discount
@@ -239,6 +243,7 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
 
         for j in range(n):
             if self.histograms[j] is None:
+                # print(f'- {j}')
                 continue
 
             y = self.histograms[j]
@@ -251,4 +256,7 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
         i = self.current_i_seq
         self.cum_sim[j] += sim
         self._raw_mx[i, j] = self.cum_sim[j] / self.step
-        self._raw_mx.mask[i, j] = False
+
+    def final_metrics(self) -> dict[str, Any]:
+        self._mx = standardize_sample_distribution(self._raw_mx, unbias_func=self.unbias_func)
+        return super(OnlinePmfSimilarityMatrix, self).final_metrics()

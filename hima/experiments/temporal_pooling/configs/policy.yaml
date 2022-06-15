@@ -27,10 +27,11 @@ run_setups:
     n_actions: 4
     steps_per_policy: ...
     policy_repeats: 3
-    epochs: 2
+    epochs: 3
     total_repeats: ...
     sp_output_sds: [400, 10]
     tp_output_sds: [400, 10]
+    log_schedule: 1
 
   full:
     n_policies: 10
@@ -42,6 +43,7 @@ run_setups:
     total_repeats: ...
     sp_output_sds: [500, 16]
     tp_output_sds: [1000, 25]
+    log_schedule: 2
 
 stats_and_metrics:
   normalization_unbias: mean
