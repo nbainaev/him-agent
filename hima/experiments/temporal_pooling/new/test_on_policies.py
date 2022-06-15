@@ -28,6 +28,7 @@ from hima.experiments.temporal_pooling.new.test_on_policies_stats import (
     ExperimentStats,
     RunProgress
 )
+from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
 
 
 class RunSetup:
@@ -64,23 +65,28 @@ class PoliciesExperiment(Runner):
 
     seed: int
     run_setup: RunSetup
+    stats_config: StatsMetricsConfig
     pipeline: list[str]
     blocks: dict[str, Any]
     progress: RunProgress
     stats: ExperimentStats
 
+    normalization_unbias: str
+
     def __init__(
             self, config: TConfig, run_setup: Union[dict, str], seed: int,
-            pipeline: list[str], temporal_pooler: str, **_
+            pipeline: list[str], temporal_pooler: str, stats_and_metrics: dict,
+            **_
     ):
         super().__init__(config, **config)
+        print('==> Init')
 
         random_seed = np.random.default_rng().integers(10000)
         self.seed = isnone(resolve_value(seed), random_seed)
 
         self.run_setup = resolve_run_setup(config, run_setup, experiment_type='policies')
+        self.stats_config = StatsMetricsConfig(**stats_and_metrics)
 
-        print('==> Init')
         self.pipeline = pipeline
         self.blocks = self.build_blocks(temporal_pooler)
         self.input_data = self.blocks[self.pipeline[0]]
@@ -180,7 +186,10 @@ class PoliciesExperiment(Runner):
                     n_actions=self.run_setup.n_actions,
                     seed=self.seed
                 )
-                block = data_generator.generate_policies(self.run_setup.n_policies)
+                block = data_generator.generate_policies(
+                    n_policies=self.run_setup.n_policies,
+                    stats_config=self.stats_config
+                )
                 feedforward_sds = block.output_sds
                 context_sds = block.context_sds
 
