@@ -153,7 +153,7 @@ class OnlineElementwiseSimilarityMatrix(SimilarityMatrix):
         for j in range(n_seqs):
             if self.sequences[j] is None:
                 continue
-            self.cum_sim[j] = sequence_similarity_elementwise(
+            self.cum_sim[j] += sequence_similarity_elementwise(
                 x, self.sequences[j][:prefix_size],
                 discount=self.discount, symmetrical=self.symmetrical
             )
