@@ -4,7 +4,7 @@ log: True    # wandb logging
 
 run_setup: full
 policy_selection_rule: ordered
-temporal_pooler: sandwich_tp
+temporal_pooler: ablation_utp
 seed: 42
 debug: False
 
@@ -176,9 +176,9 @@ temporal_poolers:
     seed: ???
     initial_pooling: 1.
     pooling_decay: 0.1
-    pooling_decay_r: 2.
-    only_upper: True
-    max_intermediate_used: 4.
+    pooling_decay_r: 1.
+    only_upper: False
+    max_intermediate_used: ...
 
     lower_sp_conf:
       # input
