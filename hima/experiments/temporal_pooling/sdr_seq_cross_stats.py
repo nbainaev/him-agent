@@ -3,7 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import numpy as np
 
@@ -19,7 +19,7 @@ from hima.experiments.temporal_pooling.new.metrics import (
 class SimilarityMatrix:
     tag: str
 
-    _raw_mx: np.ma.MaskedArray
+    _raw_mx: Union[np.ndarray, np.ma.MaskedArray]
     _mx: Optional[np.ndarray]
 
     unbias_func: str
@@ -178,13 +178,13 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
     discount: Optional[float]
     algorithm: str
 
-    histograms: list[SeqHistogram]
+    pmfs: list[SeqHistogram]
     cum_sim: np.ndarray
     cum_sim_sum: float
     step: int
 
     current_i_seq: Optional[int]
-    current_seq_hist: SeqHistogram
+    current_seq_histogram: SeqHistogram
 
     def __init__(
             self, n_sequences: int, sds: Sds,
@@ -194,9 +194,9 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
         self.symmetrical = symmetrical
         self.discount = discount
 
-        self.histograms = [None] * n_sequences
+        self.pmfs = [None] * n_sequences
         self.current_i_seq = -1
-        self.current_seq_hist = None
+        self.current_seq_histogram = None
 
         self.cum_sim = np.zeros(n_sequences)
         self.cum_sim_sum = 0
@@ -219,42 +219,42 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
         )
 
     def new_sequence(self, sequence_id: int):
-        if self.current_seq_hist is not None:
-            self.histograms[self.current_i_seq] = self.current_seq_pmf
+        if self.current_seq_histogram is not None:
+            self.pmfs[self.current_i_seq] = self.current_seq_pmf
             self._store_cur_seq_similarity()
 
         self.cum_sim.fill(0)
         self.cum_sim_sum = 0
         self.step = 0
-        self.current_seq_hist = np.zeros(self.sds.size)
+        self.current_seq_histogram = np.zeros(self.sds.size)
         self.current_i_seq = sequence_id
 
     def update(self, sdr: SparseSdr):
         self.step += 1
         self._update_pmf(sdr)
 
-        n = len(self.histograms)
+        n = len(self.pmfs)
         cur_pmf = self.current_seq_pmf
 
         for j in range(n):
-            if self.histograms[j] is None:
+            if self.pmfs[j] is None:
                 continue
             self.cum_sim[j] += distribution_similarity(
-                cur_pmf, self.histograms[j],
+                cur_pmf, self.pmfs[j],
                 algorithm=self.algorithm, sds=self.sds, symmetrical=self.symmetrical
             )
 
     def _update_pmf(self, sdr: SparseSdr):
         # discount preserving `hist / step = 1 * active_size`
-        self.current_seq_hist *= self.discount
+        self.current_seq_histogram *= self.discount
         self.cum_sim_sum *= self.discount
         # add new sdr to pmf
-        self.current_seq_hist[list(sdr)] += 1
+        self.current_seq_histogram[sdr] += 1
         self.cum_sim_sum += 1
 
     @property
     def current_seq_pmf(self):
-        return self.current_seq_hist / self.cum_sim_sum
+        return self.current_seq_histogram / self.cum_sim_sum
 
     def _store_cur_seq_similarity(self):
         # store mean similarity

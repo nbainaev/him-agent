@@ -362,7 +362,8 @@ class ExperimentStats:
             else:
                 raise KeyError(f'Block {block.name} is not supported')
 
-    def transform_sim_mx_to_plots(self, metrics):
+    @staticmethod
+    def transform_sim_mx_to_plots(metrics):
         for metric_key in metrics:
             metric_value = metrics[metric_key]
             if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
