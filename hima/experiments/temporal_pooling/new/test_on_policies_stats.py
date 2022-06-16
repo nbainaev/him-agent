@@ -307,12 +307,12 @@ class ExperimentStats:
             elif block_name.startswith('spatial_pooler'):
                 self.sequences_block_cross_stats[block.name] = {}
                 self.sequences_block_cross_stats[block.name] = {
-                    'online_el': OnlineElementwiseSimilarityMatrix(
-                        n_sequences=self.n_sequences,
-                        unbias_func=self.stats_config.normalization_unbias,
-                        discount=self.stats_config.prefix_similarity_discount,
-                        symmetrical=self.stats_config.symmetrical_similarity
-                    ),
+                    # 'online_el': OnlineElementwiseSimilarityMatrix(
+                    #     n_sequences=self.n_sequences,
+                    #     unbias_func=self.stats_config.normalization_unbias,
+                    #     discount=self.stats_config.prefix_similarity_discount,
+                    #     symmetrical=self.stats_config.symmetrical_similarity
+                    # ),
                     'online_pmf': OnlinePmfSimilarityMatrix(
                         n_sequences=self.n_sequences,
                         sds=block.output_sds,
@@ -335,12 +335,12 @@ class ExperimentStats:
                 self.sequences_block_cross_stats[block.name] = {}
             elif block.name.startswith('temporal_pooler'):
                 self.sequences_block_cross_stats[block.name] = {
-                    'online_el': OnlineElementwiseSimilarityMatrix(
-                        n_sequences=self.n_sequences,
-                        unbias_func=self.stats_config.normalization_unbias,
-                        discount=self.stats_config.prefix_similarity_discount,
-                        symmetrical=self.stats_config.symmetrical_similarity
-                    ),
+                    # 'online_el': OnlineElementwiseSimilarityMatrix(
+                    #     n_sequences=self.n_sequences,
+                    #     unbias_func=self.stats_config.normalization_unbias,
+                    #     discount=self.stats_config.prefix_similarity_discount,
+                    #     symmetrical=self.stats_config.symmetrical_similarity
+                    # ),
                     'online_pmf': OnlinePmfSimilarityMatrix(
                         n_sequences=self.n_sequences,
                         sds=block.output_sds,
