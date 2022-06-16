@@ -50,7 +50,7 @@ class SyntheticDatasetBlockStats(BlockStats):
         self.actions_sds = actions_sds
         self.cross_stats = OfflineElementwiseSimilarityMatrix(
             sequences=self.policies,
-            unbias_func=stats_config.normalization_unbias,
+            unbias_func=stats_config.normalization,
             discount=stats_config.prefix_similarity_discount,
             symmetrical=False
         )

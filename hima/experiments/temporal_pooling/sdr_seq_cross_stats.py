@@ -41,7 +41,7 @@ class SimilarityMatrix:
     def final_metrics(self) -> dict[str, Any]:
         tag = self.tag
         if self._mx is None:
-            self._mx = standardize_sample_distribution(self._raw_mx, unbias_func=self.unbias_func)
+            self._mx = standardize_sample_distribution(self._raw_mx, normalization=self.unbias_func)
 
         return {
             f'raw_sim_mx_{tag}': self._raw_mx,
@@ -166,7 +166,7 @@ class OnlineElementwiseSimilarityMatrix(SimilarityMatrix):
     def final_metrics(self) -> dict[str, Any]:
         self._store_cur_seq_similarity()
 
-        self._mx = standardize_sample_distribution(self._raw_mx, unbias_func=self.unbias_func)
+        self._mx = standardize_sample_distribution(self._raw_mx, normalization=self.unbias_func)
         return super(OnlineElementwiseSimilarityMatrix, self).final_metrics()
 
 
@@ -266,5 +266,5 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
     def final_metrics(self) -> dict[str, Any]:
         self._store_cur_seq_similarity()
 
-        self._mx = standardize_sample_distribution(self._raw_mx, unbias_func=self.unbias_func)
+        self._mx = standardize_sample_distribution(self._raw_mx, normalization=self.unbias_func)
         return super(OnlinePmfSimilarityMatrix, self).final_metrics()

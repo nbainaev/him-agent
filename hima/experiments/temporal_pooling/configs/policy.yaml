@@ -46,8 +46,9 @@ run_setups:
     log_schedule: 2
 
 stats_and_metrics:
-  normalization_unbias: mean
+  normalization: mean
   prefix_similarity_discount: 1.
+  loss_on_mae: True
   loss_layer_discount: 0.75
   symmetrical_similarity: False
 

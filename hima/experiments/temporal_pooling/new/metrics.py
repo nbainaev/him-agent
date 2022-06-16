@@ -9,8 +9,7 @@ import numpy as np
 
 from hima.common.sdr import SparseSdr, DenseSdr
 from hima.common.sds import Sds
-from hima.common.utils import safe_divide
-
+from hima.common.utils import safe_divide, isnone
 
 SEQ_SIM_ELEMENTWISE = 'elementwise'
 DISTR_SIM_PMF = 'pmf_pointwise'
@@ -305,15 +304,17 @@ def point_pmf_similarity(p: np.ndarray, q: np.ndarray, sds: Sds = None) -> float
 
 
 # ==================== Errors ====================
-def standardize_sample_distribution(x: np.ndarray, unbias_func: str) -> np.ndarray:
-    if unbias_func == 'mean':
+def standardize_sample_distribution(x: np.ndarray, normalization: str) -> np.ndarray:
+    if normalization == 'mean':
         unbiased_x = x - np.mean(x)
         return safe_divide(unbiased_x, np.std(x), default=unbiased_x)
-    elif unbias_func == 'min':
+    elif normalization == 'min':
         unbiased_x = x - np.min(x)
         return safe_divide(unbiased_x, np.max(x) - np.min(x), default=unbiased_x)
+    elif isnone(normalization, 'no') == 'no':
+        return x
     else:
-        raise KeyError(f'Unbias func {unbias_func} is not supported')
+        raise KeyError(f'Normalization {normalization} is not supported')
 
 
 def mean_absolute_error(x: np.ndarray, y: np.ndarray) -> float:

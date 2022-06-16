@@ -171,7 +171,7 @@ class ExperimentStats:
         # offline pmf similarity matrices sim_mx
         offline_pmf_similarity = OfflinePmfSimilarityMatrix(
             pmfs, sds=block.output_sds,
-            unbias_func=self.stats_config.normalization_unbias,
+            unbias_func=self.stats_config.normalization,
             algorithm=DISTR_SIM_PMF, symmetrical=self.stats_config.symmetrical_similarity
         )
         block_metrics |= offline_pmf_similarity.final_metrics()
@@ -197,7 +197,7 @@ class ExperimentStats:
         # offline pmf similarity matrices sim_mx
         offline_pmf_similarity_matrix = OfflinePmfSimilarityMatrix(
             pmfs, sds=block.output_sds,
-            unbias_func=self.stats_config.normalization_unbias,
+            unbias_func=self.stats_config.normalization,
             algorithm=DISTR_SIM_PMF, symmetrical=self.stats_config.symmetrical_similarity
         )
         offline_pmf_similarity = offline_pmf_similarity_matrix.final_metrics()
@@ -230,9 +230,8 @@ class ExperimentStats:
             for sim_key in input_sims
         }
 
-        tracking_metrics = {}
-        discount = self.stats_config.loss_layer_discount
-        i, gamma, loss = 0, 1, 0
+        loss_components = []
+        i = 0
         for block_tag, block_sim_metrics in diff_metrics[1:]:
             for metric_key in block_sim_metrics:
                 sim_mx = block_sim_metrics[metric_key]
@@ -246,12 +245,18 @@ class ExperimentStats:
                     metrics[f'{block_tag}/epoch/similarity_mae'] = mae
                 else:
                     metrics[f'{block_tag}/epoch/similarity_smae'] = mae
-                    metrics[f'{block_tag}_similarity_smae'] = mae
-                    if block_tag.endswith('_tp'):
-                        pmf_coverage = optimized_metrics[i]
-                        loss += gamma * multiplicative_loss(mae, pmf_coverage)
-                        i += 1
-                        gamma *= discount
+
+            if block_tag.endswith('_tp'):
+                key = 'mae' if self.stats_config.loss_on_mae else 'smae'
+                mae = metrics[f'{block_tag}/epoch/similarity_{key}']
+
+                # duplicate target metric to the general wandb panel
+                metrics[f'{block_tag}_similarity_{key}'] = mae
+
+                # store to compute loss later
+                pmf_coverage = optimized_metrics[i]
+                loss_components.append((mae, pmf_coverage))
+                i += 1
 
         result = {}
         for metric_key in metrics.keys():
@@ -262,7 +267,7 @@ class ExperimentStats:
             else:
                 result[metric_key] = metric
 
-        result['loss'] = loss
+        result['loss'] = compute_loss(loss_components, self.stats_config.loss_layer_discount)
         return result
 
     def _collect_block_final_stats(self, block) -> dict[str, Any]:
@@ -316,7 +321,7 @@ class ExperimentStats:
                     'online_pmf': OnlinePmfSimilarityMatrix(
                         n_sequences=self.n_sequences,
                         sds=block.output_sds,
-                        unbias_func=self.stats_config.normalization_unbias,
+                        unbias_func=self.stats_config.normalization,
                         discount=self.stats_config.prefix_similarity_discount,
                         symmetrical=self.stats_config.symmetrical_similarity,
                         algorithm=DISTR_SIM_PMF
@@ -344,7 +349,7 @@ class ExperimentStats:
                     'online_pmf': OnlinePmfSimilarityMatrix(
                         n_sequences=self.n_sequences,
                         sds=block.output_sds,
-                        unbias_func=self.stats_config.normalization_unbias,
+                        unbias_func=self.stats_config.normalization,
                         discount=self.stats_config.prefix_similarity_discount,
                         symmetrical=self.stats_config.symmetrical_similarity,
                         algorithm=DISTR_SIM_PMF
@@ -368,6 +373,16 @@ class ExperimentStats:
             metric_value = metrics[metric_key]
             if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
                 metrics[metric_key] = plot_single_heatmap(metric_value)
+
+
+def compute_loss(components, layer_discount) -> float:
+    gamma = 1
+    loss = 0
+    for mae, pmf_coverage in components:
+        loss += gamma * multiplicative_loss(mae, pmf_coverage)
+        gamma *= layer_discount
+
+    return loss
 
 
 HEATMAP_SIDE_SIZE = 7

@@ -6,6 +6,7 @@ run_setup: full
 policy_selection_rule: ordered
 temporal_pooler: union_tp
 seed: 42
+debug: False
 
 pipeline:
   - generator
@@ -39,8 +40,9 @@ run_setups:
     tp_output_sds: [1000, 25]
 
 stats_and_metrics:
-  normalization_unbias: mean
-  prefix_similarity_discount: 0.9
+  normalization: mean
+  prefix_similarity_discount: 1.
+  loss_on_mae: True
   loss_layer_discount: 0.75
   symmetrical_similarity: False
 

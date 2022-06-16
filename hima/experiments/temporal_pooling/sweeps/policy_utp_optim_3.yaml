@@ -29,6 +29,12 @@ parameters:
       - temporal_pooler_2
 
 
+  # ====== receptive field ======
+  temporal_poolers..ablation_utp.potentialPct:
+    values:
+      - 0.08
+      - 0.15
+
   # ====== learning rates ======
   temporal_poolers..ablation_utp.historyLength:
     values:
