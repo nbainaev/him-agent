@@ -47,7 +47,7 @@ run_setups:
 
 stats_and_metrics:
   normalization_unbias: mean
-  prefix_similarity_discount: 0.95
+  prefix_similarity_discount: 1.
   loss_layer_discount: 0.75
   symmetrical_similarity: False
 

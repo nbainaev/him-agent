@@ -245,9 +245,11 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
             )
 
     def _update_pmf(self, sdr: SparseSdr):
-        # discount preserving `hist / step = 1 * active_size`
-        self.current_seq_histogram *= self.discount
-        self.cum_sim_sum *= self.discount
+        if self.discount < 1.:
+            # discount preserving `hist / step = 1 * active_size`
+            self.current_seq_histogram *= self.discount
+            self.cum_sim_sum *= self.discount
+
         # add new sdr to pmf
         self.current_seq_histogram[sdr] += 1
         self.cum_sim_sum += 1

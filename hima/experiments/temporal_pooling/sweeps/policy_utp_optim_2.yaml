@@ -12,21 +12,13 @@ parameters:
   seed.:
     value: ...
 
-
-  # ====== receptive field ======
-  temporal_poolers..ablation_utp.potentialPct:
-    values:
-      - 0.1
-      - 0.14
-      - 0.18
-
+  # ====== learning rates ======
   temporal_poolers..ablation_utp.historyLength:
     values:
-      - 4
+      - 5
       - 10
       - 20
 
-  # ====== learning rates ======
   temporal_poolers..ablation_utp.synPermPredActiveInc:
     values:
       - 0.1
