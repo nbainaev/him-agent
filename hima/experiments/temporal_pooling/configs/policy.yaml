@@ -178,10 +178,10 @@ temporal_poolers:
     _type_: SandwichTp
     seed: ???
     initial_pooling: 1.
-    pooling_decay: 0.1
+    pooling_decay: 0.04
     pooling_decay_r: 2.
-    only_upper: True
-    max_intermediate_used: 4
+    only_upper: False
+    max_intermediate_used: ...
 
     lower_sp_conf:
       # input
