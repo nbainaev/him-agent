@@ -17,7 +17,9 @@ parameters:
     value: 8
   run_setups..full.epochs:
     value: 8
-  run_setups..full.log_schedule:
+  run_setups..full.log_epoch_schedule:
+    value: 4
+  run_setups..full.log_repeat_schedule:
     value: 4
   # ... and reduced pipeline (no 3rd TP)
   pipeline:
