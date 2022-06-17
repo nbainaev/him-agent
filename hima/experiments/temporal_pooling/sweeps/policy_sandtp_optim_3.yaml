@@ -12,19 +12,6 @@ parameters:
   seed.:
     value: ...
 
-  temporal_poolers..sandwich_tp.upper_sp_conf.dutyCyclePeriod:
-    values:
-      - 3000
-      - 4000
-      - 6000
-
-  # ====== pooling window ======
-  temporal_poolers..sandwich_tp.pooling_decay:
-    values:
-      - 0.015
-      - 0.1
-      - 0.15
-
   temporal_poolers..sandwich_tp.lower_sp_conf.synPermActiveInc:
     values:
       - 0.1

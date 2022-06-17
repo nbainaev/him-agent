@@ -27,18 +27,16 @@ parameters:
   # ====== boosting ======
   temporal_poolers..sandwich_tp.lower_sp_conf.boostStrength:
     values:
-      - 0.15
-      - 0.3
-      - 0.5
+      - 0.25
+      - 0.65
   temporal_poolers..sandwich_tp.lower_sp_conf.dutyCyclePeriod:
     values:
       - 4000
       - 10000
   temporal_poolers..sandwich_tp.upper_sp_conf.boostStrength:
     values:
-      - 0.2
-      - 0.6
-      - 1.0
+      - 0.25
+      - 0.65
   temporal_poolers..sandwich_tp.upper_sp_conf.dutyCyclePeriod:
     values:
       - 4000

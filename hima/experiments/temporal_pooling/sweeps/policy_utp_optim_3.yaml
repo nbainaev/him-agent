@@ -17,10 +17,12 @@ parameters:
     value: 8
   run_setups..full.epochs:
     value: 8
-  run_setups..full.log_schedule:
+  run_setups..full.log_epoch_schedule:
+    value: 4
+  run_setups..full.log_repeat_schedule:
     value: 4
   # ... and reduced pipeline (no 3rd TP)
-  pipeline:
+  pipeline.:
     value:
       - generator
       - temporal_memory
@@ -28,28 +30,23 @@ parameters:
       - temporal_memory_2
       - temporal_pooler_2
 
+  # ====== pooling window ======
+  temporal_poolers..ablation_utp.decayTimeConst:
+    values:
+      - 4
+      - 7
+      - 10
+  # ====== boosting ======
+  temporal_poolers..ablation_utp.boostStrength:
+    values:
+      - 0.3
+      - 0.5
 
   # ====== receptive field ======
   temporal_poolers..ablation_utp.potentialPct:
     values:
-      - 0.08
-      - 0.15
-
-  # ====== learning rates ======
-  temporal_poolers..ablation_utp.historyLength:
-    values:
-      - 5
-      - 10
-      - 20
-
-  temporal_poolers..ablation_utp.synPermPredActiveInc:
-    values:
+      - 0.06
       - 0.1
-      - 0.04
-  temporal_poolers..ablation_utp.synPermPreviousPredActiveInc:
-    values:
-      - 0.05
-      - 0.02
 
 command:
   - ${env}

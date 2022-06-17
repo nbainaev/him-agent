@@ -12,32 +12,44 @@ parameters:
   seed.:
     value: ...
 
-  # ====== receptive field ======
-  temporal_poolers..sandwich_tp.lower_sp_conf.potentialPct:
-    min: 0.05
-    max: 0.2
-  temporal_poolers..sandwich_tp.upper_sp_conf.potentialPct:
-    min: 0.05
-    max: 0.25
+  # for hyperparameter search we don't need too much logging and too much learning
+  run_setups..full.policy_repeats:
+    value: 8
+  run_setups..full.epochs:
+    value: 8
+  run_setups..full.log_epoch_schedule:
+    value: 4
+  run_setups..full.log_repeat_schedule:
+    value: 4
+  # ... and reduced pipeline (no 3rd TP)
+  pipeline.:
+    value:
+      - generator
+      - temporal_memory
+      - temporal_pooler
+      - temporal_memory_2
+      - temporal_pooler_2
 
   # ====== pooling window ======
   temporal_poolers..sandwich_tp.pooling_decay:
-    min: 0.01
-    max: 0.15
+    values:
+      - 0.04
+      - 0.1
+      - 0.15
+  temporal_poolers..sandwich_tp.pooling_decay_r:
+    values:
+      - 1.0
+      - 1.5
+      - 2.0
 
-  # ====== boosting ======
-  temporal_poolers..sandwich_tp.lower_sp_conf.boostStrength:
-    min: 0.15
-    max: 0.95
-  temporal_poolers..sandwich_tp.lower_sp_conf.dutyCyclePeriod:
-    min: 3000
-    max: 15000
-  temporal_poolers..sandwich_tp.upper_sp_conf.boostStrength:
-    min: 0.15
-    max: 0.95
-  temporal_poolers..sandwich_tp.upper_sp_conf.dutyCyclePeriod:
-    min: 3000
-    max: 15000
+  temporal_poolers..sandwich_tp.only_upper:
+    values: [True, False]
+
+  temporal_poolers..sandwich_tp.max_intermediate_used:
+    values:
+      - 4
+      - 6
+      - ...
 
 command:
   - ${env}

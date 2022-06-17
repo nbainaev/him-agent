@@ -134,14 +134,14 @@ temporal_poolers:
     historyLength: 5
     minHistory: 3
     boostStrength: 0.6
-    dutyCyclePeriod: 10000
+    dutyCyclePeriod: 8000
     minPctOverlapDutyCycle: 0.0002
     numActiveColumnsPerInhArea: 0
     stimulusThreshold: 1
     synPermConnected: 0.5
     synPermActiveInc: 0.1
     synPermInactiveDec: 0.01
-    synPermPredActiveInc: 0.04
+    synPermPredActiveInc: 0.1
     synPermPreviousPredActiveInc: 0.02
     wrapAround: False
     # ablation

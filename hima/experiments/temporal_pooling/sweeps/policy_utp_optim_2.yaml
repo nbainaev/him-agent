@@ -34,17 +34,16 @@ parameters:
   # ====== learning rates ======
   temporal_poolers..ablation_utp.historyLength:
     values:
-      - 5
-      - 10
-      - 20
+      - 3
+      - 6
 
-  temporal_poolers..ablation_utp.synPermPredActiveInc:
-    values:
-      - 0.1
-      - 0.04
+#  temporal_poolers..ablation_utp.synPermPredActiveInc:
+#    values:
+#      - 0.1
+#      - 0.04
   temporal_poolers..ablation_utp.synPermPreviousPredActiveInc:
     values:
-      - 0.05
+      - 0.04
       - 0.02
 
 command:
