@@ -122,8 +122,10 @@ def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
 
         # hacky hack to set pooling restriction propagated to upper SP
         if 'max_intermediate_used' in tp_config and tp_config['max_intermediate_used'] is not None:
+            # FIXME: due to the wandb bug https://github.com/wandb/client/issues/3555 I have to
+            # explicitly use only the float (i.e. relative) version that counts in active sizes
             tp_config['max_intermediate_used'] = resolve_absolute_quantity(
-                tp_config['max_intermediate_used'],
+                float(tp_config['max_intermediate_used']),
                 feedforward_sds.active_size if tp_config['only_upper'] else output_sds.active_size
             )
 
