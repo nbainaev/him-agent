@@ -21,24 +21,26 @@ parameters:
     value: 4
   run_setups..full.log_repeat_schedule:
     value: 4
-  # ... and reduced pipeline (no 3rd TP)
+  # ... and reduced pipeline
   pipeline.:
     value:
       - generator
       - temporal_memory
       - temporal_pooler
-      - temporal_memory_2
-      - temporal_pooler_2
+#      - temporal_memory_2
+#      - temporal_pooler_2
 
   # ====== pooling window ======
   temporal_poolers..sandwich_tp.initial_pooling:
     values:
       - 1.0
-      - 0.75
+      - 0.8
+      - 0.6
   temporal_poolers..sandwich_tp.pooling_decay:
     values:
       - 0.04
       - 0.07
+      - 0.1
   temporal_poolers..sandwich_tp.pooling_decay_r:
     values:
       - 1.5
@@ -50,8 +52,9 @@ parameters:
 
   temporal_poolers..sandwich_tp.max_intermediate_used:
     values:
-      - 8
-      - 12
+      - 4.0
+      - 7.0
+      - 10.0
       - ...
 
 command:

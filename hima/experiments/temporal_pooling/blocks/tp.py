@@ -123,7 +123,8 @@ def resolve_tp(tp_config, feedforward_sds: Sds, output_sds: Sds, seed: int):
         # hacky hack to set pooling restriction propagated to upper SP
         if 'max_intermediate_used' in tp_config and tp_config['max_intermediate_used'] is not None:
             tp_config['max_intermediate_used'] = resolve_absolute_quantity(
-                tp_config['max_intermediate_used'], feedforward_sds.active_size
+                tp_config['max_intermediate_used'],
+                feedforward_sds.active_size if tp_config['only_upper'] else output_sds.active_size
             )
 
         if not tp_config['only_upper']:

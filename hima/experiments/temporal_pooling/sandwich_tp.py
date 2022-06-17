@@ -56,33 +56,47 @@ class SandwichTp:
         np.clip(self._pooling_activations, 0, 1, out=self._pooling_activations)
 
     def compute(self, active_neurons: SDR, predicted_neurons: SDR, learn: bool = True) -> SDR:
+        # alias for cached SDR obj
+        interim_sdr = self._input_representation
+
         self._pooling_decay_step()
 
-        input_representation = self._input_representation
-        if not self.only_upper:
-            self.lower_sp.compute(predicted_neurons, learn=learn, output=input_representation)
-        else:
-            input_representation.sparse = np.copy(predicted_neurons.sparse)
+        # determine TP input: predicted are preferred
+        # NB: `or True` turns off using active_neurons
+        predicted_input_non_empty = len(predicted_neurons.sparse) > 0 or True
+        pooling_scale = 1.0 if predicted_input_non_empty else 0.5
+        input_sdr = predicted_neurons if predicted_input_non_empty else active_neurons
 
-        intermediate_sdr = input_representation.sparse
-        self._pooling_activations[intermediate_sdr] = (
-                self._pooling_activations[intermediate_sdr] + self.initial_pooling
+        # compute pre-pooling step
+        if not self.only_upper:
+            self.lower_sp.compute(input_sdr, learn=learn, output=interim_sdr)
+        else:
+            interim_sdr.sparse = np.copy(input_sdr.sparse)
+
+        # increase pooling for current input; added part is scaled depending on
+        # whether the input was predicted
+        self._pooling_activations[interim_sdr.sparse] = (
+                self._pooling_activations[interim_sdr.sparse] + self.initial_pooling * pooling_scale
         ).clip(0, 1)
 
+        # calculate what should be propagated up from the pooling to the Upper SP
         if self.max_intermediate_used is None:
-            # usual behavior
-            sdr_to_upper = np.flatnonzero(self._pooling_activations)
+            # usual behavior:
+            sparse_sdr_to_upper = np.flatnonzero(self._pooling_activations)
         else:
             # restrict used active pooled cells
             top_k = self.max_intermediate_used
             threshold = np.partition(self._pooling_activations, kth=-top_k)[-top_k]
             if threshold == 0:
-                sdr_to_upper = np.flatnonzero(self._pooling_activations)
+                sparse_sdr_to_upper = np.flatnonzero(self._pooling_activations)
             else:
-                sdr_to_upper = np.flatnonzero(self._pooling_activations >= threshold)
+                sparse_sdr_to_upper = np.flatnonzero(self._pooling_activations >= threshold)
 
-        input_representation.sparse = sdr_to_upper
-        self.upper_sp.compute(input_representation, learn=learn, output=self._unionSDR)
+        print(self._pooling_activations.size, len(sparse_sdr_to_upper))
+
+        # calculate the output: union SDR
+        interim_sdr.sparse = sparse_sdr_to_upper
+        self.upper_sp.compute(interim_sdr, learn=learn, output=self._unionSDR)
 
         return self.getUnionSDR()
 
