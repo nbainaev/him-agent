@@ -131,7 +131,7 @@ temporal_poolers:
     exciteFunctionType: Logistic
     decayFunctionType: Exponential
     decayTimeConst: 15.0
-    historyLength: 5
+    historyLength: 6
     minHistory: 3
     boostStrength: 0.6
     dutyCyclePeriod: 8000
@@ -177,24 +177,24 @@ temporal_poolers:
   sandwich_tp:
     _type_: SandwichTp
     seed: ???
-    initial_pooling: 1.
+    initial_pooling: 0.75
     pooling_decay: 0.04
-    pooling_decay_r: 2.
-    only_upper: False
-    max_intermediate_used: ...
+    pooling_decay_r: 1.5
+    only_upper: True
+    max_intermediate_used: 8
 
     lower_sp_conf:
       # input
       inputDimensions: ???
       potentialRadius: ???
-      potentialPct: 0.18
+      potentialPct: 0.08
       globalInhibition: True
       # output
       # check bigger
       columnDimensions: ???
       localAreaDensity: ???
 
-      boostStrength: 0.15
+      boostStrength: 0.25
       dutyCyclePeriod: 10000
       minPctOverlapDutyCycle: 0.0002
       numActiveColumnsPerInhArea: 0
@@ -207,13 +207,13 @@ temporal_poolers:
       # input: lower output
       inputDimensions: ???
       potentialRadius: ???
-      potentialPct: 0.14
+      potentialPct: 0.12
       globalInhibition: True
       # output
       columnDimensions: ???
       localAreaDensity: ???
 
-      boostStrength: 0.2
+      boostStrength: 0.25
       dutyCyclePeriod: 4000
       minPctOverlapDutyCycle: 0.0002
       numActiveColumnsPerInhArea: 0
