@@ -16,6 +16,10 @@ from hima.experiments.temporal_pooling.new.metrics import (
 )
 
 
+SdrSequence = Optional[list[SparseSdr]]
+SeqHistogram = Optional[np.ndarray]
+
+
 class SimilarityMatrix:
     tag: str
 
@@ -25,17 +29,19 @@ class SimilarityMatrix:
     unbias_func: str
     online: bool
 
-    def __init__(self, tag: str, raw_mx: np.ma.MaskedArray, unbias_func: str, online: bool = False):
+    def __init__(
+            self, tag: str, raw_mx: np.ma.MaskedArray, normalization: str, online: bool = False
+    ):
         self.tag = tag
         self.online = online
-        self.unbias_func = unbias_func
+        self.unbias_func = normalization
         self._raw_mx = raw_mx
         self._mx = None
 
-    def new_sequence(self, sequence_id: int):
+    def on_new_sequence(self, sequence_id: int):
         ...
 
-    def update(self, **kwargs):
+    def on_step(self, **kwargs):
         ...
 
     def final_metrics(self) -> dict[str, Any]:
@@ -52,9 +58,10 @@ class SimilarityMatrix:
 class OfflineElementwiseSimilarityMatrix(SimilarityMatrix):
     def __init__(
             self, sequences: list[list],
-            unbias_func: str, discount: float = None, symmetrical: bool = False
+            normalization: str, discount: float = None, symmetrical: bool = False
     ):
         n = len(sequences)
+        diagonal_mask = np.identity(n, dtype=bool)
         sm = np.empty((n, n))
 
         for i in range(n):
@@ -62,19 +69,20 @@ class OfflineElementwiseSimilarityMatrix(SimilarityMatrix):
                 sm[i, j] = sequence_similarity_elementwise(
                     sequences[i], sequences[j], discount=discount, symmetrical=symmetrical
                 )
-        raw_mx = np.ma.array(sm)
+        raw_mx = np.ma.array(sm, mask=diagonal_mask)
 
         super(OfflineElementwiseSimilarityMatrix, self).__init__(
-            tag='el', raw_mx=raw_mx, unbias_func=unbias_func
+            tag='el', raw_mx=raw_mx, normalization=normalization
         )
 
 
 class OfflinePmfSimilarityMatrix(SimilarityMatrix):
     def __init__(
             self, pmfs: list[np.ndarray],
-            unbias_func: str, algorithm: str, symmetrical: bool = False, sds: Sds = None
+            normalization: str, algorithm: str, symmetrical: bool = False, sds: Sds = None
     ):
         n = len(pmfs)
+        diagonal_mask = np.identity(n, dtype=bool)
         sm = np.empty((n, n))
 
         for i in range(n):
@@ -82,7 +90,7 @@ class OfflinePmfSimilarityMatrix(SimilarityMatrix):
                 sm[i, j] = distribution_similarity(
                     pmfs[i], pmfs[j], algorithm=algorithm, sds=sds, symmetrical=symmetrical
                 )
-        raw_mx = np.ma.array(sm)
+        raw_mx = np.ma.array(sm, mask=diagonal_mask)
 
         if algorithm == DISTR_SIM_PMF:
             tag = 'pmf'
@@ -92,115 +100,107 @@ class OfflinePmfSimilarityMatrix(SimilarityMatrix):
             raise KeyError(f'Algorithm {algorithm} is not supported')
 
         super(OfflinePmfSimilarityMatrix, self).__init__(
-            tag=tag, raw_mx=raw_mx, unbias_func=unbias_func
+            tag=tag, raw_mx=raw_mx, normalization=normalization
         )
 
 
-class OnlineElementwiseSimilarityMatrix(SimilarityMatrix):
-    SdrSequence = Optional[list[SparseSdr]]
-
+class OnlineSimilarityMatrix(SimilarityMatrix):
     symmetrical: Optional[bool]
     discount: Optional[float]
 
-    sequences: list[SdrSequence]
-    cum_sim: np.ndarray
-    step: float
-
-    current_i_seq: Optional[int]
+    current_seq_id: Optional[int]
     current_seq: SdrSequence
 
     def __init__(
-            self, n_sequences: int, unbias_func: str, discount: float, symmetrical: bool
+            self, tag: str, n_sequences: int, normalization: str, discount: float, symmetrical: bool
     ):
         self.symmetrical = symmetrical
         self.discount = discount
 
-        self.sequences = [None] * n_sequences
-        self.current_i_seq = -1
+        self.current_seq_id = -1
         self.current_seq = None
-
-        self.cum_sim = np.zeros(n_sequences)
-        self.step = 0
 
         raw_mx = np.empty((n_sequences, n_sequences))
         mask = np.ones_like(raw_mx, dtype=bool)
         raw_mx = np.ma.array(raw_mx, mask=mask)
-        raw_mx.soften_mask()
 
-        super(OnlineElementwiseSimilarityMatrix, self).__init__(
-            tag='prfx_el', raw_mx=raw_mx, unbias_func=unbias_func, online=True
+        super(OnlineSimilarityMatrix, self).__init__(
+            tag=tag, raw_mx=raw_mx, normalization=normalization, online=True
         )
 
-    def new_sequence(self, sequence_id: int):
-        if self.current_seq is not None:
-            self.sequences[self.current_i_seq] = self.current_seq
-            self._store_cur_seq_similarity()
+    def on_new_sequence(self, sequence_id: int = -1):
+        if self.current_seq:
+            self._handle_finished_sequence()
 
-        self.cum_sim.fill(0)
-        self.step = 0
         self.current_seq = []
-        self.current_i_seq = sequence_id
+        self.current_seq_id = sequence_id
 
-    def update(self, sdr: SparseSdr):
-        self.current_seq.append(set(sdr))
-        self.step += 1
+    def on_step(self, sdr: SparseSdr):
+        self.current_seq.append(sdr)
 
-        # update metrics
+    def _handle_finished_sequence(self):
+        ...
+
+    def final_metrics(self) -> dict[str, Any]:
+        self.on_new_sequence()
+
+        self._mx = standardize_sample_distribution(self._raw_mx, normalization=self.unbias_func)
+        return super(OnlineSimilarityMatrix, self).final_metrics()
+
+
+class OnlineElementwiseSimilarityMatrix(OnlineSimilarityMatrix):
+    sequences: list[SdrSequence]
+
+    def __init__(
+            self, n_sequences: int, normalization: str, discount: float, symmetrical: bool
+    ):
+        super(OnlineElementwiseSimilarityMatrix, self).__init__(
+            tag='prfx_el', n_sequences=n_sequences, normalization=normalization,
+            discount=discount, symmetrical=symmetrical
+        )
+        self.sequences = [None] * n_sequences
+
+    def _handle_finished_sequence(self):
         n_seqs = len(self.sequences)
-        prefix_size = len(self.current_seq)
+        n_seq_elements = len(self.current_seq)
 
-        x = self.current_seq
+        self.current_seq = [set(sdr) for sdr in self.current_seq]
+        similarity_sum = np.zeros(n_seqs)
+
+        for step in range(n_seq_elements):
+            prefix_size = step + 1
+            for j in range(n_seqs):
+                if self.sequences[j] is None:
+                    continue
+
+                similarity_sum[j] += sequence_similarity_elementwise(
+                    s1=self.current_seq[:prefix_size],
+                    s2=self.sequences[j][:prefix_size],
+                    discount=self.discount, symmetrical=self.symmetrical
+                )
+
+        # store mean similarity
+        mean_similarity = similarity_sum / n_seq_elements
         for j in range(n_seqs):
             if self.sequences[j] is None:
                 continue
-            self.cum_sim[j] += sequence_similarity_elementwise(
-                x, self.sequences[j][:prefix_size],
-                discount=self.discount, symmetrical=self.symmetrical
-            )
+            self._raw_mx[self.current_seq_id][j] = mean_similarity[j]
 
-    def _store_cur_seq_similarity(self):
-        # store mean similarity
-        mean_similarity = self.cum_sim / self.step
-        self._raw_mx[self.current_i_seq] = mean_similarity
-
-    def final_metrics(self) -> dict[str, Any]:
-        self._store_cur_seq_similarity()
-
-        self._mx = standardize_sample_distribution(self._raw_mx, normalization=self.unbias_func)
-        return super(OnlineElementwiseSimilarityMatrix, self).final_metrics()
+        # store sequence; MUST BE stored after similarity calculations to prevent rewriting prev seq
+        self.sequences[self.current_seq_id] = self.current_seq
 
 
-class OnlinePmfSimilarityMatrix(SimilarityMatrix):
-    SeqHistogram = Optional[np.ndarray]
-
+class OnlinePmfSimilarityMatrix(OnlineSimilarityMatrix):
     sds: Sds
-    symmetrical: Optional[bool]
-    discount: Optional[float]
     algorithm: str
-
     pmfs: list[SeqHistogram]
-    cum_sim: np.ndarray
-    cum_sim_sum: float
-    step: int
-
-    current_i_seq: Optional[int]
-    current_seq_histogram: SeqHistogram
 
     def __init__(
             self, n_sequences: int, sds: Sds,
-            unbias_func: str, discount: float, symmetrical: bool, algorithm: str
+            normalization: str, discount: float, symmetrical: bool, algorithm: str
     ):
         self.sds = sds
-        self.symmetrical = symmetrical
-        self.discount = discount
-
         self.pmfs = [None] * n_sequences
-        self.current_i_seq = -1
-        self.current_seq_histogram = None
-
-        self.cum_sim = np.zeros(n_sequences)
-        self.cum_sim_sum = 0
-        self.step = 0
 
         self.algorithm = algorithm
         if algorithm == DISTR_SIM_PMF:
@@ -210,61 +210,51 @@ class OnlinePmfSimilarityMatrix(SimilarityMatrix):
         else:
             raise KeyError(f'Algorithm {algorithm} is not supported')
 
-        raw_mx = np.empty((n_sequences, n_sequences))
-        mask = np.ones_like(raw_mx, dtype=bool)
-        raw_mx = np.ma.array(raw_mx, mask=mask, hard_mask=False)
-
         super(OnlinePmfSimilarityMatrix, self).__init__(
-            tag=f'prfx_{tag}', raw_mx=raw_mx, unbias_func=unbias_func, online=True
+            tag=tag, n_sequences=n_sequences, normalization=normalization,
+            discount=discount, symmetrical=symmetrical
         )
 
-    def new_sequence(self, sequence_id: int):
-        if self.current_seq_histogram is not None:
-            self.pmfs[self.current_i_seq] = self.current_seq_pmf
-            self._store_cur_seq_similarity()
+    def _handle_finished_sequence(self):
+        n_pmfs = len(self.pmfs)
+        n_seq_elements = len(self.current_seq)
 
-        self.cum_sim.fill(0)
-        self.cum_sim_sum = 0
-        self.step = 0
-        self.current_seq_histogram = np.zeros(self.sds.size)
-        self.current_i_seq = sequence_id
+        similarity_sum = np.zeros(n_pmfs)
+        prefix_histogram = np.zeros(self.sds.size)
+        prefix_histogram_sum = 0
 
-    def update(self, sdr: SparseSdr):
-        self.step += 1
-        self._update_pmf(sdr)
+        # calculate similarity for every prefix pmf against all stored pmfs
+        prefix_pmf = 1
+        for sdr in self.current_seq:
+            prefix_histogram_sum = self._update_pmf(
+                sdr, histogram=prefix_histogram, histogram_sum=prefix_histogram_sum
+            )
+            prefix_pmf = prefix_histogram / prefix_histogram_sum
 
-        n = len(self.pmfs)
-        cur_pmf = self.current_seq_pmf
+            for j in range(n_pmfs):
+                if self.pmfs[j] is None:
+                    continue
+                similarity_sum[j] += distribution_similarity(
+                    p=prefix_pmf, q=self.pmfs[j],
+                    algorithm=self.algorithm, sds=self.sds, symmetrical=self.symmetrical
+                )
 
-        for j in range(n):
+        # store mean similarity for entire `current_seq_id` row
+        mean_similarity = similarity_sum / n_seq_elements
+        for j in range(n_pmfs):
             if self.pmfs[j] is None:
                 continue
-            self.cum_sim[j] += distribution_similarity(
-                cur_pmf, self.pmfs[j],
-                algorithm=self.algorithm, sds=self.sds, symmetrical=self.symmetrical
-            )
+            self._raw_mx[self.current_seq_id][j] = mean_similarity[j]
 
-    def _update_pmf(self, sdr: SparseSdr):
+        # store pmf; MUST BE stored after similarity calculations to prevent rewriting prev pmf
+        self.pmfs[self.current_seq_id] = prefix_pmf
+
+    def _update_pmf(self, sdr: SparseSdr, histogram: SeqHistogram, histogram_sum: float):
         if self.discount < 1.:
             # discount preserving `hist / step = 1 * active_size`
-            self.current_seq_histogram *= self.discount
-            self.cum_sim_sum *= self.discount
+            histogram *= self.discount
+            histogram_sum *= self.discount
 
         # add new sdr to pmf
-        self.current_seq_histogram[sdr] += 1
-        self.cum_sim_sum += 1
-
-    @property
-    def current_seq_pmf(self):
-        return self.current_seq_histogram / self.cum_sim_sum
-
-    def _store_cur_seq_similarity(self):
-        # store mean similarity
-        mean_similarity = self.cum_sim / self.step
-        self._raw_mx[self.current_i_seq] = mean_similarity
-
-    def final_metrics(self) -> dict[str, Any]:
-        self._store_cur_seq_similarity()
-
-        self._mx = standardize_sample_distribution(self._raw_mx, normalization=self.unbias_func)
-        return super(OnlinePmfSimilarityMatrix, self).final_metrics()
+        histogram[sdr] += 1
+        return histogram_sum + 1

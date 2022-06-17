@@ -49,6 +49,7 @@ class ExperimentStats:
     stats_config: StatsMetricsConfig
 
     sequence_ids_order: list[int]
+    logging_temporally_disabled: int
     sequences_block_stats: dict[int, dict[str, BlockStats]]
     sequences_block_cross_stats: dict[str, dict[str, SimilarityMatrix]]
 
@@ -67,6 +68,7 @@ class ExperimentStats:
 
         self.sequences_block_stats = {}
         self.sequence_ids_order = []
+        self.logging_temporally_disabled = True
 
         self.sequences_block_cross_stats = {}
         self._init_cross_stats()
@@ -75,7 +77,10 @@ class ExperimentStats:
         self.sequences_block_stats.clear()
         self.sequence_ids_order.clear()
 
-    def on_new_sequence(self, sequence_id: int):
+    def on_new_sequence(self, sequence_id: int, logging_scheduled: bool):
+        self.logging_temporally_disabled = not logging_scheduled
+        self.notify_cross_stats_new_sequence(sequence_id)
+
         if sequence_id == self.current_sequence_id:
             return
 
@@ -86,8 +91,6 @@ class ExperimentStats:
             block = self.blocks[block_name]
             block.reset_stats()
             self.current_block_stats[block.name] = block.stats
-
-        self.notify_cross_stats_new_sequence(sequence_id)
 
     @property
     def current_sequence_id(self):
@@ -102,10 +105,17 @@ class ExperimentStats:
         return self.sequences_block_stats[self.current_sequence_id]
 
     def on_block_step(self, block, block_output_sdr: SparseSdr):
+        if not self.logger and not self.debug:
+            return
+        if self.logging_temporally_disabled:
+            return
+
         self.update_block_cross_stats(block, block_output_sdr)
 
     def on_step(self):
         if self.logger is None and not self.debug:
+            return
+        if self.logging_temporally_disabled:
             return
 
         metrics = {
@@ -121,8 +131,10 @@ class ExperimentStats:
         if self.logger:
             self.logger.log(metrics, step=self.progress.step)
 
-    def on_finish(self):
+    def on_finish(self, logging_scheduled: bool):
         if not self.logger and not self.debug:
+            return
+        if not logging_scheduled:
             return
 
         metrics = {}
@@ -171,7 +183,7 @@ class ExperimentStats:
         # offline pmf similarity matrices sim_mx
         offline_pmf_similarity = OfflinePmfSimilarityMatrix(
             pmfs, sds=block.output_sds,
-            unbias_func=self.stats_config.normalization,
+            normalization=self.stats_config.normalization,
             algorithm=DISTR_SIM_PMF, symmetrical=self.stats_config.symmetrical_similarity
         )
         block_metrics |= offline_pmf_similarity.final_metrics()
@@ -197,7 +209,7 @@ class ExperimentStats:
         # offline pmf similarity matrices sim_mx
         offline_pmf_similarity_matrix = OfflinePmfSimilarityMatrix(
             pmfs, sds=block.output_sds,
-            unbias_func=self.stats_config.normalization,
+            normalization=self.stats_config.normalization,
             algorithm=DISTR_SIM_PMF, symmetrical=self.stats_config.symmetrical_similarity
         )
         offline_pmf_similarity = offline_pmf_similarity_matrix.final_metrics()
@@ -292,14 +304,12 @@ class ExperimentStats:
         for block_name in self.blocks:
             current_block_cross_stats = self.sequences_block_cross_stats[block_name]
             for block_online_similarity_matrix in current_block_cross_stats.values():
-                block_online_similarity_matrix.new_sequence(
-                    sequence_id=sequence_id
-                )
+                block_online_similarity_matrix.on_new_sequence(sequence_id=sequence_id)
 
     def update_block_cross_stats(self, block, block_output_sdr: SparseSdr):
         current_block_cross_stats = self.sequences_block_cross_stats[block.name]
         for block_online_similarity_matrix in current_block_cross_stats.values():
-            block_online_similarity_matrix.update(sdr=block_output_sdr)
+            block_online_similarity_matrix.on_step(sdr=block_output_sdr)
 
     def _init_cross_stats(self):
         self.sequences_block_cross_stats = {}
@@ -321,7 +331,7 @@ class ExperimentStats:
                     'online_pmf': OnlinePmfSimilarityMatrix(
                         n_sequences=self.n_sequences,
                         sds=block.output_sds,
-                        unbias_func=self.stats_config.normalization,
+                        normalization=self.stats_config.normalization,
                         discount=self.stats_config.prefix_similarity_discount,
                         symmetrical=self.stats_config.symmetrical_similarity,
                         algorithm=DISTR_SIM_PMF
@@ -349,7 +359,7 @@ class ExperimentStats:
                     'online_pmf': OnlinePmfSimilarityMatrix(
                         n_sequences=self.n_sequences,
                         sds=block.output_sds,
-                        unbias_func=self.stats_config.normalization,
+                        normalization=self.stats_config.normalization,
                         discount=self.stats_config.prefix_similarity_discount,
                         symmetrical=self.stats_config.symmetrical_similarity,
                         algorithm=DISTR_SIM_PMF

@@ -38,7 +38,8 @@ class RunSetup:
     steps_per_policy: int
     policy_repeats: int
     epochs: int
-    log_schedule: int
+    log_repeat_schedule: int
+    log_epoch_schedule: int
 
     tp_output_sds: Sds
     sp_output_sds: Sds
@@ -47,7 +48,7 @@ class RunSetup:
             self, n_policies: int, n_states: int, n_actions: int,
             steps_per_policy: Optional[int], policy_repeats: int, epochs: int, total_repeats: int,
             tp_output_sds: Sds.TShortNotation, sp_output_sds: Sds.TShortNotation,
-            log_schedule: int = 1
+            log_repeat_schedule: int = 1, log_epoch_schedule: int = 1
     ):
         self.n_policies = n_policies
         self.n_states = n_states
@@ -56,7 +57,8 @@ class RunSetup:
         self.policy_repeats, self.epochs = resolve_epoch_runs(
             policy_repeats, epochs, total_repeats
         )
-        self.log_schedule = log_schedule
+        self.log_repeat_schedule = log_repeat_schedule
+        self.log_epoch_schedule = log_epoch_schedule
 
         self.tp_output_sds = Sds(short_notation=tp_output_sds)
         self.sp_output_sds = Sds(short_notation=sp_output_sds)
@@ -116,16 +118,24 @@ class PoliciesExperiment(Runner):
         self.stats.on_new_epoch()
 
         for policy in self.input_data:
-            for i in range(self.run_setup.policy_repeats):
-                self.run_policy(policy, learn=True)
+            for i_repeat in range(self.run_setup.policy_repeats):
+                self.run_policy(policy, i_repeat, learn=True)
 
-        if self.progress.epoch == 0 or (self.progress.epoch + 1) % self.run_setup.log_schedule == 0:
-            self.stats.on_finish()
+        epoch_final_log_scheduled = scheduled(
+            i=self.progress.epoch, schedule=self.run_setup.log_epoch_schedule,
+            always_report_first=True, always_report_last=True, i_max=self.run_setup.epochs
+        )
+        self.stats.on_finish(epoch_final_log_scheduled)
 
-    def run_policy(self, policy: Policy, learn=True):
+    def run_policy(self, policy: Policy, i_repeat: int = 0, learn=True):
         self.reset_blocks(block_type='temporal_memory')
         self.reset_blocks(block_type='temporal_pooler')
-        self.stats.on_new_sequence(policy.id)
+
+        log_scheduled = scheduled(
+            i=i_repeat, schedule=self.run_setup.log_repeat_schedule,
+            always_report_first=True, always_report_last=True, i_max=self.run_setup.policy_repeats
+        )
+        self.stats.on_new_sequence(policy.id, log_scheduled)
 
         for action, state in policy:
             self.step(state, action, learn)
@@ -258,3 +268,16 @@ def resolve_epoch_runs(intra_epoch_repeats: int, epochs: int, total_repeats: int
     if epochs is None:
         epochs = total_repeats // intra_epoch_repeats
     return intra_epoch_repeats, epochs
+
+
+def scheduled(
+        i: int, schedule: int = 1,
+        always_report_first: bool = True, always_report_last: bool = True, i_max: int = None
+):
+    if always_report_first and i == 0:
+        return True
+    if always_report_last and i + 1 == i_max:
+        return True
+    if (i + 1) % schedule == 0:
+        return True
+    return False
