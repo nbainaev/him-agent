@@ -92,8 +92,6 @@ class SandwichTp:
             else:
                 sparse_sdr_to_upper = np.flatnonzero(self._pooling_activations >= threshold)
 
-        print(self._pooling_activations.size, len(sparse_sdr_to_upper))
-
         # calculate the output: union SDR
         interim_sdr.sparse = sparse_sdr_to_upper
         self.upper_sp.compute(interim_sdr, learn=learn, output=self._unionSDR)

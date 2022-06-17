@@ -33,9 +33,9 @@ parameters:
   # ====== pooling window ======
   temporal_poolers..sandwich_tp.initial_pooling:
     values:
-      - 1.0
-      - 0.8
       - 0.6
+      - 0.8
+      - 1.0
   temporal_poolers..sandwich_tp.pooling_decay:
     values:
       - 0.04
@@ -52,10 +52,10 @@ parameters:
 
   temporal_poolers..sandwich_tp.max_intermediate_used:
     values:
+      - ...
       - 4.0
       - 7.0
       - 10.0
-      - ...
 
 command:
   - ${env}
