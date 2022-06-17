@@ -332,7 +332,7 @@ def multiplicative_loss(smae, pmf_coverage):
     # == 1 around 0.41 pmf coverage — it's a target value
     pmf_weight = (1 - pmf_coverage) / (1.4 * pmf_coverage)
     # smooth with sqrt and shift it up
-    pmf_weight = 0.25 * (pmf_weight ** 0.5) + 0.75
+    pmf_weight = 0.25 * (pmf_weight ** 0.55) + 0.75
 
     # == 1 at smae = 0.08. At ~0.2 SMAE we get almost garbage
     smae_weight = (smae / 0.08)**1.5

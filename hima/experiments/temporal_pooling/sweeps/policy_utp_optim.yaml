@@ -22,7 +22,7 @@ parameters:
   run_setups..full.log_repeat_schedule:
     value: 4
   # ... and reduced pipeline (no 3rd TP)
-  pipeline:
+  pipeline.:
     value:
       - generator
       - temporal_memory

@@ -117,8 +117,6 @@ class SandwichTp:
     def _make_decay_matrix(self, rng):
         decay, r = self.pooling_decay, self.pooling_decay_r
         decay_mx = decay * loguniform(rng, r, size=self._pooling_activations.size)
-        assert (decay_mx/decay).max() <= r and (decay_mx * decay).max() <= r
-
         return decay_mx
 
 
