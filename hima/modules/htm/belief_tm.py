@@ -687,50 +687,38 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         self.column_probs = 1 - np.prod(cell_probs, axis=-1)
 
     def sample_cells(self):
-        cell_probs = self.cell_probs
         # non-zero segments' id
         segments_in_use = np.flatnonzero(np.sum(self.inhib_receptive_fields, axis=-1))
         theta = self.theta[segments_in_use]
-        tau = self.tau[segments_in_use]
-        gamma = self.gamma[segments_in_use]
         f = self.inhib_receptive_fields[segments_in_use]
 
-        # p(s|d=1)
-        synapse_probs_true = np.power((1 - theta), 1 - cell_probs) * np.power(theta, cell_probs)
-        # p(s|d=0)
-        synapse_probs_false = np.power((1 - tau), 1 - cell_probs) * np.power(tau, cell_probs)
-
-        likelihood_true = np.prod(synapse_probs_true, axis=-1, where=f)
-        likelihood_false = np.prod(synapse_probs_false, axis=-1, where=f)
-
-        norm = gamma * likelihood_true + (1 - gamma) * likelihood_false
-        segment_probs = np.divide(
-            gamma * likelihood_true, norm,
-            out=np.zeros_like(gamma, dtype=REAL64_DTYPE), where=(norm != 0)
-        )
-
-        norm2 = np.sum(theta, axis=-1, where=f)
+        # begging
+        norm = np.sum(theta, axis=-1, where=f)
         cluster_probs = np.sum(theta * self.cell_probs, axis=-1, where=f)
         cluster_probs = np.divide(
             cluster_probs,
-            norm2,
-            out=np.zeros_like(cluster_probs, dtype=REAL64_DTYPE), where=(norm2 != 0)
+            norm,
+            out=np.zeros_like(cluster_probs, dtype=REAL64_DTYPE), where=(norm != 0)
         )
 
-        cluster_probs *= segment_probs
-
         # normalize
-        norm3 = cluster_probs.sum()
-        if norm3 != 0:
-            cluster_probs /= norm3
-            # choose cluster
-            segment = self.np_rng.choice(segments_in_use, 1, p=cluster_probs)
+        norm2 = cluster_probs.sum()
+        none_prob = np.clip(1 - norm2, 0, 1)
 
-            # sample cells from cluster
+        if norm2 > 1:
+            cluster_probs /= norm2
+
+        cluster_probs = np.append(cluster_probs, none_prob)
+        candidates = np.append(segments_in_use, -1)
+
+        # choose cluster
+        segment = self.np_rng.choice(candidates, 1, p=cluster_probs)
+
+        # sample cells from cluster
+        if segment != -1:
             cell_probs = self.theta[segment] * self.inhib_receptive_fields[segment]
             cells = np.flatnonzero(self.np_rng.random(cell_probs.size) < cell_probs)
         else:
-            segment = np.empty(0, dtype=UINT_DTYPE)
             cells = np.empty(0, dtype=UINT_DTYPE)
 
         return cells
