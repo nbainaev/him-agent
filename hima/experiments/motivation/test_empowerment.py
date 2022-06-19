@@ -25,12 +25,37 @@ from hima.common.config_utils import TConfig
 from hima.common.plot_utils import transform_fig_to_image
 
 from hima.modules.empowerment import Empowerment
+from hima.agents.motivation.simplified_hima import Agent
 
 
 def xlogx(x):
     mask = x != 0
     y = x[mask]
     return np.sum(y * np.log2(y))
+
+
+def plot_valued_map(value_map, title, vmin=None, vmax=None):
+    fig = plt.figure(frameon=False)
+    fig.set_size_inches(5, 5)
+    fig.set_dpi(300)
+    fig.suptitle(title, fontsize=14)
+    ax = plt.Axes(fig, [0., 0., 1., 1.])
+    ax.set_axis_off()
+    fig.add_axes(ax)
+
+    ax.imshow(value_map, cmap='copper', vmin=vmin, vmax=vmax)
+    h, w = value_map.shape
+    for i in range(h):
+        for j in range(w):
+            if value_map.mask[i, j]:
+                continue
+            ax.text(
+                j, i, f'{value_map[i, j]: .1f}',
+                va='center', ha='center', fontsize=7, c='r'
+            )
+    img = transform_fig_to_image(fig)
+    plt.close(fig)
+    return img
 
 
 class SDRMetrics:
@@ -212,6 +237,11 @@ class GwEmpowermentTest(Runner):
         else:
             self.exact_emp_map = self.create_exact_empowerment_map(self.horizon)
 
+        if self.strategy == 'agent':
+            self.agent = Agent(
+                self.seed, state_space_size, self.environment.n_actions, config['agent_config']
+            )
+
         self.prev_state = None
         self.episode = 0
         self.steps = 0
@@ -280,6 +310,10 @@ class GwEmpowermentTest(Runner):
                 'state/max_sdr_per_full_entropy': self.state_metrics.max_sdr_per_full_entropy,
             }, step=self.episode
         )
+        if self.strategy == 'agent':
+            self.logger.log({'map/anomaly': wandb.Image(plot_valued_map(
+                    self.anomaly_map/self.visit_map, 'Anomaly', vmin=0, vmax=1
+                )),}, step=self.episode)
         self.state_metrics.reset()
 
     def log_empowerment(self):
@@ -349,23 +383,16 @@ class GwEmpowermentTest(Runner):
             empowerment_map[key] = self.emp.eval_state(self.sp_output.sparse, self.horizon)
         self.log_prediction(sp_outs)
 
-        fig = plt.figure(frameon=False)
-        fig.set_size_inches(5, 5)
-        fig.set_dpi(300)
-        ax = plt.Axes(fig, [0., 0., 1., 1.])
-        ax.set_axis_off()
-        fig.add_axes(ax)
         vmin = np.min([empowerment_map.min(), self.exact_emp_map.min()])
         vmax = np.max([empowerment_map.max(), self.exact_emp_map.max()])
         dif = self.exact_emp_map - empowerment_map
         self.logger.log({
-            'map/empowerment': wandb.Image(ax.imshow(empowerment_map, vmin=vmin, vmax=vmax)),
-            'map/exact_emp': wandb.Image(ax.imshow(self.exact_emp_map, vmin=vmin, vmax=vmax)),
-            'map/dif_emp': wandb.Image(ax.imshow(np.abs(dif)/vmax, vmin=0, vmax=1)),
-            'empowerment/mae': np.abs(dif).mean(),
+            'map/empowerment': wandb.Image(plot_valued_map(empowerment_map, '$\hat \epsilon_4$')),
+            'map/exact_emp': wandb.Image(plot_valued_map(self.exact_emp_map, '$\epsilon_4$')),
+            'map/dif_emp': wandb.Image(plot_valued_map(np.abs(dif)/vmax, 'MRAE', 0, 1)),
+            'empowerment/mrae': (np.abs(dif)/self.exact_emp_map).mean(),
             'empowerment/min_error': dif.min()
         }, step=self.episode)
-        plt.close(fig)
 
     def log_prediction(self, states: dict[tuple, SparseSdr]):
         prediction_map = self.get_masked_obstacles_map()
@@ -442,6 +469,11 @@ class GwEmpowermentTest(Runner):
         self.episode = 0
         self.steps = 0
 
+        self.anomaly_map = np.ma.zeros(self.environment.shape)
+        self.anomaly_map[:, :] = np.ma.masked
+        self.visit_map = np.ma.zeros(self.environment.shape)
+        self.visit_map[:, :] = np.ma.masked
+
         while True:
 
             reward, obs, is_first = self.environment.observe()
@@ -453,6 +485,12 @@ class GwEmpowermentTest(Runner):
             else:
                 self.emp.learn(self.prev_state, self.sp_output.sparse)
                 self.prev_state = np.copy(self.sp_output.sparse)
+                if self.visit_map.mask[self.environment.agent.position]:
+                    self.anomaly_map[self.environment.agent.position] = self.emp.anomalies[-1]
+                    self.visit_map[self.environment.agent.position] = 1
+                else:
+                    self.anomaly_map[self.environment.agent.position] += self.emp.anomalies[-1]
+                    self.visit_map[self.environment.agent.position] += 1
 
             if is_first:
                 if self.episode != 0 and self.logger and self.episode % self.evaluate_step == 0:
@@ -464,5 +502,6 @@ class GwEmpowermentTest(Runner):
             else:
                 self.steps += 1
 
-            action = self._rng.integers(0, self.environment.n_actions)
+            # action = self._rng.integers(0, self.environment.n_actions)
+            action = self.agent.act(self.sp_output.sparse, reward, is_first)
             self.environment.act(action)

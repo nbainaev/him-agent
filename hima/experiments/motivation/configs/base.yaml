@@ -2,7 +2,8 @@ _type_: motivation.emp
 seed: 1337
 project: empowerment
 log: True
-strategy: 'uniform'
+strategy: 'agent'
+# 'agent' or 'uniform'
 # set no food for 'uniform' strategy
 
 environment:
@@ -31,10 +32,11 @@ environment:
   obstacle:
 #    rendering: false
     density: 0.1
+    map_name: 'maps/four_rooms_9x9.map'
 
   food:
-    rendering: false
-    n_items: 0
+    rendering: True
+    n_items: 1
     reward: 1.
 
   agent:
@@ -64,7 +66,7 @@ sp:
   boostStrength: 5
   wrapAround: true
 
-log_empowerment_sequence: False
+log_empowerment_sequence: True
 horizon: 4
 emp:
   similarity_threshold: 0.8
@@ -83,5 +85,15 @@ emp:
     predictedSegmentDecrement: 0.001
     maxSegmentsPerCell: 15 # not less than 10
 
-n_episodes: 10
+n_episodes: 100
 evaluate_step: 1
+
+agent_config:
+  action_bucket_size: 20
+  bg:
+    alpha: 0.1
+    beta: 0.1
+    discount_factor: 0.95
+    off_policy: True
+    softmax_beta: 0.25
+    epsilon_noise: 0
