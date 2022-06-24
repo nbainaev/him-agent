@@ -27,18 +27,19 @@ class Agent:
         )
 
     def act(self, obs: SparseSdr, reward: float, is_first: bool) -> int:
-        sdr_input = np.concatenate(
-            (
-                self.amg.compute(obs), self.amg.sdr_size + obs
-            )
-        )
-        actions = self.str.compute(sdr_input, 1, True)
-
         if is_first:
             self.amg.reset()
             self.str.reset()
 
+        amg_sdr = self.amg.compute(obs)
         self.amg.update(obs, reward)
+
+        sdr_input = np.concatenate(
+            (
+                amg_sdr, self.amg.sdr_size + obs
+            )
+        )
+        actions = self.str.compute(sdr_input, 1, True)
         actions = actions / actions.sum()
         action = self._rng.choice(self.action_dim, 1, p=actions)[0]
         return action
