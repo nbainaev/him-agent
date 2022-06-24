@@ -7,7 +7,7 @@
 import numpy as np
 from hima.common.sdr import SparseSdr
 from hima.common.utils import update_exp_trace
-from htm.bindings.algorithms import SpatialPooler
+from htm.bindings.algorithms import Connections
 from htm.bindings.sdr import SDR
 from hima.common.utils import softmax
 
@@ -190,59 +190,91 @@ class Policy(TDLambda):
         return action
 
 
-class StriatumBlock:
+class Striatum:
     def __init__(
-            self, inputDimensions: list[int], columnDimensions: list[int], potentialRadius: int,
-            potentialPct: float, globalInhibition: bool, localAreaDensity: float,
-            stimulusThreshold: int, synPermInactiveDec: float, synPermActiveInc: float,
-            synPermConnected: float, minPctOverlapDutyCycle: float, dutyCyclePeriod: int,
-            boostStrength: float, seed: int, wrapAround: bool, dopamine_factor: float
+            self, input_size: int, output_size: int, field_size: int, synapse_threshold: float,
+            potential_pct: float, seed: int, connected_pct: float, d1_pct: float, beta: float,
+            stimulus_threshold: float, active_neurons: int, syn_increment: float,
+            syn_decrement: float
     ):
-        self.output_sdr_shape = (2 * columnDimensions[0], columnDimensions[1])
-        self.zone_size = columnDimensions[0]
-        self.sp = SpatialPooler(
-                inputDimensions=inputDimensions,
-                columnDimensions=self.output_sdr_shape,
-                potentialPct=potentialPct,
-                potentialRadius=potentialRadius,
-                globalInhibition=globalInhibition,
-                localAreaDensity=localAreaDensity,
-                stimulusThreshold=stimulusThreshold,
-                synPermInactiveDec=synPermInactiveDec,
-                synPermActiveInc=synPermActiveInc,
-                synPermConnected=synPermConnected,
-                minPctOverlapDutyCycle=minPctOverlapDutyCycle,
-                dutyCyclePeriod=dutyCyclePeriod,
-                boostStrength=boostStrength,
-                seed=seed,
-                wrapAround=wrapAround
-        )
+        self.input_size = input_size
+        self.spn_size = output_size * field_size
+        self.output_size = output_size
 
-        self.output_sdr_size = self.sp.getNumColumns()
-        self._input_sdr = SDR(inputDimensions)
-        self._output_sdr = SDR(self.output_sdr_shape)
-        self._boost_factors = np.ones(self.output_sdr_shape, dtype=np.float32)
+        self.stimulus_threshold = stimulus_threshold
+        self.n_active_neurons = active_neurons
+        self.syn_increment = syn_increment
+        self.syn_decrement = syn_decrement
+        self.beta = beta
+        self._rng = np.random.default_rng(seed)
 
-        self.dopamine_level = 0
-        self.dopamine_factor = dopamine_factor
+        # connections from input to intermediate neurons
+        self.connections = Connections(self.spn_size, synapse_threshold)
+        n_potential_cells = int(potential_pct * input_size)
+        for cell in range(self.spn_size):
+            self.connections.createSegment(cell, 1)
+            potential_cells = self._rng.permutation(input_size)[:n_potential_cells]
+            for presyn_cell in potential_cells:
+                if self._rng.uniform() < connected_pct:
+                    permanence = self._rng.uniform(synapse_threshold, 1)
+                else:
+                    permanence = self._rng.uniform(0, synapse_threshold)
+                self.connections.createSynapse(cell, presyn_cell, permanence)
+
+        # connections from intermediate to output neurons
+        n_d1_cells = int(d1_pct * field_size)
+        n_d2_cells = field_size - n_d1_cells
+        self.d1_mask = np.empty((output_size * n_d1_cells), dtype=int)
+        self.d2_mask = np.empty((output_size * n_d2_cells), dtype=int)
+        for cell in range(output_size):
+            inds = self._rng.permutation(field_size)
+            d1 = inds[:n_d1_cells]
+            d2 = inds[n_d1_cells:]
+            self.d1_mask[cell * n_d1_cells: (cell + 1) * n_d1_cells] = d1 + field_size * cell
+            self.d2_mask[cell * n_d2_cells: (cell + 1) * n_d2_cells] = d2 + field_size * cell
+
+        self.dopa_factors = np.ones(self.spn_size)
+        self.boost_factors = np.ones(self.spn_size)
+        self._input_sdr = SDR(input_size)
+        self._spn = np.zeros(self.spn_size)
 
     def update_dopamine_boost(self, dopamine: float):
-        self.dopamine_level *= self.dopamine_factor
-        self.dopamine_level += dopamine
+        pass
 
-        self.sp.getBoostFactors(self._boost_factors)
-        self._boost_factors[:self.zone_size, :] *= (1 + self.dopamine_level)
-        self._boost_factors[self.zone_size:, :] /= (1 + self.dopamine_level)
-        self.sp.setBoostFactors(self._boost_factors)
+    @staticmethod
+    def sigmoid(x):
+        return 1 / (1 + np.exp(-x))
 
-    def compute(self, sdr: SparseSdr, dopamine: float, learn: bool) -> SparseSdr:
-        if learn:
-            self.update_dopamine_boost(dopamine)
-
+    def compute(self, sdr: SparseSdr, dopamine: float, learn: bool) -> np.ndarray:
         self._input_sdr.sparse = sdr
-        self.sp.compute(self._input_sdr, learn=learn, output=self._output_sdr)
-        output = np.copy(self._output_sdr.sparse)
+        activity = self.connections.computeActivity(self._input_sdr, learn)
+
+        adb = activity * self.dopa_factors * self.boost_factors
+        theta = self.stimulus_threshold
+        d = dopamine
+
+        self._spn[self.d1_mask] = adb[self.d1_mask] - theta / d
+        self._spn[self.d2_mask] = adb[self.d2_mask] - theta * d
+        self._spn[self._spn < 0] = 0
+
+        k = self.spn_size - self.n_active_neurons
+        spn_out = np.argpartition(self._spn, k)[k:]
+        possible_output = np.nonzero(self._spn)
+        spn_out = np.intersect1d(spn_out, possible_output)
+
+        if learn:
+            for cell in spn_out:
+                self.connections.adaptSegment(
+                    cell, self._input_sdr, self.syn_increment, self.syn_decrement
+                )
+                self.connections.raisePermanencesToThreshold(cell, self.stimulus_threshold)
+
+        output = np.zeros(self.output_size)
+        for cell in range(self.output_size):
+            output_d1 = np.intersect1d(spn_out, self.d1_mask.reshape((self.output_size, -1))[cell])
+            output_d2 = np.intersect1d(spn_out, self.d2_mask.reshape((self.output_size, -1))[cell])
+            output[cell] = self.sigmoid(self.beta * (len(output_d1) - len(output_d2)))
         return output
 
     def reset(self):
-        self.dopamine_level = 0
+        pass

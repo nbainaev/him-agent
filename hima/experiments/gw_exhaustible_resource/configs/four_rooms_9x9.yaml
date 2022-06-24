@@ -1,6 +1,6 @@
 _type_: exhaustible.resource
 agent: motiv
-project: test_amygdala
+project: test_striatum
 
 log: True
 path_to_store_logs: '/tmp'  # important: change, if you are Windows user
@@ -73,22 +73,16 @@ agent_config:
     with_reset: True
     filter_factor: 0.1
   striatum:
-    columnDimensions:
-      - 1
-      - 300
-    potentialRadius: 1000
-    potentialPct: 0.9
-    globalInhibition: true
-    localAreaDensity: 0.04
-    stimulusThreshold: 1
-    synPermInactiveDec: 0.01
-    synPermActiveInc: 0.1
-    synPermConnected: 0.5
-    minPctOverlapDutyCycle: 0.001
-    dutyCyclePeriod: 1000
-    boostStrength: 0
-    wrapAround: true
-    dopamine_factor: 0.99
+    field_size: 100
+    beta: 0.01
+    synapse_threshold: 0.5
+    potential_pct: 0.9
+    connected_pct: 0.5
+    d1_pct: 0.5
+    stimulus_threshold: 1
+    active_neurons: 40
+    syn_increment: 0.1
+    syn_decrement: 0.01
   policy:
     gamma: 0.999
     alpha: 0.1
