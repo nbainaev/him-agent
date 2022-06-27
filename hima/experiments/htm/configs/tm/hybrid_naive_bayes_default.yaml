@@ -2,11 +2,23 @@ w_lr: 0.01
 nu_lr: 0.01
 b_lr: 0.01
 beta_lr: 0.01
+
+w_lr_apical: 0.01
+nu_lr_apical: 0.01
+
+theta_lr: 0.01
+gamma_lr: 0.01
+
 init_w: 0.5
 init_nu: 0.5
 init_b: 0.5
-init_beta: 0.5
-full_learning: True
+init_beta: 0.99
+
+init_w_apical: 0.5
+init_nu_apical: 0.5
+
+init_theta: 0.5
+init_gamma: 0.5
 
 cells_per_column: 10
 activation_threshold: .8
@@ -20,3 +32,10 @@ sample_size_basal: -1
 max_synapses_per_segment_basal: -1
 max_segments_per_cell_basal: 6
 prune_zero_synapses: True
+
+max_interneurons: 100
+connected_threshold_inhib: 0.01
+learning_threshold_inhib: 1
+initial_permanence_inhib: 0.5
+permanence_increment_inhib: 0.1
+permanence_decrement_inhib: 0.1
