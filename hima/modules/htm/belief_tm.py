@@ -672,9 +672,9 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             self._update_weights(
                 new_winner_cells,
                 new_basal_segments,
-                new_apical_segments,
                 learning_active_basal_segments,
-                learning_matching_apical_segments,
+                basal_segments_to_punish,
+                new_apical_segments,
             )
 
         self.active_cells.sparse = np.unique(new_active_cells.astype('uint32'))
@@ -969,8 +969,8 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             self.beta[new_active_segments_basal] = self.init_beta
 
         if len(new_active_segments_apical) > 0:
-            self.w_apical[new_active_segments_basal] = self.init_w_apical
-            self.nu_apical[new_active_segments_basal] = self.init_nu_apical
+            self.w_apical[new_active_segments_apical] = self.init_w_apical
+            self.nu_apical[new_active_segments_apical] = self.init_nu_apical
 
         # update dendrites activity
         active_segments_dense_basal = np.zeros_like(self.b)

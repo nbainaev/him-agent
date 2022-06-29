@@ -31,11 +31,11 @@ predicted_segment_decrement_basal: 0.001
 sample_size_basal: -1
 max_synapses_per_segment_basal: -1
 max_segments_per_cell_basal: 6
+max_segments_per_cell_apical: 6
 prune_zero_synapses: True
 
 max_interneurons: 100
 connected_threshold_inhib: 0.01
-learning_threshold_inhib: 1
 initial_permanence_inhib: 0.5
 permanence_increment_inhib: 0.1
 permanence_decrement_inhib: 0.1

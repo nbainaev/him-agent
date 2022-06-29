@@ -80,3 +80,46 @@ class MarkovProcessGrammar:
         states_probs = np.linalg.matrix_power(self.transition_probs, steps)
         return np.dot(states_probs, self.letter_probs)[from_state]
 
+
+class MultiMarkovProcessGrammar(MarkovProcessGrammar):
+    def __init__(
+            self,
+            policy_transition_probs,
+            policy_transition_letters,
+            alphabet,
+            initial_state,
+            initial_policy,
+            autoreset=False,
+            seed=None):
+
+        super(MultiMarkovProcessGrammar, self).__init__(
+            policy_transition_probs[initial_policy],
+            policy_transition_letters[initial_policy],
+            alphabet,
+            initial_state,
+            autoreset,
+            seed
+        )
+
+        self.initial_policy = initial_policy
+        self.current_policy = initial_policy
+
+        transition_probs = np.array(policy_transition_probs)
+        norm = transition_probs.sum(axis=-1)[:, :, None]
+        norm_transition_probs = np.divide(
+            transition_probs, norm,
+            where=(norm != 0),
+            out=np.zeros_like(transition_probs)
+        )
+        self.policy_transition_probs = norm_transition_probs
+        self.policy_transition_letters = policy_transition_letters
+
+    def set_policy(self, policy_id):
+        self.current_policy = policy_id
+        self.transition_probs = self.policy_transition_probs[policy_id]
+        self.transition_letters = self.policy_transition_letters[policy_id]
+
+    def reset(self):
+        super(MultiMarkovProcessGrammar, self).reset()
+        self.current_policy = self.initial_policy
+        self.set_policy(self.initial_policy)
