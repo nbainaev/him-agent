@@ -8,6 +8,7 @@ import numpy as np
 from hima.envs.mpg import MultiMarkovProcessGrammar
 from hima.common.sdr_encoders import IntBucketEncoder
 from hima.modules.htm.belief_tm import HybridNaiveBayesTM
+from scipy.special import rel_entr
 import pickle
 
 import wandb
@@ -74,6 +75,14 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
     hist_dist = np.zeros((policy_encoder.n_values, len(mpg.states), len(mpg.alphabet)))
     lr = 0.02
 
+    true_densities = np.zeros((policy_encoder.n_values, len(mpg.states), len(mpg.alphabet)))
+    for pol in range(policy_encoder.n_values):
+        mpg.set_policy(pol)
+        true_densities[pol] = np.array([mpg.predict_letters(from_state=i) for i in mpg.states])
+
+    true_hist = np.copy(true_densities)
+    true_hist[true_hist > 0] = 1.0
+
     for i in range(config['run']['epochs']):
         mpg.reset()
         tm.reset()
@@ -82,6 +91,8 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
         anomaly = []
         confidence = []
         surprise = []
+        dkl = []
+        iou = []
 
         policy = mpg.rng.integers(policy_encoder.n_values)
         mpg.set_policy(policy)
@@ -115,6 +126,8 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
             )
             density[policy][mpg.current_state] += lr * (letter_dist - density[policy][mpg.current_state])
 
+            dkl.append(min(rel_entr(true_densities[policy][mpg.current_state], letter_dist).sum(), 200.0))
+
             pred_columns_dense = np.zeros(tm.columns)
             pred_columns_dense[tm.get_predicted_columns()] = 1
             predicted_letters = np.mean(
@@ -122,40 +135,97 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
             )
             hist_dist[policy][mpg.current_state] += lr * (predicted_letters - hist_dist[policy][mpg.current_state])
 
+            iou.append(
+                np.logical_and(predicted_letters, true_hist[policy][mpg.current_state]).sum() / np.logical_or(predicted_letters, true_hist[policy][mpg.current_state]).sum()
+            )
+
         if logger is not None:
             logger.log(
                 {
-                    'surprise': np.array(surprise)[1:].mean(),
-                    'anomaly': np.array(anomaly)[1:].mean(),
-                    'confidence': np.array(confidence)[1:].mean()
+                    'main_metrics/surprise': np.array(surprise)[1:].mean(),
+                    'main_metrics/anomaly': np.array(anomaly)[1:].mean(),
+                    'main_metrics/confidence': np.array(confidence)[1:].mean(),
+                    'main_metrics/dkl': np.array(dkl)[1:].mean(),
+                    'main_metrics/iou': np.nanmean(np.array(iou)[1:])
                 }, step=i
             )
-            for pol in range(density.shape[0]):
-                if i % config['run']['update_rate'] == 0:
-                    def format_fn(tick_val, tick_pos):
-                        if int(tick_val) in range(len(mpg.alphabet)):
-                            return mpg.alphabet[int(tick_val)]
-                        else:
-                            return ''
 
-                    fig, (ax1, ax2) = plt.subplots(2, sharex=True)
-                    ax1.xaxis.set_major_formatter(format_fn)
-                    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
-                    ax1.set_ylim(0, 1)
-                    for x in range(density[pol].shape[0]):
-                        ax1.plot(density[pol][x], label=f'state{x}', linewidth=2, marker='o')
-                    ax1.grid()
+            if i % config['run']['update_rate'] == 0:
+                kl_divs = rel_entr(true_densities, density).sum(axis=-1)
 
-                    ax2.xaxis.set_major_formatter(format_fn)
-                    ax2.xaxis.set_major_locator(MaxNLocator(integer=True))
-                    ax2.set_ylim(0, 1)
-                    for x in range(hist_dist[pol].shape[0]):
-                        ax2.plot(hist_dist[pol][x], linewidth=2, marker='o')
-                    ax2.grid()
+                n_states = len(mpg.states)
+                k = int(np.ceil(np.sqrt(n_states)))
+                for pol in range(density.shape[0]):
+                    fig, axs = plt.subplots(k, k)
+                    fig.tight_layout(pad=3.0)
 
-                    fig.legend(loc=7)
+                    for n in range(n_states):
+                        ax = axs[n // k][n % k]
+                        ax.grid()
+                        ax.set_ylim(0, 1)
+                        ax.set_title(
+                            f's: {n}; ' + '$D_{KL}$: ' + f'{np.round(kl_divs[pol][n], 2)}'
+                        )
+                        ax.bar(
+                            np.arange(density[pol][n].shape[0]),
+                            density[pol][n],
+                            tick_label=mpg.alphabet,
+                            label='TM',
+                            color=(0.7, 1.0, 0.3),
+                            capsize=4,
+                            ecolor='#2b4162'
+                        )
+                        ax.bar(
+                            np.arange(density[pol][n].shape[0]),
+                            true_densities[pol][n],
+                            tick_label=mpg.alphabet,
+                            color='#8F754F',
+                            alpha=0.6,
+                            label='True'
+                        )
 
-                    logger.log({f'letter_predictions_policy_{pol}': wandb.Image(fig)}, step=i)
+                    fig.legend(['TM', 'True'], loc=7)
+
+                    logger.log({f'density/letter_predictions_policy_{pol}': wandb.Image(fig)}, step=i)
+
+                    plt.close(fig)
+
+                for pol in range(density.shape[0]):
+                    fig, axs = plt.subplots(k, k)
+                    fig.tight_layout(pad=3.0)
+
+                    for n in range(n_states):
+                        intersection = (hist_dist[pol][n] * true_hist[pol][n]).sum()
+                        union = hist_dist[pol][n].sum() + true_hist[pol][n].sum() - intersection
+                        iou = intersection / union
+
+                        ax = axs[n // k][n % k]
+                        ax.grid()
+                        ax.set_ylim(0, 1)
+                        ax.set_title(
+                            f's: {n}; iou {np.round(iou, 2)}'
+                        )
+                        ax.bar(
+                            np.arange(density[pol][n].shape[0]),
+                            hist_dist[pol][n],
+                            tick_label=mpg.alphabet,
+                            label='TM',
+                            color=(0.7, 1.0, 0.3),
+                            capsize=4,
+                            ecolor='#2b4162'
+                        )
+                        ax.bar(
+                            np.arange(density[pol][n].shape[0]),
+                            true_hist[pol][n],
+                            tick_label=mpg.alphabet,
+                            color='#8F754F',
+                            alpha=0.6,
+                            label='True'
+                        )
+
+                    fig.legend(['TM', 'True'], loc=7)
+
+                    logger.log({f'deterministic/letter_predictions_policy_{pol}': wandb.Image(fig)}, step=i)
 
                     plt.close(fig)
 
