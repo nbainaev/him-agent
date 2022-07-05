@@ -38,13 +38,18 @@ class MarkovProcessGrammar:
         self.current_state = initial_state
         self.autoreset = autoreset
 
-        self.letter_probs = np.zeros((len(self.states), len(self.alphabet)))
+        self.letter_probs = self.init_letter_probs()
+
+        self.rng = np.random.default_rng(seed)
+
+    def init_letter_probs(self):
+        letter_probs = np.zeros((len(self.states), len(self.alphabet)))
         for state in self.states:
             for i, letter in enumerate(self.transition_letters[state]):
                 if letter != 0:
-                    self.letter_probs[state, self.char_to_num[letter]] = self.transition_probs[state, i]
-
-        self.rng = np.random.default_rng(seed)
+                    letter_probs[state, self.char_to_num[letter]] = self.transition_probs[
+                        state, i]
+        return letter_probs
 
     def set_current_state(self, state):
         self.current_state = state
@@ -118,6 +123,7 @@ class MultiMarkovProcessGrammar(MarkovProcessGrammar):
         self.current_policy = policy_id
         self.transition_probs = self.policy_transition_probs[policy_id]
         self.transition_letters = self.policy_transition_letters[policy_id]
+        self.letter_probs = self.init_letter_probs()
 
     def reset(self):
         super(MultiMarkovProcessGrammar, self).reset()

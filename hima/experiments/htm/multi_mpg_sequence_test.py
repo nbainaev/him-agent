@@ -118,6 +118,7 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
 
             tm.set_active_context_cells(tm.get_active_cells())
             tm.activate_basal_dendrites(learn=True)
+            tm.activate_apical_dendrites(learn=True)
             tm.predict_cells()
             tm.predict_columns()
 
@@ -146,7 +147,9 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
                     'main_metrics/anomaly': np.array(anomaly)[1:].mean(),
                     'main_metrics/confidence': np.array(confidence)[1:].mean(),
                     'main_metrics/dkl': np.array(dkl)[1:].mean(),
-                    'main_metrics/iou': np.nanmean(np.array(iou)[1:])
+                    'main_metrics/iou': np.nanmean(np.array(iou)[1:]),
+                    'segments/apical': tm.apical_connections.numSegments(),
+                    'segments/basal': tm.basal_connections.numSegments()
                 }, step=i
             )
 
