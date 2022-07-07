@@ -146,7 +146,7 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
                     'main_metrics/surprise': np.array(surprise)[1:].mean(),
                     'main_metrics/anomaly': np.array(anomaly)[1:].mean(),
                     'main_metrics/confidence': np.array(confidence)[1:].mean(),
-                    'main_metrics/dkl': np.array(dkl)[1:].mean(),
+                    'main_metrics/dkl': np.array(np.abs(dkl))[1:].mean(),
                     'main_metrics/iou': np.nanmean(np.array(iou)[1:]),
                     'segments/apical': tm.apical_connections.numSegments(),
                     'segments/basal': tm.basal_connections.numSegments()
