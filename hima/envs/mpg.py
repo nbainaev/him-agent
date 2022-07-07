@@ -17,12 +17,12 @@ class MarkovProcessGrammar:
             autoreset=False,
             seed=None
     ):
-        transition_probs = np.array(transition_probs)
+        transition_probs = np.array(transition_probs, dtype=np.float)
         norm = transition_probs.sum(axis=-1).reshape(-1, 1)
         norm_transition_probs = np.divide(
             transition_probs, norm,
-            where=(norm != 0),
-            out=np.zeros_like(transition_probs)
+            where=(norm != 0.0),
+            out=np.zeros_like(transition_probs, dtype=np.float)
         )
 
         self.terminal_states = np.flatnonzero(norm == 0)
@@ -109,7 +109,7 @@ class MultiMarkovProcessGrammar(MarkovProcessGrammar):
         self.initial_policy = initial_policy
         self.current_policy = initial_policy
 
-        transition_probs = np.array(policy_transition_probs)
+        transition_probs = np.array(policy_transition_probs, dtype=np.float)
         norm = transition_probs.sum(axis=-1)[:, :, None]
         norm_transition_probs = np.divide(
             transition_probs, norm,
