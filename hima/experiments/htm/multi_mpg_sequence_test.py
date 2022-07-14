@@ -13,7 +13,6 @@ import pickle
 
 import wandb
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
 import yaml
 import os
 
