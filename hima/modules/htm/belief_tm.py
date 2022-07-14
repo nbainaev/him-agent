@@ -378,6 +378,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             b_lr=0.01,
             w_lr_apical=0.01,
             nu_lr_apical=0.01,
+            b_lr_apical=0.01,
             beta_lr=0.01,
             theta_lr=0.01,
             gamma_lr=0.01,
@@ -386,6 +387,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             init_b=0.5,
             init_w_apical=0.5,
             init_nu_apical=0.5,
+            init_b_apical=0.5,
             init_beta=0.5,
             init_theta=0.5,
             init_gamma=0.5,
@@ -458,10 +460,20 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         )
 
         # p(dendrite=1)
-        self.b = np.zeros(self.segment_probs_basal.size, dtype=REAL64_DTYPE)
+        self.b = np.full(
+            self.segment_probs_basal.size,
+            self.init_b,
+            dtype=REAL64_DTYPE)
 
-        # p(cell=1|dendrite=1)
-        self.beta = np.full(
+        # p(cell=1|dendrite=1, exists_apical_dendrite)
+        self.beta1 = np.full(
+            self.segment_probs_basal.size,
+            self.init_beta,
+            dtype=REAL64_DTYPE
+        )
+
+        # p(cell=1|dendrite=1, no_apical_dendrite)
+        self.beta2 = np.full(
             self.segment_probs_basal.size,
             self.init_beta,
             dtype=REAL64_DTYPE
@@ -473,9 +485,11 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
 
         self.w_lr_apical = w_lr_apical
         self.nu_lr_apical = nu_lr_apical
+        self.b_lr_apical = b_lr_apical
 
         self.init_w_apical = init_w_apical
         self.init_nu_apical = init_nu_apical
+        self.init_b_apical = init_b_apical
 
         # p(pred_syn_cell=1|dendrite=1)
         self.w_apical = np.full(
@@ -490,6 +504,12 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             self.init_nu_apical,
             dtype=REAL64_DTYPE
         )
+
+        # p(dendrite=1)
+        self.b_apical = np.full(
+            self.segment_probs_apical.size,
+            self.init_b_apical,
+            dtype=REAL64_DTYPE)
 
         self.receptive_fields_apical = np.zeros(
             (self.segment_probs_apical.size, self.cell_probs_feedback.size),
@@ -679,6 +699,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
                 new_basal_segments,
                 learning_active_basal_segments,
                 basal_segments_to_punish,
+                self.predictive_cells_apical,
                 new_apical_segments,
             )
 
@@ -716,7 +737,9 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
                 self.segments_in_use_basal
             ) - self.local_range[0]
 
-            cells_with_basal_segments, indices = np.unique(cells_for_basal_segments, return_index=True)
+            basal_segments = self.segments_in_use_basal
+
+            cells_with_basal_segments, indices_basal = np.unique(cells_for_basal_segments, return_index=True)
 
             if len(self.segments_in_use_apical) > 0:
                 cells_for_apical_segments = self.apical_connections.mapSegmentsToCells(
@@ -736,29 +759,54 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
                 apical_segments = self.segments_in_use_apical[mask1]
                 cells_for_apical_segments = cells_for_apical_segments[mask1]
 
-                # filter out basal segments on cells without apical segments
-                mask2 = np.in1d(
-                    cells_for_basal_segments,
-                    cells_with_both_type_of_segments
+                w = self.w_apical[apical_segments]
+                nu = self.nu_apical[apical_segments]
+                b = self.b_apical[apical_segments]
+                f = self.receptive_fields_apical[apical_segments]
+
+                # p(pi|d=1)
+                synapse_probs_true = np.power((1 - w), 1 - cell_probs_feedback) * np.power(
+                    w, cell_probs_feedback
                 )
-                basal_segments = self.segments_in_use_basal[mask2]
-                cells_for_basal_segments = cells_for_basal_segments[mask2]
-                cells_with_basal_segments, indices = np.unique(
-                    cells_for_basal_segments, return_index=True
+                # p(pi|d=0)
+                synapse_probs_false = np.power((1 - nu), 1 - cell_probs_feedback) * np.power(
+                    nu, cell_probs_feedback
                 )
 
+                likelihood_true_apical = np.prod(synapse_probs_true, axis=-1, where=f)
+                likelihood_false_apical = np.prod(synapse_probs_false, axis=-1, where=f)
+
+                norm = b * likelihood_true_apical + (1 - b) * likelihood_false_apical
+                segment_probs_apical = np.divide(
+                    b * likelihood_true_apical, norm,
+                    out=np.zeros_like(b, dtype=REAL64_DTYPE), where=(norm != 0)
+                )
+
+                max_index_per_cell = argmaxMulti(
+                    segment_probs_apical,
+                    cells_for_apical_segments,
+                    assumeSorted=True
+                )
+
+                # probs for cells_with_both_type_of_segments
+                max_probs_apical_per_cell_apical = segment_probs_apical[max_index_per_cell]
+
+                max_probs_apical_per_cell_basal = np.zeros_like(cells_with_basal_segments, dtype=REAL64_DTYPE)
+                np.place(
+                    max_probs_apical_per_cell_basal,
+                    np.in1d(cells_with_basal_segments, cells_with_both_type_of_segments),
+                    max_probs_apical_per_cell_apical
+                )
+
+                max_probs_apical_per_segment_basal = max_probs_apical_per_cell_basal[np.searchsorted(cells_with_basal_segments, cells_for_basal_segments)]
             else:
-                cells_with_both_type_of_segments = np.empty(0, dtype=UINT_DTYPE)
-
-                basal_segments = self.segments_in_use_basal
-                apical_segments = self.segments_in_use_apical
-
-                cells_for_apical_segments = np.empty(0)
+                max_probs_apical_per_segment_basal = np.empty(0)
 
             w = self.w[basal_segments]
             nu = self.nu[basal_segments]
             b = self.b[basal_segments]
-            beta = self.beta[basal_segments]
+            beta1 = self.beta1[basal_segments]
+            beta2 = self.beta2[basal_segments]
             f = self.receptive_fields_basal[basal_segments]
 
             # p(s|d=1)
@@ -779,42 +827,16 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
                 out=np.zeros_like(b, dtype=REAL64_DTYPE), where=(norm != 0)
             )
 
-            active_prob = 1 - np.multiply.reduceat(
-                np.power((1 - beta), segment_probs_basal), indices
+            cell_active_prob_per_segment = (
+                    np.power(beta1, max_probs_apical_per_segment_basal) *
+                    np.power(beta2, 1 - max_probs_apical_per_segment_basal) *
+                    segment_probs_basal
             )
 
-            # include feedback information
-            if len(cells_with_both_type_of_segments) > 0:
-                w = self.w_apical[apical_segments]
-                nu = self.nu_apical[apical_segments]
-                f = self.receptive_fields_apical[apical_segments]
-
-                # p(pi|d=1)
-                synapse_probs_true = np.power((1 - w), 1 - cell_probs_feedback) * np.power(
-                    w, cell_probs_feedback
-                )
-                # p(pi|d=0)
-                synapse_probs_false = np.power((1 - nu), 1 - cell_probs_feedback) * np.power(
-                    nu, cell_probs_feedback
-                )
-
-                likelihood_true_apical = np.prod(synapse_probs_true, axis=-1, where=f)
-                likelihood_false_apical = np.prod(synapse_probs_false, axis=-1, where=f)
-
-                max_index_per_cell = argmaxMulti(
-                    likelihood_true_apical,
-                    cells_for_apical_segments,
-                    assumeSorted=True
-                )
-                likelihood_true_apical = likelihood_true_apical[max_index_per_cell]
-                likelihood_false_apical = likelihood_false_apical[max_index_per_cell]
-
-                norm = active_prob * likelihood_true_apical + (
-                        1 - active_prob) * likelihood_false_apical
-                active_prob = np.divide(
-                    active_prob * likelihood_true_apical, norm,
-                    out=np.zeros_like(active_prob, dtype=REAL64_DTYPE), where=(norm != 0)
-                )
+            active_prob = np.maximum.reduceat(
+                cell_active_prob_per_segment,
+                indices_basal
+            )
 
             cell_probs_context = np.zeros_like(self.cell_probs_context)
             cell_probs_context[cells_with_basal_segments] = active_prob
@@ -1000,6 +1022,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             new_active_segments_basal,
             true_positive_segments_basal,
             false_positive_segments_basal,
+            predictive_cells_apical,
             new_active_segments_apical,
     ):
         # non-zero segments' id
@@ -1019,26 +1042,65 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             self.w[new_active_segments_basal] = self.init_w
             self.nu[new_active_segments_basal] = self.init_nu
             self.b[new_active_segments_basal] = self.init_b
-            self.beta[new_active_segments_basal] = self.init_beta
+            self.beta1[new_active_segments_basal] = self.init_beta
+            self.beta2[new_active_segments_basal] = self.init_beta
 
         if len(new_active_segments_apical) > 0:
             self.w_apical[new_active_segments_apical] = self.init_w_apical
             self.nu_apical[new_active_segments_apical] = self.init_nu_apical
+            self.b_apical[new_active_segments_apical] = self.init_b_apical
 
         # update dendrites activity
         active_segments_dense_basal = np.zeros_like(self.b)
         active_segments_dense_basal[active_segments_basal] = 1
 
+        active_segments_dense_apical = np.zeros_like(self.b_apical)
+        active_segments_dense_apical[active_segments_apical] = 1
+
         b_deltas = active_segments_dense_basal - self.b
         self.b += self.b_lr * b_deltas
 
+        b_deltas = active_segments_dense_apical - self.b_apical
+        self.b_apical += self.b_lr_apical * b_deltas
+
         # update segment reliability
-        if len(true_positive_segments_basal) > 0:
-            self.beta[true_positive_segments_basal] += self.beta_lr * (
-                        1 - self.beta[true_positive_segments_basal])
-        if len(false_positive_segments_basal) > 0:
-            self.beta[false_positive_segments_basal] -= self.beta_lr * self.beta[
-                false_positive_segments_basal]
+        # filter predicted segments by apical neighbours
+        cells_for_basal_true_segments = self.basal_connections.mapSegmentsToCells(true_positive_segments_basal)
+        cells_for_basal_false_segments = self.basal_connections.mapSegmentsToCells(false_positive_segments_basal)
+
+        mask1 = np.in1d(
+            cells_for_basal_true_segments,
+            predictive_cells_apical
+        )
+
+        mask2 = np.in1d(
+            cells_for_basal_false_segments,
+            predictive_cells_apical
+        )
+
+        true_positive_segments_basal_with_apical = true_positive_segments_basal[mask1]
+
+        false_positive_segments_basal_with_apical = false_positive_segments_basal[mask2]
+
+        if len(true_positive_segments_basal_with_apical) > 0:
+            self.beta1[true_positive_segments_basal_with_apical] += self.beta_lr * (
+                        1 - self.beta1[true_positive_segments_basal_with_apical])
+
+        if len(false_positive_segments_basal_with_apical) > 0:
+            self.beta1[false_positive_segments_basal_with_apical] -= self.beta_lr * self.beta1[
+                false_positive_segments_basal_with_apical]
+
+        true_positive_segments_basal_no_apical = true_positive_segments_basal[~mask1]
+
+        false_positive_segments_basal_no_apical = false_positive_segments_basal[~mask2]
+
+        if len(true_positive_segments_basal_no_apical) > 0:
+            self.beta2[true_positive_segments_basal_no_apical] += self.beta_lr * (
+                    1 - self.beta2[true_positive_segments_basal_no_apical])
+
+        if len(false_positive_segments_basal_no_apical) > 0:
+            self.beta2[false_positive_segments_basal_no_apical] -= self.beta_lr * self.beta2[
+                false_positive_segments_basal_no_apical]
 
         # update conditional probs
         old_active_context_cells_dense = np.zeros_like(self.cell_probs_context)
@@ -1071,12 +1133,15 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         nu_deltas[active_segments_apical] = 0
         self.nu_apical += self.nu_lr_apical * nu_deltas
 
-        self.beta = np.clip(self.beta, 0, 1)
+        # clipping, just in case
+        self.beta1 = np.clip(self.beta1, 0, 1)
+        self.beta2 = np.clip(self.beta2, 0, 1)
         self.b = np.clip(self.b, 0, 1)
         self.w = np.clip(self.w, 0, 1)
         self.nu = np.clip(self.nu, 0, 1)
         self.w_apical = np.clip(self.w_apical, 0, 1)
         self.nu_apical = np.clip(self.nu_apical, 0, 1)
+        self.b_apical = np.clip(self.b_apical, 0, 1)
 
     def _update_receptive_fields(self):
         self.receptive_fields_basal = np.zeros(

@@ -5,6 +5,7 @@ beta_lr: 0.01
 
 w_lr_apical: 0.01
 nu_lr_apical: 0.01
+b_lr_apical: 0.01
 
 theta_lr: 0.01
 gamma_lr: 0.01
@@ -16,6 +17,7 @@ init_beta: 0.99
 
 init_w_apical: 0.5
 init_nu_apical: 0.5
+init_b_apical: 0.5
 
 init_theta: 0.5
 init_gamma: 0.5
