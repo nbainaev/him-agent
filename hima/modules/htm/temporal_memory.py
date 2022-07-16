@@ -214,7 +214,7 @@ class GeneralFeedbackTM:
         if predicted_cells.size == 0:
             predicted_cells = self.predictive_cells_basal
 
-        self.predicted_cells.sparse = predicted_cells.astype('uint32')
+        self.predicted_cells.sparse = predicted_cells.astype(UINT_DTYPE)
         self.predicted_columns.sparse = np.unique(self._columns_for_cells(self.predicted_cells.sparse))
 
         confidence = min(len(self.predicted_cells.sparse) / (self.mean_active_columns + EPS), 1.0)
@@ -297,7 +297,7 @@ class GeneralFeedbackTM:
                                             self.initial_permanence_apical,
                                             self.max_segments_per_cell_apical)
 
-        self.active_cells.sparse = np.unique(new_active_cells.astype('uint32'))
+        self.active_cells.sparse = np.unique(new_active_cells.astype(UINT_DTYPE))
         self.winner_cells.sparse = np.unique(new_winner_cells)
 
         n_active_columns = self.active_columns.sparse.size
@@ -404,9 +404,9 @@ class GeneralFeedbackTM:
              ) = self._choose_best_segment_per_column(
                 matching_cells_in_bursting_columns)
         else:
-            learning_matching_basal_segments = np.empty(0, dtype=np.int32)
-            learning_matching_apical_segments2 = np.empty(0, dtype=np.int32)
-            cells_to_grow_apical_segments2 = np.empty(0, dtype=np.int32)
+            learning_matching_basal_segments = np.empty(0, dtype=UINT_DTYPE)
+            learning_matching_apical_segments2 = np.empty(0, dtype=UINT_DTYPE)
+            cells_to_grow_apical_segments2 = np.empty(0, dtype=UINT_DTYPE)
         # cells on which new apical and basal segments will be grown
         if bursting_columns_with_no_match.size > 0:
             cells_to_grow_apical_and_basal_segments = self._get_cells_with_fewest_segments(self.basal_connections,
@@ -430,21 +430,26 @@ class GeneralFeedbackTM:
         # Incorrectly predicted columns
         incorrect_matching_basal_mask = np.isin(self._columns_for_cells(cells_for_matching_basal),
                                                 self.active_columns.sparse, invert=True)
-        # TODO we should punish only those matching apical segments that coincide with basal
-        incorrect_matching_apical_mask = np.isin(self._columns_for_cells(cells_for_matching_apical),
-                                                 self.active_columns.sparse, invert=True)
-
         basal_segments_to_punish = self.matching_segments_basal[incorrect_matching_basal_mask]
+
+        cells_for_wrong_segments_basal = self.basal_connections.mapSegmentsToCells(basal_segments_to_punish)
+
+        # punish only those apical segments that coincide with wrong basal segments
+        incorrect_matching_apical_mask = np.isin(
+            cells_for_matching_apical,
+            cells_for_wrong_segments_basal
+        )
+
         apical_segments_to_punish = self.matching_segments_apical[incorrect_matching_apical_mask]
 
-        return (learning_active_basal_segments.astype('uint32'),
-                learning_matching_basal_segments.astype('uint32'),
-                learning_matching_apical_segments.astype('uint32'),
-                cells_to_grow_apical_segments.astype('uint32'),
-                basal_segments_to_punish.astype('uint32'),
-                apical_segments_to_punish.astype('uint32'),
-                cells_to_grow_apical_and_basal_segments.astype('uint32'),
-                winner_cells.astype('uint32'))
+        return (learning_active_basal_segments.astype(UINT_DTYPE),
+                learning_matching_basal_segments.astype(UINT_DTYPE),
+                learning_matching_apical_segments.astype(UINT_DTYPE),
+                cells_to_grow_apical_segments.astype(UINT_DTYPE),
+                basal_segments_to_punish.astype(UINT_DTYPE),
+                apical_segments_to_punish.astype(UINT_DTYPE),
+                cells_to_grow_apical_and_basal_segments.astype(UINT_DTYPE),
+                winner_cells.astype(UINT_DTYPE))
 
     def _choose_best_segment_per_column(self, cells):
         """
@@ -484,9 +489,9 @@ class GeneralFeedbackTM:
                                                                                   cells_for_apical_segments,
                                                                                   invert=True)]
 
-        return (learning_basal_segments.astype('uint32'),
-                learning_apical_segments.astype('uint32'),
-                cells_to_grow_apical_segments.astype('uint32'))
+        return (learning_basal_segments.astype(UINT_DTYPE),
+                learning_apical_segments.astype(UINT_DTYPE),
+                cells_to_grow_apical_segments.astype(UINT_DTYPE))
 
     @staticmethod
     def _choose_best_segment_per_cell(connections, cells, segments, num_potential):
@@ -507,7 +512,7 @@ class GeneralFeedbackTM:
             learning_segments = candidate_segments[one_per_cell_filter]
         else:
             learning_segments = np.empty(0)
-        return learning_segments.astype('uint32')
+        return learning_segments.astype(UINT_DTYPE)
 
     def _get_cells_with_fewest_segments(self, basal_connections, apical_connections, columns):
         """
@@ -526,14 +531,14 @@ class GeneralFeedbackTM:
             newshape=(len(columns), self.cells_per_column))
 
         # Filter to just the cells that are tied for fewest in their minicolumn.
-        tiebreaker = np.empty_like(segment_counts, dtype='float64')
+        tiebreaker = np.empty_like(segment_counts, dtype=REAL64_DTYPE)
         self.rng.initializeReal64Array(tiebreaker)
         segment_counts = segment_counts + tiebreaker * 0.1
 
         min_segment_counts = np.amin(segment_counts, axis=1, keepdims=True)
         candidate_cells = candidate_cells[np.flatnonzero(segment_counts == min_segment_counts)]
 
-        return candidate_cells.astype('uint32')
+        return candidate_cells.astype(UINT_DTYPE)
 
     @staticmethod
     def _activate_dendrites(connections, presynaptic_cells, activation_threshold, learning_threshold, learn):
