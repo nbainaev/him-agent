@@ -695,12 +695,13 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
 
             self._update_receptive_fields()
             self._update_weights(
-                new_winner_cells,
+                self.active_segments_basal,
                 new_basal_segments,
                 learning_active_basal_segments,
                 basal_segments_to_punish,
-                self.predictive_cells_apical,
+                self.active_segments_apical,
                 new_apical_segments,
+                self.predictive_cells_apical,
             )
 
         self.active_cells.sparse = np.unique(new_active_cells.astype('uint32'))
@@ -800,7 +801,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
 
                 max_probs_apical_per_segment_basal = max_probs_apical_per_cell_basal[np.searchsorted(cells_with_basal_segments, cells_for_basal_segments)]
             else:
-                max_probs_apical_per_segment_basal = np.empty(0)
+                max_probs_apical_per_segment_basal = 0
 
             w = self.w[basal_segments]
             nu = self.nu[basal_segments]
@@ -1018,25 +1019,14 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
 
     def _update_weights(
             self,
-            new_winner_cells,
+            active_segments_basal,
             new_active_segments_basal,
             true_positive_segments_basal,
             false_positive_segments_basal,
-            predictive_cells_apical,
+            active_segments_apical,
             new_active_segments_apical,
+            predictive_cells_apical,
     ):
-        # non-zero segments' id
-        segments_in_use_basal = np.flatnonzero(np.sum(self.receptive_fields_basal, axis=-1))
-        segments_in_use_apical = np.flatnonzero(np.sum(self.receptive_fields_apical, axis=-1))
-
-        # TODO should it be only matched and active segments?
-        active_segments_basal = self.basal_connections.filterSegmentsByCell(
-            segments_in_use_basal, new_winner_cells
-        )
-        active_segments_apical = self.apical_connections.filterSegmentsByCell(
-            segments_in_use_apical, new_winner_cells
-        )
-
         # init new segments
         if len(new_active_segments_basal) > 0:
             self.w[new_active_segments_basal] = self.init_w
@@ -1052,10 +1042,12 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
 
         # update dendrites activity
         active_segments_dense_basal = np.zeros_like(self.b)
-        active_segments_dense_basal[active_segments_basal] = 1
+        if len(active_segments_basal) > 0:
+            active_segments_dense_basal[active_segments_basal] = 1
 
         active_segments_dense_apical = np.zeros_like(self.b_apical)
-        active_segments_dense_apical[active_segments_apical] = 1
+        if len(active_segments_apical) > 0:
+            active_segments_dense_apical[active_segments_apical] = 1
 
         b_deltas = active_segments_dense_basal - self.b
         self.b += self.b_lr * b_deltas
