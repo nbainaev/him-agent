@@ -115,15 +115,15 @@ class GeneralFeedbackTM:
         self.active_cells_context = SDR(self.total_cells)
         self.active_cells_feedback = SDR(self.total_cells)
 
-        self.predictive_cells_basal = np.empty(0)
-        self.active_segments_basal = np.empty(0)
-        self.matching_segments_basal = np.empty(0)
-        self.num_potential_basal = np.empty(0)
+        self.predictive_cells_basal = np.empty(0, dtype=UINT_DTYPE)
+        self.active_segments_basal = np.empty(0, dtype=UINT_DTYPE)
+        self.matching_segments_basal = np.empty(0, dtype=UINT_DTYPE)
+        self.num_potential_basal = np.empty(0, dtype=UINT_DTYPE)
 
-        self.predictive_cells_apical = np.empty(0)
-        self.active_segments_apical = np.empty(0)
-        self.matching_segments_apical = np.empty(0)
-        self.num_potential_apical = np.empty(0)
+        self.predictive_cells_apical = np.empty(0, dtype=UINT_DTYPE)
+        self.active_segments_apical = np.empty(0, dtype=UINT_DTYPE)
+        self.matching_segments_apical = np.empty(0, dtype=UINT_DTYPE)
+        self.num_potential_apical = np.empty(0, dtype=UINT_DTYPE)
 
         self.anomaly_window = anomaly_window
         self.confidence_window = confidence_window
@@ -148,15 +148,15 @@ class GeneralFeedbackTM:
         self.active_cells_context = SDR(self.total_cells)
         self.active_cells_feedback = SDR(self.total_cells)
 
-        self.predictive_cells_basal = np.empty(0)
-        self.active_segments_basal = np.empty(0)
-        self.matching_segments_basal = np.empty(0)
-        self.num_potential_basal = np.empty(0)
+        self.predictive_cells_basal = np.empty(0, dtype=UINT_DTYPE)
+        self.active_segments_basal = np.empty(0, dtype=UINT_DTYPE)
+        self.matching_segments_basal = np.empty(0, dtype=UINT_DTYPE)
+        self.num_potential_basal = np.empty(0, dtype=UINT_DTYPE)
 
-        self.predictive_cells_apical = np.empty(0)
-        self.active_segments_apical = np.empty(0)
-        self.matching_segments_apical = np.empty(0)
-        self.num_potential_apical = np.empty(0)
+        self.predictive_cells_apical = np.empty(0, dtype=UINT_DTYPE)
+        self.active_segments_apical = np.empty(0, dtype=UINT_DTYPE)
+        self.matching_segments_apical = np.empty(0, dtype=UINT_DTYPE)
+        self.num_potential_apical = np.empty(0, dtype=UINT_DTYPE)
 
     # input
     def set_active_columns(self, columns_id):
@@ -430,6 +430,7 @@ class GeneralFeedbackTM:
         # Incorrectly predicted columns
         incorrect_matching_basal_mask = np.isin(self._columns_for_cells(cells_for_matching_basal),
                                                 self.active_columns.sparse, invert=True)
+        # TODO we should punish only those matching apical segments that coincide with basal
         incorrect_matching_apical_mask = np.isin(self._columns_for_cells(cells_for_matching_apical),
                                                  self.active_columns.sparse, invert=True)
 
