@@ -106,7 +106,8 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
             # set winner cells from previous step
             tm.set_active_context_cells(tm.get_winner_cells())
             tm.set_active_columns(obs_encoder.encode(mpg.char_to_num[letter]))
-            tm.set_active_feedback_cells(policy_encoder.encode(policy))
+            if config['run']['use_feedback']:
+                tm.set_active_feedback_cells(policy_encoder.encode(policy))
             tm.activate_cells(learn=True)
 
             surprise.append(min(200.0, tm.surprise))
