@@ -275,7 +275,7 @@ def run_hybrid_naive_bayes_tm(config, mpg, encoder, logger):
             tm.set_active_context_cells(tm.get_active_cells())
             tm.activate_basal_dendrites(learn=True)
             tm.predict_cells()
-            tm.predict_columns()
+            tm.predict_columns_density()
 
             letter_dist = np.mean(
                 tm.column_probs.reshape((-1, config['run']['bucket_size'])).T, axis=0
