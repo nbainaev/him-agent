@@ -176,7 +176,7 @@ class AblationUtp(SpatialPooler):
     # noinspection PyMethodOverriding
     def compute(
             self, input_active: SDR, correctly_predicted_input: SDR, learn: bool
-    ):
+    ) -> SDR:
         """
         Computes one cycle of the Union Temporal Pooler algorithm.
         @param input_active (SDR) Input bottom up feedforward activity
@@ -228,7 +228,10 @@ class AblationUtp(SpatialPooler):
             # Increase permanence of connections from predicted active inputs to cells in the union SDR
             # This is Hebbian learning applied to the current time step
             if self.union_learning:
-                self._adaptSynapses(correctly_predicted_input, self._unionSDR, self._synPermPredActiveInc, 0.0)
+                self._adaptSynapses(
+                    correctly_predicted_input, self._unionSDR,
+                    self._synPermPredActiveInc, 0.0
+                )
 
             # adapt permanence of connections from previously predicted inputs to newly active cells
             # This is a reinforcement learning rule that considers previous input to the current cell
@@ -258,7 +261,7 @@ class AblationUtp(SpatialPooler):
                 self._prePredictedActiveInput.pop(0)
             self._prePredictedActiveInput.append(correctly_predicted_input)
 
-        return self._unionSDR
+        return self.getUnionSDR()
 
     def _decayPoolingActivation(self):
         """
@@ -319,3 +322,12 @@ class AblationUtp(SpatialPooler):
 
     def getUnionSDR(self):
         return self._unionSDR
+
+    @property
+    def output_sdr_size(self):
+        return self.getNumColumns()
+
+    @property
+    def n_active_bits(self):
+        return self._maxUnionCells
+

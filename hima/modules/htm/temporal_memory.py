@@ -5,6 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
 from htm.algorithms import TemporalMemory as HtmTemporalMemory
+from htm.advanced.algorithms.apical_tiebreak_temporal_memory import ApicalTiebreakSequenceMemory
 from htm.bindings.algorithms import ANMode
 from htm.bindings.math import Random
 from htm.bindings.sdr import SDR
@@ -17,7 +18,6 @@ from typing import Union
 import numpy as np
 from math import exp
 from functools import reduce
-
 
 EPS = 1e-12
 UINT_DTYPE = "uint32"
@@ -596,6 +596,7 @@ class DelayedFeedbackTM:
     Updates apical connections only when propagate method is called.
     Stores all cells to grow apical connections in union sparse array.
     """
+
     def __init__(self,
                  columns,
                  cells_per_column,
@@ -1132,6 +1133,7 @@ class MovingDelayedFeedbackTM:
     Stores all cells to grow apical segments in a list for every step.
     When it comes to grow apical connections, it unites all patterns in history.
     """
+
     def __init__(self,
                  columns,
                  cells_per_column,
@@ -2630,7 +2632,7 @@ class ApicalBasalFeedbackTM:
 
 
 class ClassicTemporalMemory(HtmTemporalMemory):
-    n_columns: int
+    columns: int
     cells_per_column: int
     activation_threshold: int
     learning_threshold: int
@@ -2654,7 +2656,7 @@ class ClassicTemporalMemory(HtmTemporalMemory):
             # print(activation_threshold, learning_threshold, max_new_synapse_count, max_synapses_per_segment)
 
         super().__init__(
-            columnDimensions=(n_columns, ),
+            columnDimensions=(n_columns,),
             cellsPerColumn=cells_per_column,
             activationThreshold=activation_threshold,
             minThreshold=learning_threshold,
@@ -2665,7 +2667,7 @@ class ClassicTemporalMemory(HtmTemporalMemory):
             anomalyMode=ANMode.RAW,
             **kwargs
         )
-        self.n_columns = n_columns
+        self.columns = n_columns
         self.cells_per_column = cells_per_column
         self.activation_threshold = activation_threshold
         self.learning_threshold = learning_threshold
@@ -2675,7 +2677,7 @@ class ClassicTemporalMemory(HtmTemporalMemory):
     def __getstate__(self):
         # used to pickle object
         data = (
-            self.n_columns, self.cells_per_column, self.activation_threshold,
+            self.columns, self.cells_per_column, self.activation_threshold,
             self.learning_threshold, self.initial_permanence, self.connected_permanence
         )
         return super().__getstate__(), data
@@ -2687,10 +2689,46 @@ class ClassicTemporalMemory(HtmTemporalMemory):
         super().__setstate__(super_data)
 
         (
-            self.n_columns, self.cells_per_column, self.activation_threshold,
+            self.columns, self.cells_per_column, self.activation_threshold,
             self.learning_threshold, self.initial_permanence, self.connected_permanence
         ) = data
 
+    def getCorrectrlyPredictedCells(self) -> SDR:
+        correct_predict = SDR(self.columns * self.cells_per_column)
+        correct_predict.sparse = np.intersect1d(self.getPredictiveCells().sparse.copy(), self.getActiveCells().sparse)
+        return correct_predict
+
     @property
     def output_sdr_size(self):
-        return self.n_columns
+        return self.columns
+
+
+class ClassicApicalTemporalMemory(ApicalTiebreakSequenceMemory):
+    columns: int
+    cells_per_column: int
+
+    def __init__(self, **kwargs):
+        super(ClassicApicalTemporalMemory, self).__init__(**kwargs)
+        self.columns = self.columnCount
+        self.cells_per_column = self.cellsPerColumn
+
+    def get_correctly_predicted_cells(self) -> SDR:
+        sdr = SDR(self.cells_per_column*self.columns)
+        sdr.sparse = self.getPredictedActiveCells()
+        return sdr
+
+    def get_active_cells(self) -> SDR:
+        sdr = SDR(self.cells_per_column * self.columns)
+        sdr.sparse = super(ClassicApicalTemporalMemory, self).getActiveCells()
+        return sdr
+
+    def get_active_columns(self) -> SDR:
+        sdr = SDR(self.columns)
+        active_cells = self.get_active_cells().sparse
+        sdr.sparse = np.unique(active_cells // self.cells_per_column)
+        return sdr
+
+    def get_correctly_predicted_columns(self) -> SDR:
+        sdr = SDR(self.columns)
+        sdr.sparse = np.unique(self.get_correctly_predicted_cells().sparse // self.cells_per_column)
+        return sdr
