@@ -10,6 +10,8 @@ from animalai.envs.actions import AAIActions
 from hima.common.sdr import SparseSdr
 from hima.modules.v1 import V1
 
+from htm.bindings.sdr import SDR
+
 
 class SpinAgent:
     n_actions: int
@@ -93,43 +95,53 @@ def through_v1(images: np.ndarray, v1_config):
 
     result = []
     for img in images:
-        result.append(v1.compute(img)[0][0])
-    return {
-        'shape': v1.output_sdr_size,
-        'sparse': result
-    }
+        sdr = SDR(v1.output_sdr_size)
+        sdr.sparse = v1.compute(img)[0][0]
+        result.append(sdr)
+    return result
 
 
 if __name__ == '__main__':
     if len(sys.argv) > 1:
-        room_conf_path = sys.argv[1]
+        room_conf_paths = [sys.argv[1]]
     else:
-        room_conf_path = '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/1g.yml'
-    pics = collect_data(room_conf_path)
-    plt.imshow(pics[59])
-    plt.show()
-    simple_configs = [
-        {
+        room_conf_paths = [
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/different_points/l.yml',
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/different_points/r.yml',
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/different_points/u.yml',
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/different_points/d.yml',
+            '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/different_points/center.yml'
+
+        ]
+
+    rooms_observations = []
+    for room_conf in room_conf_paths:
+        pics = collect_data(room_conf)
+        plt.imshow(pics[39])
+        plt.show()
+        simple_configs = [
+            {
+                'g_kernel_size': 12,
+                'g_stride': 2,
+                'g_sigma_x': 4,
+                'g_sigma_y': 4,
+                'g_lambda_': 8,
+                'g_filters': 8,
+                'activity_level': 0.3
+            }
+        ]
+
+        complex_config = {
             'g_kernel_size': 12,
-            'g_stride': 2,
-            'g_sigma_x': 4,
-            'g_sigma_y': 4,
-            'g_lambda_': 8,
-            'g_filters': 8,
-            'activity_level': 0.3
+            'g_stride': 6,
+            'g_sigma': 19.2,
+            'activity_level': 0.6
         }
-    ]
+        converted = through_v1(list_to_np(pics), {
+            'simple_configs': simple_configs,
+            'complex_config': complex_config
+        })
+        rooms_observations.append(converted)
 
-    complex_config = {
-        'g_kernel_size': 12,
-        'g_stride': 6,
-        'g_sigma': 19.2,
-        'activity_level': 0.6
-    }
-    converted = through_v1(list_to_np(pics), {
-        'simple_configs': simple_configs,
-        'complex_config': complex_config
-    })
-    with open('room2_obs_v1.pkl', 'wb') as f:
-        dump(converted, f)
-
+    with open('distance.pkl', 'wb') as f:
+        dump(rooms_observations, f)

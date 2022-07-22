@@ -4,6 +4,8 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 import os
+import sys
+import traceback
 from argparse import ArgumentParser
 from copy import deepcopy
 from multiprocessing import Process
@@ -57,7 +59,7 @@ class Sweep:
     shared_run_config_overrides: list[TConfigOverrideKV]
 
     def __init__(
-            self, config: dict, n_agents: int,
+            self, sweep_id: str, config: dict, n_agents: int,
             experiment_runner_registry: TExperimentRunnerRegistry,
             shared_config_overrides: list[TConfigOverrideKV],
             run_arg_parser: ArgumentParser = None,
@@ -75,7 +77,15 @@ class Sweep:
         self.shared_run_config = read_config(shared_config_filepath)
         self.shared_run_config_overrides = shared_config_overrides
 
-        self.id = wandb.sweep(self.config, project=wandb_project)
+        # on Linux machines there's some kind of problem with running sweeps in threads?
+        # see https://github.com/wandb/client/issues/1409#issuecomment-870174971
+        # and https://github.com/wandb/client/issues/3045#issuecomment-1010435868
+        os.environ['WANDB_START_METHOD'] = 'thread'
+
+        if sweep_id is None:
+            self.id = wandb.sweep(self.config, project=wandb_project)
+        else:
+            self.id = sweep_id
 
     def run(self):
         print(f'==> Sweep {self.id}')
@@ -101,6 +111,18 @@ class Sweep:
         print(f'<== Sweep {self.id}')
 
     def _wandb_agent_entry_point(self) -> None:
+        # noinspection PyBroadException
+        try:
+            self._run_provided_config()
+        except Exception as _:
+            # catch it only to print traces to the terminal as wandb doesn't do it in Agents!
+            print(traceback.print_exc(), file=sys.stderr)
+            # finish explicitly with error code (NB: I tend to think it's not necessary here)
+            wandb.finish(1)
+            # re-raise after printing so wandb catch it
+            raise
+
+    def _run_provided_config(self) -> None:
         # BE CAREFUL: this method is expected to be run in parallel — DO NOT mutate `self` here
 
         # see comments inside func
@@ -150,6 +172,7 @@ def get_run_command_arg_parser() -> ArgumentParser:
     parser.add_argument('-c', '--config', dest='config_filepath', required=True)
     parser.add_argument('-e', '--entity', dest='wandb_entity', required=False, default=None)
     parser.add_argument('--sweep', dest='wandb_sweep', action='store_true', default=False)
+    parser.add_argument('--sweep_id', dest='wandb_sweep_id', default=None)
     parser.add_argument('-n', '--n_sweep_agents', type=int, default=None)
     return parser
 
@@ -172,6 +195,7 @@ def run_experiment(
 
     if args.wandb_sweep:
         Sweep(
+            sweep_id=args.wandb_sweep_id,
             config=config,
             n_agents=args.n_sweep_agents,
             experiment_runner_registry=experiment_runner_registry,

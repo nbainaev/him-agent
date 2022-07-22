@@ -7,8 +7,10 @@
 from typing import Any, Sequence
 
 import numpy as np
+from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
+from hima.common.sds import Sds
 from hima.common.utils import isnone
 
 
@@ -27,7 +29,7 @@ class IntBucketEncoder:
     ALL = -1
 
     n_values: int
-    output_sdr_size: int
+    output_sds: Sds
 
     _bucket_size: int
     _buckets_step: int
@@ -45,11 +47,19 @@ class IntBucketEncoder:
         self.n_values = n_values
 
         max_value = self.n_values - 1
-        self.output_sdr_size = self._bucket_starting_pos(max_value) + self._bucket_size
+        sds_size = self._bucket_starting_pos(max_value) + self._bucket_size
+        self.output_sds = Sds(
+            size=sds_size,
+            active_size=self._bucket_size
+        )
+
+    @property
+    def output_sdr_size(self) -> int:
+        return self.output_sds.size
 
     @property
     def n_active_bits(self) -> int:
-        return self._bucket_size
+        return self.output_sds.active_size
 
     def encode(self, x: int) -> SparseSdr:
         """Encodes value x to sparse SDR format using bucket-based non-overlapping encoding."""
@@ -85,39 +95,60 @@ class IntRandomEncoder:
     Any two encoded values may overlap. Encoding scheme is initialized once and then remains fixed.
     """
 
-    output_sdr_size: int
+    output_sds: Sds
 
     _encoding_map: np.array
 
-    def __init__(self, n_values: int, total_bits: int, sparsity: float, seed: int):
+    def __init__(
+            self, n_values: int, seed: int,
+            sds: tuple = None,
+            space_compression: float = None,
+            active_size: int = None
+    ):
         """
         Initializes encoder.
 
         :param n_values: defines a range [0, n_values) of values that can be encoded
         :param total_bits: total number of bits in a resulted SDR
-        :param sparsity: sparsity level of resulted SDR
+        :param n_active_bits: int number of resulted SDR active bits or its [float] sparsity level
         :param seed: random seed for random encoding scheme generation
         """
-        self.output_sdr_size = total_bits
 
-        value_bits = int(total_bits * sparsity)
-        rng_generator = np.random.default_rng(seed=seed)
+        if sds is None:
+            sds_size = int(n_values * active_size * space_compression)
+            sds = (sds_size, active_size)
 
-        self._encoding_map = np.empty(shape=(n_values, value_bits), dtype=np.int)
-        for x in range(n_values):
-            self._encoding_map[x, :] = rng_generator.choice(total_bits, size=value_bits, replace=False)
+        self.output_sds = Sds(sds)
+        self._encoding_map = self._make_encoding_map(
+            n_values=n_values,
+            total_bits=self.output_sds.size,
+            n_active_bits=self.output_sds.active_size,
+            seed=seed
+        )
+
+    @property
+    def output_sdr_size(self) -> int:
+        return self.output_sds.size
+
+    @property
+    def n_active_bits(self) -> int:
+        return self.output_sds.active_size
 
     @property
     def n_values(self) -> int:
         return self._encoding_map.shape[0]
 
-    @property
-    def n_active_bits(self):
-        return self._encoding_map.shape[1]
-
     def encode(self, x: int) -> SparseSdr:
         """Encodes value x to sparse SDR format using random overlapping encoding."""
         return self._encoding_map[x]
+
+    @staticmethod
+    def _make_encoding_map(n_values, total_bits, n_active_bits, seed: int) -> np.ndarray:
+        rng = np.random.default_rng(seed=seed)
+        encoding_map = np.empty(shape=(n_values, n_active_bits), dtype=np.int)
+        for x in range(n_values):
+            encoding_map[x, :] = rng.choice(total_bits, size=n_active_bits, replace=False)
+        return encoding_map
 
 
 class IntArrayEncoder:

@@ -64,7 +64,7 @@ class Environment(Env):
         self.shape = self.renderer.shape.full_shape
 
         self.actions = isnone(actions, self.supported_actions.copy())
-        ensure_all_actions_supported(self.actions, self.supported_actions)
+        assert_all_actions_supported(self.actions, self.supported_actions)
 
         self.modules = {}
         self.handlers = {}
@@ -214,7 +214,7 @@ class Environment(Env):
         )
 
 
-def ensure_all_actions_supported(actions, supported_actions):
+def assert_all_actions_supported(actions, supported_actions):
     non_supported_actions = [
         action for action in actions
         if action not in supported_actions

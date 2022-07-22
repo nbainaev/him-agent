@@ -628,6 +628,14 @@ class UnionTemporalPooler(HtmSpatialPooler):
         # predicted inputs from the last n steps
         self._prePredictedActiveInput = list()
 
+    @property
+    def output_sdr_size(self):
+        return self.getNumColumns()
+
+    @property
+    def n_active_bits(self):
+        return self._maxUnionCells
+
     def reset(self, boosting=True):
         """
     Reset the state of the Union Temporal Pooler.
@@ -648,16 +656,16 @@ class UnionTemporalPooler(HtmSpatialPooler):
             self.setMinOverlapDutyCycles(np.zeros(self.getNumColumns(), dtype=REAL_DTYPE))
             self.setBoostFactors(np.ones(self.getNumColumns(), dtype=REAL_DTYPE))
 
-    def compute(self, input_active: SDR, correctly_predicted_input: SDR,
-                learn: bool):
+    # noinspection PyMethodOverriding
+    def compute(
+            self, input_active: SDR, correctly_predicted_input: SDR, learn: bool
+    ) -> SDR:
         """
     Computes one cycle of the Union Temporal Pooler algorithm.
     @param input_active (SDR) Input bottom up feedforward activity
     @param correctly_predicted_input (SDR) Represents correctly predicted input
     @param learn (bool) A boolean value indicating whether learning should be performed
     """
-        assert input_active.dense.size == self.getNumInputs()
-        assert correctly_predicted_input.dense.size == self.getNumInputs()
         self._updateBookeepingVars(learn)
 
         # Compute proximal dendrite overlaps with active and active-predicted inputs
@@ -718,7 +726,7 @@ class UnionTemporalPooler(HtmSpatialPooler):
                 self._prePredictedActiveInput.pop(0)
             self._prePredictedActiveInput.append(correctly_predicted_input)
 
-        return self._unionSDR
+        return self.getUnionSDR()
 
     def _decayPoolingActivation(self):
         """

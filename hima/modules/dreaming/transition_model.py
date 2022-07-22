@@ -34,8 +34,8 @@ class TransitionModel:
         self.f_score = 0.
         self.anomaly = 1.
 
-        self._proximal_input_sdr = SDR(self.tm.n_columns)
-        self._predicted_columns_sdr = SDR(self.tm.n_columns)
+        self._proximal_input_sdr = SDR(self.tm.columns)
+        self._predicted_columns_sdr = SDR(self.tm.columns)
 
     def reset(self):
         self.tm.reset()

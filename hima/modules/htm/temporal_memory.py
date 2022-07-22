@@ -5,6 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
 from htm.algorithms import TemporalMemory as HtmTemporalMemory
+from htm.advanced.algorithms.apical_tiebreak_temporal_memory import ApicalTiebreakSequenceMemory
 from htm.bindings.algorithms import ANMode
 from htm.bindings.math import Random
 from htm.bindings.sdr import SDR
@@ -17,7 +18,6 @@ from typing import Union
 import numpy as np
 from math import exp
 from functools import reduce
-
 
 EPS = 1e-12
 UINT_DTYPE = "uint32"
@@ -115,15 +115,15 @@ class GeneralFeedbackTM:
         self.active_cells_context = SDR(self.total_cells)
         self.active_cells_feedback = SDR(self.total_cells)
 
-        self.predictive_cells_basal = np.empty(0)
-        self.active_segments_basal = np.empty(0)
-        self.matching_segments_basal = np.empty(0)
-        self.num_potential_basal = np.empty(0)
+        self.predictive_cells_basal = np.empty(0, dtype=UINT_DTYPE)
+        self.active_segments_basal = np.empty(0, dtype=UINT_DTYPE)
+        self.matching_segments_basal = np.empty(0, dtype=UINT_DTYPE)
+        self.num_potential_basal = np.empty(0, dtype=UINT_DTYPE)
 
-        self.predictive_cells_apical = np.empty(0)
-        self.active_segments_apical = np.empty(0)
-        self.matching_segments_apical = np.empty(0)
-        self.num_potential_apical = np.empty(0)
+        self.predictive_cells_apical = np.empty(0, dtype=UINT_DTYPE)
+        self.active_segments_apical = np.empty(0, dtype=UINT_DTYPE)
+        self.matching_segments_apical = np.empty(0, dtype=UINT_DTYPE)
+        self.num_potential_apical = np.empty(0, dtype=UINT_DTYPE)
 
         self.anomaly_window = anomaly_window
         self.confidence_window = confidence_window
@@ -148,15 +148,15 @@ class GeneralFeedbackTM:
         self.active_cells_context = SDR(self.total_cells)
         self.active_cells_feedback = SDR(self.total_cells)
 
-        self.predictive_cells_basal = np.empty(0)
-        self.active_segments_basal = np.empty(0)
-        self.matching_segments_basal = np.empty(0)
-        self.num_potential_basal = np.empty(0)
+        self.predictive_cells_basal = np.empty(0, dtype=UINT_DTYPE)
+        self.active_segments_basal = np.empty(0, dtype=UINT_DTYPE)
+        self.matching_segments_basal = np.empty(0, dtype=UINT_DTYPE)
+        self.num_potential_basal = np.empty(0, dtype=UINT_DTYPE)
 
-        self.predictive_cells_apical = np.empty(0)
-        self.active_segments_apical = np.empty(0)
-        self.matching_segments_apical = np.empty(0)
-        self.num_potential_apical = np.empty(0)
+        self.predictive_cells_apical = np.empty(0, dtype=UINT_DTYPE)
+        self.active_segments_apical = np.empty(0, dtype=UINT_DTYPE)
+        self.matching_segments_apical = np.empty(0, dtype=UINT_DTYPE)
+        self.num_potential_apical = np.empty(0, dtype=UINT_DTYPE)
 
     # input
     def set_active_columns(self, columns_id):
@@ -180,6 +180,9 @@ class GeneralFeedbackTM:
 
     def get_active_cells_context(self):
         return self.active_cells_context.sparse - self.context_range[0]
+
+    def get_active_cells_feedback(self):
+        return self.active_cells_feedback.sparse - self.feedback_range[0]
 
     def get_winner_cells(self):
         return self.winner_cells.sparse - self.local_range[0]
@@ -211,7 +214,7 @@ class GeneralFeedbackTM:
         if predicted_cells.size == 0:
             predicted_cells = self.predictive_cells_basal
 
-        self.predicted_cells.sparse = predicted_cells.astype('uint32')
+        self.predicted_cells.sparse = predicted_cells.astype(UINT_DTYPE)
         self.predicted_columns.sparse = np.unique(self._columns_for_cells(self.predicted_cells.sparse))
 
         confidence = min(len(self.predicted_cells.sparse) / (self.mean_active_columns + EPS), 1.0)
@@ -294,7 +297,7 @@ class GeneralFeedbackTM:
                                             self.initial_permanence_apical,
                                             self.max_segments_per_cell_apical)
 
-        self.active_cells.sparse = np.unique(new_active_cells.astype('uint32'))
+        self.active_cells.sparse = np.unique(new_active_cells.astype(UINT_DTYPE))
         self.winner_cells.sparse = np.unique(new_winner_cells)
 
         n_active_columns = self.active_columns.sparse.size
@@ -401,9 +404,9 @@ class GeneralFeedbackTM:
              ) = self._choose_best_segment_per_column(
                 matching_cells_in_bursting_columns)
         else:
-            learning_matching_basal_segments = np.empty(0, dtype=np.int32)
-            learning_matching_apical_segments2 = np.empty(0, dtype=np.int32)
-            cells_to_grow_apical_segments2 = np.empty(0, dtype=np.int32)
+            learning_matching_basal_segments = np.empty(0, dtype=UINT_DTYPE)
+            learning_matching_apical_segments2 = np.empty(0, dtype=UINT_DTYPE)
+            cells_to_grow_apical_segments2 = np.empty(0, dtype=UINT_DTYPE)
         # cells on which new apical and basal segments will be grown
         if bursting_columns_with_no_match.size > 0:
             cells_to_grow_apical_and_basal_segments = self._get_cells_with_fewest_segments(self.basal_connections,
@@ -427,20 +430,26 @@ class GeneralFeedbackTM:
         # Incorrectly predicted columns
         incorrect_matching_basal_mask = np.isin(self._columns_for_cells(cells_for_matching_basal),
                                                 self.active_columns.sparse, invert=True)
-        incorrect_matching_apical_mask = np.isin(self._columns_for_cells(cells_for_matching_apical),
-                                                 self.active_columns.sparse, invert=True)
-
         basal_segments_to_punish = self.matching_segments_basal[incorrect_matching_basal_mask]
+
+        cells_for_wrong_segments_basal = self.basal_connections.mapSegmentsToCells(basal_segments_to_punish)
+
+        # punish only those apical segments that coincide with wrong basal segments
+        incorrect_matching_apical_mask = np.isin(
+            cells_for_matching_apical,
+            cells_for_wrong_segments_basal
+        )
+
         apical_segments_to_punish = self.matching_segments_apical[incorrect_matching_apical_mask]
 
-        return (learning_active_basal_segments.astype('uint32'),
-                learning_matching_basal_segments.astype('uint32'),
-                learning_matching_apical_segments.astype('uint32'),
-                cells_to_grow_apical_segments.astype('uint32'),
-                basal_segments_to_punish.astype('uint32'),
-                apical_segments_to_punish.astype('uint32'),
-                cells_to_grow_apical_and_basal_segments.astype('uint32'),
-                winner_cells.astype('uint32'))
+        return (learning_active_basal_segments.astype(UINT_DTYPE),
+                learning_matching_basal_segments.astype(UINT_DTYPE),
+                learning_matching_apical_segments.astype(UINT_DTYPE),
+                cells_to_grow_apical_segments.astype(UINT_DTYPE),
+                basal_segments_to_punish.astype(UINT_DTYPE),
+                apical_segments_to_punish.astype(UINT_DTYPE),
+                cells_to_grow_apical_and_basal_segments.astype(UINT_DTYPE),
+                winner_cells.astype(UINT_DTYPE))
 
     def _choose_best_segment_per_column(self, cells):
         """
@@ -480,9 +489,9 @@ class GeneralFeedbackTM:
                                                                                   cells_for_apical_segments,
                                                                                   invert=True)]
 
-        return (learning_basal_segments.astype('uint32'),
-                learning_apical_segments.astype('uint32'),
-                cells_to_grow_apical_segments.astype('uint32'))
+        return (learning_basal_segments.astype(UINT_DTYPE),
+                learning_apical_segments.astype(UINT_DTYPE),
+                cells_to_grow_apical_segments.astype(UINT_DTYPE))
 
     @staticmethod
     def _choose_best_segment_per_cell(connections, cells, segments, num_potential):
@@ -503,7 +512,7 @@ class GeneralFeedbackTM:
             learning_segments = candidate_segments[one_per_cell_filter]
         else:
             learning_segments = np.empty(0)
-        return learning_segments.astype('uint32')
+        return learning_segments.astype(UINT_DTYPE)
 
     def _get_cells_with_fewest_segments(self, basal_connections, apical_connections, columns):
         """
@@ -522,14 +531,14 @@ class GeneralFeedbackTM:
             newshape=(len(columns), self.cells_per_column))
 
         # Filter to just the cells that are tied for fewest in their minicolumn.
-        tiebreaker = np.empty_like(segment_counts, dtype='float64')
+        tiebreaker = np.empty_like(segment_counts, dtype=REAL64_DTYPE)
         self.rng.initializeReal64Array(tiebreaker)
         segment_counts = segment_counts + tiebreaker * 0.1
 
         min_segment_counts = np.amin(segment_counts, axis=1, keepdims=True)
         candidate_cells = candidate_cells[np.flatnonzero(segment_counts == min_segment_counts)]
 
-        return candidate_cells.astype('uint32')
+        return candidate_cells.astype(UINT_DTYPE)
 
     @staticmethod
     def _activate_dendrites(connections, presynaptic_cells, activation_threshold, learning_threshold, learn):
@@ -587,6 +596,7 @@ class DelayedFeedbackTM:
     Updates apical connections only when propagate method is called.
     Stores all cells to grow apical connections in union sparse array.
     """
+
     def __init__(self,
                  columns,
                  cells_per_column,
@@ -1123,6 +1133,7 @@ class MovingDelayedFeedbackTM:
     Stores all cells to grow apical segments in a list for every step.
     When it comes to grow apical connections, it unites all patterns in history.
     """
+
     def __init__(self,
                  columns,
                  cells_per_column,
@@ -2621,7 +2632,7 @@ class ApicalBasalFeedbackTM:
 
 
 class ClassicTemporalMemory(HtmTemporalMemory):
-    n_columns: int
+    columns: int
     cells_per_column: int
     activation_threshold: int
     learning_threshold: int
@@ -2645,7 +2656,7 @@ class ClassicTemporalMemory(HtmTemporalMemory):
             # print(activation_threshold, learning_threshold, max_new_synapse_count, max_synapses_per_segment)
 
         super().__init__(
-            columnDimensions=(n_columns, ),
+            columnDimensions=(n_columns,),
             cellsPerColumn=cells_per_column,
             activationThreshold=activation_threshold,
             minThreshold=learning_threshold,
@@ -2656,7 +2667,7 @@ class ClassicTemporalMemory(HtmTemporalMemory):
             anomalyMode=ANMode.RAW,
             **kwargs
         )
-        self.n_columns = n_columns
+        self.columns = n_columns
         self.cells_per_column = cells_per_column
         self.activation_threshold = activation_threshold
         self.learning_threshold = learning_threshold
@@ -2666,7 +2677,7 @@ class ClassicTemporalMemory(HtmTemporalMemory):
     def __getstate__(self):
         # used to pickle object
         data = (
-            self.n_columns, self.cells_per_column, self.activation_threshold,
+            self.columns, self.cells_per_column, self.activation_threshold,
             self.learning_threshold, self.initial_permanence, self.connected_permanence
         )
         return super().__getstate__(), data
@@ -2678,10 +2689,46 @@ class ClassicTemporalMemory(HtmTemporalMemory):
         super().__setstate__(super_data)
 
         (
-            self.n_columns, self.cells_per_column, self.activation_threshold,
+            self.columns, self.cells_per_column, self.activation_threshold,
             self.learning_threshold, self.initial_permanence, self.connected_permanence
         ) = data
 
+    def getCorrectrlyPredictedCells(self) -> SDR:
+        correct_predict = SDR(self.columns * self.cells_per_column)
+        correct_predict.sparse = np.intersect1d(self.getPredictiveCells().sparse.copy(), self.getActiveCells().sparse)
+        return correct_predict
+
     @property
     def output_sdr_size(self):
-        return self.n_columns
+        return self.columns
+
+
+class ClassicApicalTemporalMemory(ApicalTiebreakSequenceMemory):
+    columns: int
+    cells_per_column: int
+
+    def __init__(self, **kwargs):
+        super(ClassicApicalTemporalMemory, self).__init__(**kwargs)
+        self.columns = self.columnCount
+        self.cells_per_column = self.cellsPerColumn
+
+    def get_correctly_predicted_cells(self) -> SDR:
+        sdr = SDR(self.cells_per_column*self.columns)
+        sdr.sparse = self.getPredictedActiveCells()
+        return sdr
+
+    def get_active_cells(self) -> SDR:
+        sdr = SDR(self.cells_per_column * self.columns)
+        sdr.sparse = super(ClassicApicalTemporalMemory, self).getActiveCells()
+        return sdr
+
+    def get_active_columns(self) -> SDR:
+        sdr = SDR(self.columns)
+        active_cells = self.get_active_cells().sparse
+        sdr.sparse = np.unique(active_cells // self.cells_per_column)
+        return sdr
+
+    def get_correctly_predicted_columns(self) -> SDR:
+        sdr = SDR(self.columns)
+        sdr.sparse = np.unique(self.get_correctly_predicted_cells().sparse // self.cells_per_column)
+        return sdr
