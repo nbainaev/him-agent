@@ -8,12 +8,14 @@ from hima.common.run_utils import (
     get_run_command_arg_parser, run_experiment
 )
 from hima.experiments.motivation.test_empowerment import GwEmpowermentTest
+from hima.experiments.motivation.test_striatum import GwStriatumTest
 
 
 if __name__ == '__main__':
     run_experiment(
         run_command_parser=get_run_command_arg_parser(),
         experiment_runner_registry={
-            'motivation.emp': GwEmpowermentTest
+            'motivation.emp': GwEmpowermentTest,
+            'motivation.str': GwStriatumTest
         }
     )

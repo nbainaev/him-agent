@@ -22,7 +22,7 @@ class Agent:
         )
 
         self.str = Striatum(
-            input_size=self.amg.sdr_size+obs_dim, seed=self.seed, output_size=action_dim,
+            input_size=obs_dim, seed=self.seed, output_size=action_dim,
             **config['striatum']
         )
 
@@ -33,25 +33,8 @@ class Agent:
 
         amg_sdr = self.amg.compute(obs)
         self.amg.update(obs, reward)
-
-        sdr_input = np.concatenate(
-            (
-                amg_sdr, self.amg.sdr_size + obs
-            )
-        )
-        actions = self.str.compute(sdr_input, 1, True)
-        actions = actions / actions.sum()
-        action = self._rng.choice(self.action_dim, 1, p=actions)[0]
+        action = self.str.compute(obs, reward, True)
         return action
 
     def get_amg_value(self, obs: SparseSdr) -> float:
         return self.amg.get_value(obs)
-
-    def get_q_values(self, obs: SparseSdr) -> np.ndarray:
-        sdr_input = np.concatenate(
-            (
-                self.amg.compute(obs), self.amg.sdr_size + obs
-            )
-        )
-        values = self.str.compute(sdr_input, 1, False)
-        return values
