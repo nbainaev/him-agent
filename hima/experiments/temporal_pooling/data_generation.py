@@ -8,6 +8,10 @@ from typing import Optional, Iterator
 
 import numpy as np
 from numpy.random import Generator
+from animal_ai_v1_pickle import through_v1, collect_data, list_to_np
+from tempfile import NamedTemporaryFile
+import ruamel.yaml as yaml
+from collections import OrderedDict
 
 
 class SequenceSelector:
@@ -60,3 +64,52 @@ def generate_data(n, n_actions, n_states, randomness=1.0, seed=0):
             raw_data.append(seed_seq.copy())
     data = [list(zip(range(n_states), x)) for x in raw_data]
     return raw_data, data
+
+
+def change_pos(room, pos):
+    for _, arenas in room.items():
+        for _, objects in arenas.items():
+            for name, items in objects.items():
+                if name == 'items':
+                    for item in items:
+                        if item['name'] == 'Agent':
+                            for pref_name, pref in item.items():
+                                if pref_name == 'positions':
+                                    pref[0]['x'], pref[0]['z'] = int(pos[0]), int(pos[1])
+    return room
+
+
+
+def generate_random_positions_observations(room_conf: str, n_positions=5, seed=42):
+    rng = np.random.default_rng(seed=seed)
+    yml = yaml.YAML()
+
+    positions_obs = []
+
+    with open(room_conf) as fp:
+        room = yml.load(fp)
+        positions = rng.integers(2, 38, (n_positions, 2))
+
+        for pos in positions:
+            #####
+            room = change_pos(room, pos)
+            tmp_file = NamedTemporaryFile()
+            yml.dump(room, tmp_file)
+            data = collect_data(tmp_file.name)
+            positions_obs.append(data)
+            #####
+        return positions_obs
+
+
+def generate_random_positions_observations_v1_output(room_conf: str, n_positions=5, seed=42):
+    with open('configs/v1.yaml', 'r') as yml_v1:
+        v1_conf = yaml.safe_load(yml_v1)['v1_config']
+
+    v1_outputs = []
+    positions_obs = generate_random_positions_observations(room_conf, n_positions, seed)
+
+
+    for obs in positions_obs:
+        v1_outputs.append(through_v1(list_to_np(obs), v1_conf))
+
+    return v1_outputs

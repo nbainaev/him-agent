@@ -24,6 +24,8 @@ from hima.modules.htm.temporal_memory import DelayedFeedbackTM, ClassicTemporalM
 from htm.algorithms import TemporalMemory
 from htm.bindings.sdr import SDR
 
+from data_generation import generate_random_positions_observations_v1_output
+
 
 def train_model(tm: TemporalMemory, sdrs: np.ndarray, num_epochs=10) -> list:
     errors = []
@@ -448,6 +450,14 @@ def _run_tests():
 
     plt.figure(figsize=(15, 8))
     plt.gca().set_facecolor('lightgrey')
+
+    v1_out = generate_random_positions_observations_v1_output(
+        '/home/ivan/htm/him-agent/hima/experiments/temporal_pooling/configs/aai_rooms/different_points/l.yml',
+        3
+    )
+
+    with open('rand_pos.pkl', 'wb') as f:
+        pickle.dump(v1_out, f)
     #
     # for policy in row_data:
     #     plt.plot(range(len(policy)), policy)
@@ -462,7 +472,7 @@ def _run_tests():
     # only_custom_utp_test(row_data)
     # custom_utp_all_seq_5_epochs(data)
     # stp_all_seq_3_epochs(data)
-    # common_utp_all_seq_5_epochs(data)
+    # common_utp_all_seq_5_epochs(data)2
     # no_second_boosting(data)
     # no_history_learning_5_epochs(data)
     # no_history_learning_15_epochs(data)
