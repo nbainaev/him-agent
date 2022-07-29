@@ -18,7 +18,7 @@ pipeline:
   - temporal_pooler_2
 #  - spatial_pooler_3
 #  - temporal_memory_3
-  - temporal_pooler_3
+#  - temporal_pooler_3
 
 run_setups:
   simple:
@@ -133,6 +133,11 @@ temporal_poolers:
     seed: ???
     initial_pooling: 1.
     pooling_decay: 0.1
+
+    pooling_decay_r: 1.0
+    only_upper: False
+    max_intermediate_used: ...
+
     lower_sp_conf:
       # input
       inputDimensions: ???

@@ -15,24 +15,9 @@ from hima.experiments.temporal_pooling.new.metrics import (
 )
 from hima.experiments.temporal_pooling.new.test_on_policies_stats import (
     plot_heatmap,
-    sdr_representation_similarities, pmf_similarities
+    sdr_representation_similarities, pmf_similarities, RunProgress
 )
 from hima.experiments.temporal_pooling.utils import rename_dict_keys
-
-
-class RunProgress:
-    epoch: int
-    step: int
-
-    def __init__(self):
-        self.epoch = -1
-        self.step = -1
-
-    def next_epoch(self):
-        self.epoch += 1
-
-    def next_step(self):
-        self.step += 1
 
 
 class ExperimentStats:

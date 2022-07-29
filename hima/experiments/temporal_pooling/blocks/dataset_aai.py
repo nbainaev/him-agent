@@ -12,6 +12,8 @@ from htm.bindings.sdr import SDR
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone
+from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
+from hima.experiments.temporal_pooling.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
 from hima.experiments.temporal_pooling.sdr_seq_stats import SdrSequenceStats
 from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
 
@@ -33,17 +35,20 @@ class RoomObservationSequence:
         return len(self._observations)
 
 
-class AnimalAiDatasetBlockStats:
+class AnimalAiDatasetBlockStats(BlockStats):
     n_sequences: int
     observations_sds: Sds
     observation_sequences: list[list[set[int]]]
     sds_stats: SdrSequenceStats
+    cross_stats: OfflineElementwiseSimilarityMatrix
     # cross_stats: SdrSequencesOfflineCrossStats
 
     def __init__(
             self, observation_sequences: list[RoomObservationSequence], sds: Sds,
             stats_config: StatsMetricsConfig
     ):
+        super(AnimalAiDatasetBlockStats, self).__init__(output_sds=sds)
+
         self.n_sequences = len(observation_sequences)
         self.observation_sequences = [
             [set(obs) for obs in seq]
@@ -51,6 +56,12 @@ class AnimalAiDatasetBlockStats:
         ]
         self.observations_sds = sds
         self.sds_stats = SdrSequenceStats(self.observations_sds)
+        self.cross_stats = OfflineElementwiseSimilarityMatrix(
+            sequences=self.observation_sequences,
+            normalization=stats_config.normalization,
+            discount=stats_config.prefix_similarity_discount,
+            symmetrical=False
+        )
         # self.cross_stats = SdrSequencesOfflineCrossStats(
         #     sequences=self.observation_sequences, sds=self.observations_sds,
         #     prefix_algorithm='prefix.point_similarity',

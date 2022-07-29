@@ -86,9 +86,7 @@ class PoliciesExperiment(Runner):
         super().__init__(config, **config)
         print('==> Init')
 
-        random_seed = np.random.default_rng().integers(10000)
-        self.seed = isnone(resolve_value(seed), random_seed)
-
+        self.seed = resolve_random_seed(seed)
         self.run_setup = resolve_run_setup(config, run_setup, experiment_type='policies')
         self.stats_config = StatsMetricsConfig(**stats_and_metrics)
 
@@ -162,7 +160,7 @@ class PoliciesExperiment(Runner):
                     feedforward_input=feedforward, basal_context=context, learn=learn
                 )
 
-            else:   # temporal pooler
+            elif block_name.startswith('temporal_pooler'):
                 goes_after_tm = prev_block.name.startswith('temporal_memory')
                 if goes_after_tm:
                     active_input, correctly_predicted_input = feedforward
@@ -176,6 +174,9 @@ class PoliciesExperiment(Runner):
                     output = block.compute(
                         active_input=feedforward, predicted_input=feedforward, learn=learn
                     )
+
+            else:
+                raise ValueError(f'Unknown block type: {block_name}')
 
             self.stats.on_block_step(block, output)
             feedforward = output
@@ -257,6 +258,14 @@ class PoliciesExperiment(Runner):
         for k in blocks:
             block = blocks[k]
             logger.define_metric(f'{block.tag}/epoch/*', step_metric='epoch')
+
+
+def resolve_random_seed(seed: Optional[int]) -> int:
+    seed = resolve_value(seed)
+    if seed is None:
+        # randomly generate a seed
+        return np.random.default_rng().integers(10000)
+    return seed
 
 
 def resolve_epoch_runs(intra_epoch_repeats: int, epochs: int, total_repeats: int):

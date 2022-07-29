@@ -179,8 +179,9 @@ temporal_poolers:
     seed: ???
     initial_pooling: 0.75
     pooling_decay: 0.04
-    pooling_decay_r: 1.5
-    only_upper: True
+
+    pooling_decay_r: 1.
+    only_upper: False
     max_intermediate_used: ...
 
     lower_sp_conf:

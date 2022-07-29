@@ -5,14 +5,13 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from typing import Optional, Union, Any
 
-import numpy as np
 from wandb.sdk.wandb_run import Run
 
-from hima.common.config_utils import TConfig, resolve_value
+from hima.common.config_utils import TConfig
 from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import timed, isnone
+from hima.common.utils import timed
 from hima.experiments.temporal_pooling.blocks.dataset_aai import RoomObservationSequence
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator
 from hima.experiments.temporal_pooling.blocks.sp import resolve_sp
@@ -22,8 +21,15 @@ from hima.experiments.temporal_pooling.blocks.tm_sequence import (
 )
 from hima.experiments.temporal_pooling.blocks.tp import resolve_tp
 from hima.experiments.temporal_pooling.config_resolvers import resolve_run_setup
-from hima.experiments.temporal_pooling.new.test_on_policies import resolve_epoch_runs
-from hima.experiments.temporal_pooling.new.test_on_states_stats import RunProgress, ExperimentStats
+from hima.experiments.temporal_pooling.new.test_on_policies import (
+    resolve_epoch_runs,
+    resolve_random_seed, scheduled
+)
+from hima.experiments.temporal_pooling.new.test_on_policies_stats import (
+    RunProgress,
+    ExperimentStats
+)
+from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
 
 
 class RunSetup:
@@ -31,6 +37,8 @@ class RunSetup:
     n_observations_per_sequence: Optional[int]
     sequence_repeats: int
     epochs: int
+    log_repeat_schedule: int
+    log_epoch_schedule: int
 
     tp_output_sds: Sds
     sp_output_sds: Sds
@@ -38,13 +46,16 @@ class RunSetup:
     def __init__(
             self, sequence_repeats: int, epochs: int, total_repeats: int,
             tp_output_sds: Sds.TShortNotation, sp_output_sds: Sds.TShortNotation,
-            n_sequences: Optional[int] = None, n_observations_per_sequence: Optional[int] = None
+            n_sequences: Optional[int] = None, n_observations_per_sequence: Optional[int] = None,
+            log_repeat_schedule: int = 1, log_epoch_schedule: int = 1
     ):
         self.n_sequences = n_sequences
         self.n_observations_per_sequence = n_observations_per_sequence
         self.sequence_repeats, self.epochs = resolve_epoch_runs(
             sequence_repeats, epochs, total_repeats
         )
+        self.log_repeat_schedule = log_repeat_schedule
+        self.log_epoch_schedule = log_epoch_schedule
 
         self.tp_output_sds = Sds(short_notation=tp_output_sds)
         self.sp_output_sds = Sds(short_notation=sp_output_sds)
@@ -56,6 +67,7 @@ class ObservationsExperiment(Runner):
 
     seed: int
     run_setup: RunSetup
+    stats_config: StatsMetricsConfig
     pipeline: list[str]
     blocks: dict[str, Any]
     progress: RunProgress
@@ -63,20 +75,26 @@ class ObservationsExperiment(Runner):
 
     def __init__(
             self, config: TConfig, run_setup: Union[dict, str], seed: int,
-            pipeline: list[str], temporal_pooler: str, **_
+            pipeline: list[str], temporal_pooler: str, stats_and_metrics: dict, debug: bool,
+            **_
     ):
         super().__init__(config, **config)
 
-        random_seed = np.random.default_rng().integers(10000)
-        self.seed = isnone(resolve_value(seed), random_seed)
-
+        self.seed = resolve_random_seed(seed)
         self.run_setup = resolve_run_setup(config, run_setup, experiment_type='observations')
+        self.stats_config = StatsMetricsConfig(**stats_and_metrics)
 
         print('==> Init')
         self.pipeline = pipeline
         self.blocks = self.build_blocks(temporal_pooler)
         self.input_data = self.blocks[self.pipeline[0]]
         self.progress = RunProgress()
+        self.stats = ExperimentStats(
+            n_sequences=self.run_setup.n_sequences,
+            progress=self.progress, logger=self.logger, blocks=self.blocks,
+            stats_config=self.stats_config,
+            debug=debug
+        )
 
     def run(self):
         print('==> Run')
@@ -90,21 +108,30 @@ class ObservationsExperiment(Runner):
     @timed
     def train_epoch(self):
         self.progress.next_epoch()
-        self.stats = ExperimentStats(
-            progress=self.progress, logger=self.logger, blocks=self.blocks
-        )
-        self.reset_blocks_stats()
+        self.stats.on_new_epoch()
 
         for room_obs_sequence in self.input_data:
-            for i in range(self.run_setup.sequence_repeats):
-                self.run_sequence(room_obs_sequence, learn=True)
+            for i_repeat in range(self.run_setup.sequence_repeats):
+                self.run_sequence(room_obs_sequence, i_repeat, learn=True)
 
-        self.stats.on_finish()
+        epoch_final_log_scheduled = scheduled(
+            i=self.progress.epoch, schedule=self.run_setup.log_epoch_schedule,
+            always_report_first=True, always_report_last=True, i_max=self.run_setup.epochs
+        )
+        self.stats.on_finish(epoch_final_log_scheduled)
 
-    def run_sequence(self, room_obs_sequence: RoomObservationSequence, learn=True):
+    def run_sequence(
+            self, room_obs_sequence: RoomObservationSequence, i_repeat: int = 0,
+            learn=True
+    ):
         self.reset_blocks(block_type='temporal_memory')
         self.reset_blocks(block_type='temporal_pooler')
-        self.stats.on_new_sequence(room_obs_sequence.id)
+
+        log_scheduled = scheduled(
+            i=i_repeat, schedule=self.run_setup.log_repeat_schedule,
+            always_report_first=True, always_report_last=True, i_max=self.run_setup.sequence_repeats
+        )
+        self.stats.on_new_sequence(room_obs_sequence.id, log_scheduled)
 
         for observation in room_obs_sequence:
             self.step(observation, learn)
@@ -128,7 +155,7 @@ class ObservationsExperiment(Runner):
             elif block_name.startswith('temporal_memory'):
                 output = block.compute(feedforward_input=feedforward, learn=learn)
 
-            else:   # temporal pooler
+            elif block_name.startswith('temporal_pooler'):
                 goes_after_tm = prev_block.name.startswith('temporal_memory')
                 if goes_after_tm:
                     active_input, correctly_predicted_input = feedforward
@@ -143,6 +170,10 @@ class ObservationsExperiment(Runner):
                         active_input=feedforward, predicted_input=feedforward, learn=learn
                     )
 
+            else:
+                raise ValueError(f'Unknown block type: {block_name}')
+
+            self.stats.on_block_step(block, output)
             feedforward = output
             prev_block = block
 
@@ -166,7 +197,8 @@ class ObservationsExperiment(Runner):
                 data_generator = resolve_data_generator(self.config)
                 block = data_generator.generate_data(
                     n_sequences=self.run_setup.n_sequences,
-                    n_observations_per_sequence=self.run_setup.n_observations_per_sequence
+                    n_observations_per_sequence=self.run_setup.n_observations_per_sequence,
+                    stats_config=self.stats_config
                 )
                 feedforward_sds = block.output_sds
 
