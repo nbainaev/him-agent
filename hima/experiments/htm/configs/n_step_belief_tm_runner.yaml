@@ -1,0 +1,9 @@
+log: True
+logger: local
+project_name: n_step_belief_tm
+model: 'logs/model_env_ruby-wood-141_1001.pkl'
+policy: 0
+state: 1
+n_steps: 10
+mc_iterations: 200
+seed: 32049
