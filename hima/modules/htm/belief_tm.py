@@ -584,7 +584,7 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
         dist_curr_step = self.cell_probs_context
         dist_next_step = np.zeros_like(dist_curr_step)
 
-        for step in range(1, n_steps):
+        for step in range(0, n_steps):
             for i in range(mc_iterations):
                 self.cell_probs_context = dist_curr_step
                 self.predict_cluster_density(update_receptive_fields=False)
