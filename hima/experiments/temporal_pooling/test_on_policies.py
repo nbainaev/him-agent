@@ -25,7 +25,7 @@ from hima.experiments.temporal_pooling.blocks.tp import resolve_tp
 from hima.experiments.temporal_pooling.config_resolvers import (
     resolve_run_setup
 )
-from hima.experiments.temporal_pooling.test_on_policies_stats import (
+from hima.experiments.temporal_pooling.test_stats import (
     ExperimentStats,
     RunProgress
 )

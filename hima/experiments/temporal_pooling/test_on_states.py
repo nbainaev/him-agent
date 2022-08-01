@@ -26,7 +26,7 @@ from hima.experiments.temporal_pooling.test_on_policies import (
     resolve_epoch_runs,
     resolve_random_seed, scheduled
 )
-from hima.experiments.temporal_pooling.test_on_policies_stats import (
+from hima.experiments.temporal_pooling.test_stats import (
     RunProgress,
     ExperimentStats
 )
