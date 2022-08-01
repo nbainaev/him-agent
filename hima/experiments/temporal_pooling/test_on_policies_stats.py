@@ -3,6 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+
 from typing import Optional, Any
 
 import numpy as np
@@ -14,12 +15,11 @@ from wandb.sdk.wandb_run import Run
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
-from hima.experiments.temporal_pooling.new.metrics import (
+from hima.experiments.temporal_pooling.metrics import (
     similarity_matrix,
-    standardize_sample_distribution, multiplicative_loss, DISTR_SIM_PMF, DISTR_SIM_KL
+    standardize_sample_distribution, multiplicative_loss, DISTR_SIM_PMF
 )
 from hima.experiments.temporal_pooling.sdr_seq_cross_stats import (
-    OnlineElementwiseSimilarityMatrix,
     OnlinePmfSimilarityMatrix, OfflinePmfSimilarityMatrix, SimilarityMatrix
 )
 from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig

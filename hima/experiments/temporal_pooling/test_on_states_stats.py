@@ -3,6 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+
 from typing import Optional, Any
 
 import numpy as np
@@ -10,10 +11,10 @@ import wandb
 from matplotlib import pyplot as plt
 from wandb.sdk.wandb_run import Run
 
-from hima.experiments.temporal_pooling.new.metrics import (
+from hima.experiments.temporal_pooling.metrics import (
     multiplicative_loss
 )
-from hima.experiments.temporal_pooling.new.test_on_policies_stats import (
+from hima.experiments.temporal_pooling.test_on_policies_stats import (
     plot_heatmap,
     sdr_representation_similarities, pmf_similarities, RunProgress
 )

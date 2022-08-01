@@ -11,10 +11,10 @@ def resolve_run_setup(config: dict, run_setup_config: Union[dict, str], experime
         run_setup_config = config['run_setups'][run_setup_config]
 
     if experiment_type == 'policies':
-        from hima.experiments.temporal_pooling.new.test_on_policies import RunSetup
+        from hima.experiments.temporal_pooling.test_on_policies import RunSetup
         return RunSetup(**run_setup_config)
     elif experiment_type == 'observations':
-        from hima.experiments.temporal_pooling.new.test_on_states import RunSetup
+        from hima.experiments.temporal_pooling.test_on_states import RunSetup
         return RunSetup(**run_setup_config)
     else:
         KeyError(f'Experiment type {experiment_type} is not supported')
