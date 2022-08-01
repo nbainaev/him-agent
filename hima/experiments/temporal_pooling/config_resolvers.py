@@ -18,5 +18,3 @@ def resolve_run_setup(config: dict, run_setup_config: Union[dict, str], experime
         return RunSetup(**run_setup_config)
     else:
         KeyError(f'Experiment type {experiment_type} is not supported')
-
-

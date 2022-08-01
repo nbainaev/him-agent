@@ -4,14 +4,14 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
+from tempfile import NamedTemporaryFile
 from typing import Optional, Iterator
 
 import numpy as np
-from numpy.random import Generator
-from animal_ai_v1_pickle import through_v1, collect_data, list_to_np
-from tempfile import NamedTemporaryFile
 import ruamel.yaml as yaml
-from collections import OrderedDict
+from numpy.random import Generator
+
+from animal_ai_v1_pickle import through_v1, collect_data, list_to_np
 
 
 class SequenceSelector:
@@ -79,7 +79,6 @@ def change_pos(room, pos):
     return room
 
 
-
 def generate_random_positions_observations(room_conf: str, n_positions=5, seed=42):
     rng = np.random.default_rng(seed=seed)
     yml = yaml.YAML()
@@ -107,7 +106,6 @@ def generate_random_positions_observations_v1_output(room_conf: str, n_positions
 
     v1_outputs = []
     positions_obs = generate_random_positions_observations(room_conf, n_positions, seed)
-
 
     for obs in positions_obs:
         v1_outputs.append(through_v1(list_to_np(obs), v1_conf))
