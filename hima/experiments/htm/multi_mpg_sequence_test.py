@@ -8,6 +8,8 @@ import numpy as np
 from hima.envs.mpg import MultiMarkovProcessGrammar
 from hima.common.sdr_encoders import IntBucketEncoder
 from hima.modules.htm.belief_tm import HybridNaiveBayesTM
+from hima.modules.htm.pattern_sorter import PatternToStateMemory
+
 from scipy.special import rel_entr
 import pickle
 
@@ -70,6 +72,12 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
         **config['tm']
     )
 
+    ptsm = PatternToStateMemory(
+        obs_encoder.n_values,
+        policy_encoder.n_values,
+        config['run']['min_pattern_distance']
+    )
+
     density = np.zeros((policy_encoder.n_values, len(mpg.states), len(mpg.alphabet)))
     hist_dist = np.zeros((policy_encoder.n_values, len(mpg.states), len(mpg.alphabet)))
     lr = 0.02
@@ -109,6 +117,9 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
             if config['run']['use_feedback']:
                 tm.set_active_feedback_cells(policy_encoder.encode(policy))
             tm.activate_cells(learn=True)
+
+            # connect active pattern to state
+            ptsm.connect(tm.winner_cells, mpg.current_state, mpg.current_policy)
 
             surprise.append(min(200.0, tm.surprise))
             anomaly.append(tm.anomaly[-1])
@@ -242,7 +253,7 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
 
     if config['run']['save_model']:
         with open(f"logs/model_env_{name}_{config['run']['epochs']}.pkl", 'wb') as file:
-            pickle.dump((tm, mpg, obs_encoder, policy_encoder), file)
+            pickle.dump((tm, mpg, obs_encoder, policy_encoder, ptsm), file)
 
 
 if __name__ == '__main__':
