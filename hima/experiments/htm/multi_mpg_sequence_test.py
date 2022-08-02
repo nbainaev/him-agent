@@ -111,11 +111,13 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
                 word.append(letter)
             else:
                 break
+
             # set winner cells from previous step
             tm.set_active_context_cells(tm.get_winner_cells())
             tm.set_active_columns(obs_encoder.encode(mpg.char_to_num[letter]))
             if config['run']['use_feedback']:
                 tm.set_active_feedback_cells(policy_encoder.encode(policy))
+                tm.activate_apical_dendrites(learn=True)
             tm.activate_cells(learn=True)
 
             # connect active pattern to state
@@ -129,7 +131,6 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
 
             tm.set_active_context_cells(tm.get_active_cells())
             tm.activate_basal_dendrites(learn=True)
-            tm.activate_apical_dendrites(learn=True)
             tm.predict_cells()
             tm.predict_columns_density()
 
