@@ -239,14 +239,17 @@ class GeneralFeedbackTM:
                                            getAllCellsInColumns(bursting_columns,
                                                                 self.cells_per_column) + self.local_range[0]))
 
-        (learning_active_basal_segments,
-         learning_matching_basal_segments,
-         learning_matching_apical_segments,
-         cells_to_grow_apical_segments,
-         basal_segments_to_punish,
-         apical_segments_to_punish,
-         cells_to_grow_apical_and_basal_segments,
-         new_winner_cells) = self._calculate_learning(bursting_columns, correct_predicted_cells)
+        (
+            learning_active_basal_segments,
+            learning_matching_basal_segments,
+            learning_matching_apical_segments,
+            cells_to_grow_apical_segments,
+            cells_to_grow_basal_segments,
+            basal_segments_to_punish,
+            apical_segments_to_punish,
+            cells_to_grow_apical_and_basal_segments,
+            new_winner_cells
+        ) = self._calculate_learning(bursting_columns, correct_predicted_cells)
 
         # Learn
         if learn:
@@ -282,12 +285,22 @@ class GeneralFeedbackTM:
 
             # Grow new segments
             if self.active_cells_context.sparse.size > 0:
-                self._learn_on_new_segments(self.basal_connections,
-                                            cells_to_grow_apical_and_basal_segments,
-                                            self.active_cells_context.sparse,
-                                            self.sample_size_basal, self.max_synapses_per_segment_basal,
-                                            self.initial_permanence_basal,
-                                            self.max_segments_per_cell_basal)
+                self._learn_on_new_segments(
+                    self.basal_connections,
+                    cells_to_grow_apical_and_basal_segments,
+                    self.active_cells_context.sparse,
+                    self.sample_size_basal, self.max_synapses_per_segment_basal,
+                    self.initial_permanence_basal,
+                    self.max_segments_per_cell_basal
+                )
+                self._learn_on_new_segments(
+                    self.basal_connections,
+                    cells_to_grow_basal_segments,
+                    self.active_cells_context.sparse,
+                    self.sample_size_basal, self.max_synapses_per_segment_basal,
+                    self.initial_permanence_basal,
+                    self.max_segments_per_cell_basal
+                )
             if self.active_cells_feedback.sparse.size > 0:
                 self._learn_on_new_segments(self.apical_connections,
                                             np.concatenate((cells_to_grow_apical_segments,
@@ -389,7 +402,7 @@ class GeneralFeedbackTM:
         # all cells with matching segments
         cells_for_matching_basal = self.basal_connections.mapSegmentsToCells(self.matching_segments_basal)
         cells_for_matching_apical = self.apical_connections.mapSegmentsToCells(self.matching_segments_apical)
-        matching_cells = np.unique(cells_for_matching_basal)
+        matching_cells = np.union1d(cells_for_matching_basal, cells_for_matching_apical)
 
         matching_cells_in_bursting_columns, bursting_columns_with_no_match = setCompare(matching_cells,
                                                                                         bursting_columns,
@@ -400,13 +413,16 @@ class GeneralFeedbackTM:
         if matching_cells_in_bursting_columns.size > 0:
             (learning_matching_basal_segments,
              learning_matching_apical_segments2,
-             cells_to_grow_apical_segments2
+             cells_to_grow_apical_segments2,
+             cells_to_grow_basal_segments
              ) = self._choose_best_segment_per_column(
                 matching_cells_in_bursting_columns)
         else:
             learning_matching_basal_segments = np.empty(0, dtype=UINT_DTYPE)
             learning_matching_apical_segments2 = np.empty(0, dtype=UINT_DTYPE)
             cells_to_grow_apical_segments2 = np.empty(0, dtype=UINT_DTYPE)
+            cells_to_grow_basal_segments = np.empty(0, dtype=UINT_DTYPE)
+
         # cells on which new apical and basal segments will be grown
         if bursting_columns_with_no_match.size > 0:
             cells_to_grow_apical_and_basal_segments = self._get_cells_with_fewest_segments(self.basal_connections,
@@ -421,10 +437,14 @@ class GeneralFeedbackTM:
         learning_matching_apical_segments = np.concatenate(
             [learning_matching_apical_segments, learning_matching_apical_segments2])
 
-        winner_cells = np.concatenate(
-            (correct_predicted_cells,
+        winner_cells = reduce(
+            np.union1d,
+            (
+             correct_predicted_cells,
              self.basal_connections.mapSegmentsToCells(learning_matching_basal_segments),
-             cells_to_grow_apical_and_basal_segments)
+             cells_to_grow_apical_and_basal_segments,
+             cells_to_grow_basal_segments
+            )
         )
 
         # Incorrectly predicted columns
@@ -442,14 +462,17 @@ class GeneralFeedbackTM:
 
         apical_segments_to_punish = self.matching_segments_apical[incorrect_matching_apical_mask]
 
-        return (learning_active_basal_segments.astype(UINT_DTYPE),
-                learning_matching_basal_segments.astype(UINT_DTYPE),
-                learning_matching_apical_segments.astype(UINT_DTYPE),
-                cells_to_grow_apical_segments.astype(UINT_DTYPE),
-                basal_segments_to_punish.astype(UINT_DTYPE),
-                apical_segments_to_punish.astype(UINT_DTYPE),
-                cells_to_grow_apical_and_basal_segments.astype(UINT_DTYPE),
-                winner_cells.astype(UINT_DTYPE))
+        return (
+            learning_active_basal_segments.astype(UINT_DTYPE),
+            learning_matching_basal_segments.astype(UINT_DTYPE),
+            learning_matching_apical_segments.astype(UINT_DTYPE),
+            cells_to_grow_apical_segments.astype(UINT_DTYPE),
+            cells_to_grow_basal_segments.astype(UINT_DTYPE),
+            basal_segments_to_punish.astype(UINT_DTYPE),
+            apical_segments_to_punish.astype(UINT_DTYPE),
+            cells_to_grow_apical_and_basal_segments.astype(UINT_DTYPE),
+            winner_cells.astype(UINT_DTYPE)
+        )
 
     def _choose_best_segment_per_column(self, cells):
         """
@@ -458,40 +481,71 @@ class GeneralFeedbackTM:
         :return:
         """
         candidate_basal_segments = self.basal_connections.filterSegmentsByCell(self.matching_segments_basal, cells)
+        # choose one best apical segment per cell
         candidate_apical_segments = self._choose_best_segment_per_cell(self.apical_connections, cells,
                                                                        self.matching_segments_apical,
                                                                        self.num_potential_apical)
+        cells_for_apical_segments = self.apical_connections.mapSegmentsToCells(candidate_apical_segments)
+
         intersection_mask = np.in1d(self.basal_connections.mapSegmentsToCells(candidate_basal_segments),
-                                    self.apical_connections.mapSegmentsToCells(candidate_apical_segments))
+                                    cells_for_apical_segments)
         candidate_basal_with_apical_neighbour = candidate_basal_segments[intersection_mask]
 
         # for segment, that have no adjacent apical segment the score is zero, else score is sigmoid(best_apical_segment) - 0.5
-        cells_for_apical_segments = self.apical_connections.mapSegmentsToCells(candidate_apical_segments)
         cells_for_basal_segments = self.basal_connections.mapSegmentsToCells(candidate_basal_with_apical_neighbour)
         tiebreaker = np.zeros_like(candidate_basal_segments)
-        # WARNING, lazy realization of tiebreaking! May be slow!
-        # TODO make optimized tiebreaking
+
+        # TODO can we vectorize this?
         tiebreaker[intersection_mask] = np.array(
             [exp(self.num_potential_apical[candidate_apical_segments[cells_for_apical_segments == x]].sum()) for x
              in cells_for_basal_segments]
         )
-        #
+        # choose one basal segment per column
         one_per_column_filter = argmaxMulti(
             self.num_potential_basal[candidate_basal_segments] + tiebreaker / (tiebreaker + 1) - 0.5,
             groupKeys=self._columns_for_cells(
                 self.basal_connections.mapSegmentsToCells(candidate_basal_segments)))
+
         learning_basal_segments = candidate_basal_segments[one_per_column_filter]
         cells_for_learning_basal_segments = self.basal_connections.mapSegmentsToCells(learning_basal_segments)
-        learning_apical_segments = candidate_apical_segments[np.in1d(cells_for_apical_segments,
-                                                                     cells_for_learning_basal_segments)]
-        # if there is no matching apical segment on learning_basal_segment: grow one
-        cells_to_grow_apical_segments = cells_for_learning_basal_segments[np.in1d(cells_for_learning_basal_segments,
-                                                                                  cells_for_apical_segments,
-                                                                                  invert=True)]
 
-        return (learning_basal_segments.astype(UINT_DTYPE),
-                learning_apical_segments.astype(UINT_DTYPE),
-                cells_to_grow_apical_segments.astype(UINT_DTYPE))
+        (
+            learning_apical_segments_with_basal,
+            apical_segments_without_basal,
+            learning_basal_segments_without_apical,
+        ) = setCompare(
+            candidate_apical_segments,
+            learning_basal_segments,
+            aKey=cells_for_apical_segments,
+            bKey=cells_for_learning_basal_segments,
+            rightMinusLeft=True,
+            leftMinusRight=True
+        )
+
+        # if there is no matching apical or basal segment alongside learning basal or apical segment: grow one
+        cells_to_grow_apical_segments = np.unique(self.basal_connections.mapSegmentsToCells(learning_basal_segments_without_apical))
+
+        cells_for_apical_segments = self._filter_by_columns(
+            cells_for_apical_segments,
+            self._columns_for_cells(cells_for_learning_basal_segments),
+            invert=True
+        )
+        learning_apical_segments_without_basal = self.apical_connections.filterSegmentsByCell(
+            apical_segments_without_basal, cells_for_apical_segments
+        )
+
+        cells_to_grow_basal_segments = np.unique(self.apical_connections.mapSegmentsToCells(learning_apical_segments_without_basal))
+
+        learning_apical_segments = np.concatenate(
+            [learning_apical_segments_with_basal, learning_apical_segments_without_basal]
+        )
+
+        return (
+            learning_basal_segments.astype(UINT_DTYPE),
+            learning_apical_segments.astype(UINT_DTYPE),
+            cells_to_grow_apical_segments.astype(UINT_DTYPE),
+            cells_to_grow_basal_segments.astype(UINT_DTYPE)
+                )
 
     @staticmethod
     def _choose_best_segment_per_cell(connections, cells, segments, num_potential):
