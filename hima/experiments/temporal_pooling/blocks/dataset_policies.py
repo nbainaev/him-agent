@@ -33,14 +33,14 @@ class Policy:
         return len(self._policy)
 
 
-class SyntheticDatasetBlockStats(BlockStats):
+class SyntheticPoliciesDatasetBlockStats(BlockStats):
     n_policies: int
     actions_sds: Sds
     policies: list[list[set[int]]]
     cross_stats: OfflineElementwiseSimilarityMatrix
 
     def __init__(self, policies: list[Policy], actions_sds: Sds, stats_config: StatsMetricsConfig):
-        super(SyntheticDatasetBlockStats, self).__init__(output_sds=actions_sds)
+        super(SyntheticPoliciesDatasetBlockStats, self).__init__(output_sds=actions_sds)
 
         self.n_policies = len(policies)
         self.policies = [
@@ -59,7 +59,7 @@ class SyntheticDatasetBlockStats(BlockStats):
         return self.cross_stats.final_metrics()
 
 
-class SyntheticDatasetBlock:
+class SyntheticPoliciesDatasetBlock:
     id: int
     name: str
     n_states: int
@@ -68,7 +68,7 @@ class SyntheticDatasetBlock:
     context_sds: Sds
     output_sds: Sds
 
-    stats: SyntheticDatasetBlockStats
+    stats: SyntheticPoliciesDatasetBlockStats
 
     _policies: list[Policy]
     _rng: Generator
@@ -83,7 +83,7 @@ class SyntheticDatasetBlock:
         self.output_sds = actions_sds
         self._policies = policies
 
-        self.stats = SyntheticDatasetBlockStats(self._policies, self.output_sds, stats_config)
+        self.stats = SyntheticPoliciesDatasetBlockStats(self._policies, self.output_sds, stats_config)
         self._rng = np.random.default_rng(seed)
 
     @property
@@ -97,7 +97,7 @@ class SyntheticDatasetBlock:
         ...
 
 
-class SyntheticGenerator:
+class SyntheticPoliciesGenerator:
     n_states: int
     n_actions: int
 
@@ -141,7 +141,7 @@ class SyntheticGenerator:
 
     def generate_policies(
             self, n_policies, stats_config: StatsMetricsConfig
-    ) -> SyntheticDatasetBlock:
+    ) -> SyntheticPoliciesDatasetBlock:
         n_states, n_actions = self.n_states, self.n_actions
         rng = self._rng
 
@@ -186,7 +186,7 @@ class SyntheticGenerator:
 
             encoded_policies.append(Policy(id_=i_policy, policy=policy))
 
-        return SyntheticDatasetBlock(
+        return SyntheticPoliciesDatasetBlock(
             n_states=self.n_states, states_sds=self.states_sds,
             n_actions=self.n_actions, actions_sds=self.actions_sds,
             policies=encoded_policies, seed=self.seed, stats_config=stats_config

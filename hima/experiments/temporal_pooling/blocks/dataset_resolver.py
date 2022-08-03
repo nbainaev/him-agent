@@ -10,9 +10,9 @@ def resolve_data_generator(config: dict, **induction_registry):
     generator_config, generator_type = extracted_type(config['generator'])
 
     if generator_type == 'synthetic':
-        from hima.experiments.temporal_pooling.blocks.dataset_policies import SyntheticGenerator
+        from hima.experiments.temporal_pooling.blocks.dataset_policies import SyntheticPoliciesGenerator
         generator_config = resolve_init_params(generator_config, **induction_registry)
-        return SyntheticGenerator(config, **generator_config)
+        return SyntheticPoliciesGenerator(config, **generator_config)
     elif generator_type == 'aai_rotation':
         from hima.experiments.temporal_pooling.blocks.dataset_aai import AAIRotationsGenerator
         return AAIRotationsGenerator(**generator_config)
