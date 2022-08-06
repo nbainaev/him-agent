@@ -10,9 +10,10 @@ from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import clip
 from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_encoder
+from hima.experiments.temporal_pooling.blocks.dataset_synth_sequences import \
+    generate_synthetic_sequences
 from hima.experiments.temporal_pooling.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
 from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
 
@@ -142,43 +143,22 @@ class SyntheticPoliciesGenerator:
     def generate_policies(
             self, n_policies, stats_config: StatsMetricsConfig
     ) -> SyntheticPoliciesDatasetBlock:
-        n_states, n_actions = self.n_states, self.n_actions
-        rng = self._rng
+        policies = generate_synthetic_sequences(
+            n_sequences=n_policies,
+            sequence_length=self.n_states,
+            n_values=self.n_actions,
+            seed=self.seed,
+            sequence_similarity=self.policy_similarity,
+            sequence_similarity_std=self.policy_similarity_std,
+        )
 
-        base_policy = rng.integers(0, high=n_actions, size=(1, n_states))
-        policies = base_policy.repeat(n_policies, axis=0)
-
-        # to-change indices
-        for i in range(n_policies - 1):
-            if self.policy_similarity_std < 1e-5:
-                sim = self.policy_similarity
-            else:
-                sim = rng.normal(self.policy_similarity, scale=self.policy_similarity_std)
-                sim = clip(sim, 0, 1)
-
-            n_states_to_change = int(n_states * (1 - sim))
-            if n_states_to_change == 0:
-                continue
-            indices = rng.choice(n_states, n_states_to_change, replace=False)
-
-            # re-sample actions — from reduced action space (note n_actions-1)
-            new_actions = rng.integers(0, n_actions - 1, n_states_to_change)
-            old_actions = policies[0][indices]
-
-            # that's how we exclude origin action: |0|1|2| -> |0|.|2|3| — action 1 is excluded
-            mask = new_actions >= old_actions
-            new_actions[mask] += 1
-
-            # replace origin actions for specified state indices with new actions
-            policies[i+1, indices] = new_actions
-
-        states_encoding = [self.state_encoder.encode(s) for s in range(n_states)]
-        action_encoding = [self.action_encoder.encode(a) for a in range(n_actions)]
+        states_encoding = [self.state_encoder.encode(s) for s in range(self.n_states)]
+        action_encoding = [self.action_encoder.encode(a) for a in range(self.n_actions)]
 
         encoded_policies = []
         for i_policy in range(n_policies):
             policy = []
-            for state in range(n_states):
+            for state in range(self.n_states):
                 action = policies[i_policy, state]
                 s = states_encoding[state]
                 a = action_encoding[action]
