@@ -10,13 +10,15 @@ from typing import Iterable, Any, Optional, Union
 
 from ruamel import yaml
 
-from hima.common.utils import ensure_list, isnone
+from hima.common.utils import ensure_list
 
 # TODO: rename file to `config` and add top-level description comment
 
 
 # Register config-related conventional constants here. Start them with `_` as non-importable!
 _TYPE_KEY = '_type_'
+_TYPE_FAMILY_KEY = '_type_family_'
+_BASE_CONFIG_KEY = '_base_config_'
 _TO_BE_NONE_VALUE = '...'
 _TO_BE_INDUCED_VALUE = '???'
 
@@ -65,9 +67,55 @@ def extracted(d: TConfig, *keys: str) -> tuple:
     return (filtered_dict, ) + values
 
 
+# ==================== config meta info extraction ====================
 def extracted_type(config: TConfig) -> tuple[TConfig, Optional[str]]:
     """Extracts the type using the type hinting convention for configs."""
     return extracted(config, _TYPE_KEY)
+
+
+def extracted_base_config(config: TConfig) -> tuple[TConfig, Optional[str]]:
+    """Extracts the base config name using the meta key convention for configs."""
+    return extracted(config, _BASE_CONFIG_KEY)
+
+
+def extracted_family(config: TConfig) -> tuple[TConfig, Optional[str]]:
+    """Extracts the type family using the meta key convention for configs."""
+    return extracted(config, _TYPE_FAMILY_KEY)
+
+
+def extracted_meta_info(config: TConfig) -> tuple[
+    TConfig, Optional[str], Optional[str], Optional[str]
+]:
+    """
+    Extracts 1) the type family, 2) concrete type and 3) link to the base config
+    using the meta key convention for configs.
+    (see private const keys in the config_utils.py)
+    """
+    return extracted(config, _TYPE_FAMILY_KEY, _TYPE_KEY, _BASE_CONFIG_KEY)
+
+
+# ==================== resolve nested configs ====================
+def resolve_nested_configs(
+        config_registry: TConfig, *,
+        config_name: str = None, config: TConfig = None
+) -> TConfig:
+    # if config itself is not provided, we need to resolve it by name from the registry
+    if config is None:
+        print(config_name)
+        if config_name is None:
+            return {}
+        config = config_registry[config_name]
+
+    # recursively build base configs starting from the innermost one
+    config, base_config_name = extracted_base_config(config)
+    print(base_config_name)
+    if base_config_name is not None:
+        base_config = resolve_nested_configs(config_registry, config_name=base_config_name)
+        # TODO: it may require unusual dict merge logic for the special values
+        base_config.update(**config)
+        config = base_config
+
+    return config
 
 
 # ==================== config dict value induction ====================
@@ -143,6 +191,7 @@ def resolve_init_params(config: dict, *, raise_if_not_resolved: bool = True, **i
 def assert_all_resolved(config: dict):
     for k in config:
         resolve_value(config[k], k, {}, raise_if_not_resolved=True)
+
 
 # ==================== config dict compilation and values parsing ====================
 def override_config(
