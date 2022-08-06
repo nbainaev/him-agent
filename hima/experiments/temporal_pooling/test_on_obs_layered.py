@@ -14,6 +14,7 @@ from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone, timed
+from hima.experiments.temporal_pooling.blocks.builder import build_block
 from hima.experiments.temporal_pooling.blocks.dataset_policies import Policy
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator
 from hima.experiments.temporal_pooling.blocks.sp import resolve_sp
@@ -81,6 +82,7 @@ class ObservationsLayeredExperiment(Runner):
 
     def __init__(
             self, config: TConfig, seed: int, debug: bool,
+            blocks: dict[str, dict],
             # run_setup: Union[dict, str],
             # pipeline: list[str], temporal_pooler: str, stats_and_metrics: dict,
             **_
@@ -89,6 +91,11 @@ class ObservationsLayeredExperiment(Runner):
         print('==> Init')
 
         self.seed = resolve_random_seed(seed)
+
+        induction_registry = dict(seed=seed)
+        for block_name in blocks:
+            build_block(config, block_name, **induction_registry)
+
         # self.run_setup = resolve_run_setup(config, run_setup, experiment_type='policies')
         # self.stats_config = StatsMetricsConfig(**stats_and_metrics)
         #
@@ -105,11 +112,11 @@ class ObservationsLayeredExperiment(Runner):
 
     def run(self):
         print('==> Run')
-        self.define_metrics(self.logger, self.blocks)
-
-        for epoch in range(self.run_setup.epochs):
-            _, elapsed_time = self.train_epoch()
-            print(f'Epoch {epoch}: {elapsed_time}')
+        # self.define_metrics(self.logger, self.blocks)
+        #
+        # for epoch in range(self.run_setup.epochs):
+        #     _, elapsed_time = self.train_epoch()
+        #     print(f'Epoch {epoch}: {elapsed_time}')
         print('<==')
 
     @timed

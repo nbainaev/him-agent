@@ -15,36 +15,51 @@ debug: False
 #  loss_layer_discount: 0.75
 #  symmetrical_similarity: False
 
-pipeline:
+connections:
   - src:
-      - obj: generator
-        source_type: action
-        sds: ???
-      - obj: generator
-        source_type: state
-        sds: ???
+      block: generator
+      connect: output
     dst:
-      obj: temporal_memory
+      block: spatial_pooler
+      connect: feedforward
+    sds: ???
 
-#pipeline:
-#  - generator
-##  - spatial_pooler
-#  - temporal_memory
-#  - temporal_pooler
-##  - spatial_pooler_2
-#  - temporal_memory_2
-#  - temporal_pooler_2
-##  - spatial_pooler_3
-##  - temporal_memory_3
-#  - temporal_pooler_3
+blocks:
+  generator:
+    _type_family_: generator
+    _base_config_: synthetic_sequences
+    sequence_length: 10
+    n_values: 4
+  spatial_pooler:
+    _type_family_: spatial_pooler
+    _base_config_: wide
+
+generator:
+  synthetic_sequences:
+    _type_: synthetic_sequences
+    sequence_length: 40
+    n_values: 8
+    active_size: 10
+    value_encoder: random
+    sequence_similarity: 0.35
+    sequence_similarity_std: 0.35
+    seed: ???
+  synthetic_policies:
+    _type_: synthetic_policies
+    n_states: 40
+    n_actions: 8
+    active_size: 10
+    state_encoder: random
+    action_encoder: random
+    policy_similarity: 0.35
+    policy_similarity_std: 0.35
+    seed: ???
 
 run_setups:
   simple:
-    n_policies: 3
-    n_states: 10
-    n_actions: 4
-    steps_per_policy: ...
-    policy_repeats: 3
+    n_sequences: 3
+    steps_per_sequence: ...
+    sequence_repeats: 3
     epochs: 2
     total_repeats: ...
     sp_output_sds: [400, 10]
@@ -53,11 +68,9 @@ run_setups:
     log_epoch_schedule: 2
 
   full:
-    n_policies: 10
-    n_states: 40
-    n_actions: 8
-    steps_per_policy: ...
-    policy_repeats: 10
+    n_sequences: 10
+    steps_per_sequence: ...
+    sequence_repeats: 10
     epochs: 10
     total_repeats: ...
     sp_output_sds: [500, 16]
@@ -65,18 +78,7 @@ run_setups:
     log_repeat_schedule: 5
     log_epoch_schedule: 2
 
-generator:
-  _type_: synthetic
-  n_states: ???
-  n_actions: ???
-  active_size: 10
-  state_encoder: random
-  action_encoder: random
-  policy_similarity: 0.35
-  policy_similarity_std: 0.35
-  seed: ???
-
-encoders:
+encoder:
   bucket:
     _type_: int_bucket
     n_values: ???
@@ -88,6 +90,38 @@ encoders:
     active_size: ???
     sds: ...
     seed: ???
+
+spatial_pooler:
+  wide:
+    _base_config_: default
+    potentialPct: 0.1
+    boostStrength: 0.5
+    dutyCyclePeriod: 5000
+    minPctOverlapDutyCycle: 0.0002
+
+  default:
+    ff_sds: ???
+    output_sds: ???
+
+    seed: ???
+    # input
+    inputDimensions: ???
+    potentialRadius: ???
+    potentialPct: 0.6
+    globalInhibition: True
+    # output
+    columnDimensions: ???
+    localAreaDensity: ???
+
+    boostStrength: 0.2
+    dutyCyclePeriod: 20000
+    minPctOverlapDutyCycle: 0.0002
+    numActiveColumnsPerInhArea: 0
+    stimulusThreshold: 3
+    synPermConnected: 0.5
+    synPermActiveInc: 0.1
+    synPermInactiveDec: 0.01
+    wrapAround: False
 
 temporal_poolers:
   union_tp:
@@ -274,27 +308,3 @@ temporal_memory:
     permanence_increment: 0.05
     permanence_decrement: 0.02
     predicted_segment_decrement: 0.001
-
-spatial_pooler:
-  ff_sds: ???
-  output_sds: ???
-
-  seed: ???
-  # input
-  inputDimensions: ???
-  potentialRadius: ???
-  potentialPct: 0.25
-  globalInhibition: True
-  # output
-  columnDimensions: ???
-  localAreaDensity: ???
-
-  boostStrength: 0.5
-  dutyCyclePeriod: 5000
-  minPctOverlapDutyCycle: 0.0002
-  numActiveColumnsPerInhArea: 0
-  stimulusThreshold: 3
-  synPermConnected: 0.5
-  synPermActiveInc: 0.1
-  synPermInactiveDec: 0.01
-  wrapAround: False
