@@ -1,0 +1,195 @@
+#  Copyright (c) 2022 Autonomous Non-Profit Organization "Artificial Intelligence Research
+#  Institute" (AIRI); Moscow Institute of Physics and Technology (National Research University).
+#  All rights reserved.
+#
+#  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from typing import Iterator, Any
+
+import numpy as np
+from numpy.random import Generator
+
+from hima.common.sdr import SparseSdr
+from hima.common.sds import Sds
+from hima.common.utils import clip
+from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
+from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_encoder
+from hima.experiments.temporal_pooling.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
+from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
+
+
+class Sequence:
+    """Sequence of SDRs."""
+    id: int
+    _sequence: list[SparseSdr]
+
+    def __init__(self, id_: int, sequence):
+        self.id = id_
+        self._sequence = sequence
+
+    def __iter__(self) -> Iterator[SparseSdr]:
+        return iter(self._sequence)
+
+    def __len__(self):
+        return len(self._sequence)
+
+
+class SyntheticSequencesDatasetBlockStats(BlockStats):
+    n_sequences: int
+    actions_sds: Sds
+    sequences: list[list[set[int]]]
+    cross_stats: OfflineElementwiseSimilarityMatrix
+
+    def __init__(self, sequences: list[Sequence], actions_sds: Sds, stats_config: StatsMetricsConfig):
+        super(SyntheticSequencesDatasetBlockStats, self).__init__(output_sds=actions_sds)
+
+        self.n_sequences = len(sequences)
+        self.sequences = [
+            [set(sdr) for sdr in seq]
+            for seq in sequences
+        ]
+        self.actions_sds = actions_sds
+        self.cross_stats = OfflineElementwiseSimilarityMatrix(
+            sequences=self.sequences,
+            normalization=stats_config.normalization,
+            discount=stats_config.prefix_similarity_discount,
+            symmetrical=False
+        )
+
+    def final_metrics(self) -> dict[str, Any]:
+        return self.cross_stats.final_metrics()
+
+
+class SyntheticSequencesDatasetBlock:
+    id: int
+    name: str
+    n_values: int
+
+    output_sds: Sds
+
+    stats: SyntheticSequencesDatasetBlockStats
+
+    _sequences: list[Sequence]
+    _rng: Generator
+
+    def __init__(
+            self, n_values: int, sds: Sds,
+            sequences: list[Sequence], seed: int, stats_config: StatsMetricsConfig
+    ):
+        self.n_values = n_values
+        self.output_sds = sds
+        self._sequences = sequences
+
+        self.stats = SyntheticSequencesDatasetBlockStats(
+            self._sequences, self.output_sds, stats_config
+        )
+        self._rng = np.random.default_rng(seed)
+
+    @property
+    def tag(self) -> str:
+        return f'{self.id}_in'
+
+    def __iter__(self) -> Iterator[Sequence]:
+        return iter(self._sequences)
+
+    def reset_stats(self):
+        ...
+
+
+class SyntheticSequencesGenerator:
+    sequence_length: int
+    n_values: int
+    values_sds: Sds
+
+    sequence_similarity: float
+    sequence_similarity_std: float
+
+    seed: int
+    _rng: Generator
+
+    def __init__(
+            self, config: dict,
+            sequence_length: int, n_values: int, active_size: int,
+            value_encoder: str,
+            sequence_similarity: float,
+            seed: int,
+            sequence_similarity_std: float = 0.
+    ):
+        self.sequence_length = sequence_length
+        self.n_values = n_values
+        self.value_encoder = resolve_encoder(
+            config, value_encoder, 'encoder',
+            n_values=self.n_values,
+            active_size=active_size,
+            seed=seed
+        )
+        self.values_sds = self.value_encoder.output_sds
+
+        self.sequence_similarity = sequence_similarity
+        self.sequence_similarity_std = sequence_similarity_std
+
+        self.seed = seed
+        self._rng = np.random.default_rng(seed)
+
+    def generate_sequences(
+            self, n_sequences, stats_config: StatsMetricsConfig
+    ) -> SyntheticSequencesDatasetBlock:
+        values_encoding = [self.value_encoder.encode(s) for s in range(self.sequence_length)]
+
+        sequences = generate_synthetic_sequences(
+            n_sequences=n_sequences,
+            sequence_length=self.sequence_length,
+            n_values=self.n_values,
+            seed=self.seed,
+            sequence_similarity=self.sequence_similarity,
+            sequence_similarity_std=self.sequence_similarity_std,
+        )
+        encoded_sequences = [
+            Sequence(
+                id_=i_sequence,
+                sequence=[values_encoding[x] for x in sequence]
+            )
+            for i_sequence, sequence in enumerate(sequences)
+        ]
+
+        return SyntheticSequencesDatasetBlock(
+            n_values=self.n_values, sds=self.values_sds,
+            sequences=encoded_sequences,
+            seed=self.seed, stats_config=stats_config
+        )
+
+
+def generate_synthetic_sequences(
+        n_sequences: int, sequence_length: int, n_values: int, seed: int,
+        sequence_similarity: float,
+        sequence_similarity_std: float = 0.
+) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+
+    base_sequence = rng.integers(0, high=n_values, size=(1, sequence_length))
+    sequences = base_sequence.repeat(n_sequences, axis=0)
+
+    # to-change indices
+    for i in range(n_sequences - 1):
+        if sequence_similarity_std < 1e-5:
+            sim = sequence_similarity
+        else:
+            sim = rng.normal(sequence_similarity, scale=sequence_similarity_std)
+            sim = clip(sim, 0, 1)
+
+        n_values_to_change = int(sequence_length * (1 - sim))
+        if n_values_to_change == 0:
+            continue
+        indices = rng.choice(sequence_length, n_values_to_change, replace=False)
+
+        # re-sample values from reduced value space (note n_values-1 below)
+        new_values = rng.integers(0, n_values - 1, n_values_to_change)
+        old_values = sequences[0][indices]
+
+        # that's how we exclude origin value: |0|1|2| -> |0|.|2|3| — value 1 is excluded
+        mask = new_values >= old_values
+        new_values[mask] += 1
+
+        # replace origin values for specified positions with new values
+        sequences[i+1, indices] = new_values
+
+    return sequences
