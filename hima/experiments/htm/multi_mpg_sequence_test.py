@@ -129,6 +129,8 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
             if config['run']['use_feedback']:
                 tm.set_active_feedback_cells(policy_encoder.encode(policy))
                 tm.activate_apical_dendrites(learn=True)
+                if len(tm.active_cells_context.sparse) == 0:
+                    tm.predict_cells()
             tm.activate_cells(learn=True)
 
             # connect active pattern to state
@@ -262,6 +264,9 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
                     logger.log({f'deterministic/letter_predictions_policy_{pol}': wandb.Image(fig)}, step=i)
 
                     plt.close(fig)
+    else:
+        if state_logger is not None:
+            state_logger.save()
 
     if logger is not None:
         name = logger.name
