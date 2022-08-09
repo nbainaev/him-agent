@@ -267,7 +267,6 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
             learning_matching_basal_segments,
             learning_matching_apical_segments,
             cells_to_grow_apical_segments,
-            cells_to_grow_basal_segments,
             basal_segments_to_punish,
             apical_segments_to_punish,
             cells_to_grow_apical_and_basal_segments,
@@ -330,15 +329,6 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
                     self.initial_permanence_basal,
                     self.max_segments_per_cell_basal
                 )
-                new_basal_segments2 = self._learn_on_new_segments(
-                    self.basal_connections,
-                    cells_to_grow_basal_segments,
-                    self.active_cells_context.sparse,
-                    self.sample_size_basal, self.max_synapses_per_segment_basal,
-                    self.initial_permanence_basal,
-                    self.max_segments_per_cell_basal
-                )
-                new_basal_segments = np.union1d(new_basal_segments, new_basal_segments2)
             else:
                 new_basal_segments = np.empty(0)
 
