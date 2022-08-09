@@ -4,84 +4,90 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from hima.modules.htm.temporal_memory import ApicalBasalFeedbackTM
+from hima.modules.htm.temporal_memory import GeneralFeedbackTM
 from pickle import dump
 import os
+from pathlib import Path
 
 
 class HTMWriter:
-    def __init__(self, name, directory, tm: ApicalBasalFeedbackTM, save_every=None):
+    def __init__(self, name, directory, tm: GeneralFeedbackTM, save_every=None):
         self.directory = directory
         self.name = name
         self.time_step = 0
         self.save_every = save_every
         self.cells = list()
-        self.basal_symbols = list()
-        self.apical_symbols = list()
+        self.context_symbols = list()
+        self.forward_symbols = list()
         self.feedback_symbols = list()
 
         self.tm = tm
-        self.info = {'basal_range': tm.basal_range,
-                     'apical_range': tm.apical_range,
-                     'feedback_range': tm.feedback_range,
-                     'basal_columns': tm.basal_columns,
-                     'basal_cells_per_column': tm.basal_cells_per_column,
-                     'apical_columns': tm.apical_columns,
-                     'apical_cells_per_column': tm.apical_cells_per_column,
-                     'feedback_columns': tm.feedback_columns,
-                     'feedback_cells_per_columns': 1}
+        self.info = {
+            'local_range': tm.local_range,
+            'context_range': tm.context_range,
+            'feedback_range': tm.feedback_range,
+            'columns': tm.columns,
+            'cells_per_column': tm.cells_per_column,
+            'context_cells': tm.context_cells,
+            'feedback_cells': tm.feedback_cells,
+            'chunk_size': self.save_every
+        }
+
+        Path(self.directory).mkdir(parents=True, exist_ok=True)
         with open(os.path.join(directory, name + '_info.pkl'), 'wb') as file:
             dump(self.info, file)
 
-    def write(self, basal_symbol=None, apical_symbol=None, feedback_symbol=None, save=False):
+    def write(self, forward_symbol=None, context_symbol=None, feedback_symbol=None, save=False):
         cells = list()
         for cell_id in range(self.tm.total_cells):
             basal_segments = self.tm.basal_connections.segmentsForCell(cell_id)
             apical_segments = self.tm.apical_connections.segmentsForCell(cell_id)
-            inhibit_segments = self.tm.inhib_connections.segmentsForCell(cell_id)
-            exec_segments = self.tm.exec_feedback_connections.segmentsForCell(cell_id)
-            if self.tm.basal_range[0] <= cell_id < self.tm.basal_range[1]:
-                type_ = 0  # basal
-                active = cell_id in self.tm.active_basal_cells.sparse
-                winner = cell_id in self.tm.winner_basal_cells.sparse
-            elif self.tm.apical_range[0] <= cell_id < self.tm.apical_range[1]:
-                type_ = 1  # apical
-                active = cell_id in self.tm.active_apical_cells.sparse
-                winner = cell_id in self.tm.winner_apical_cells.sparse
+            if self.tm.local_range[0] <= cell_id < self.tm.local_range[1]:
+                type_ = 0  # local
+                active = cell_id in self.tm.active_cells.sparse
+                winner = cell_id in self.tm.winner_cells.sparse
+            elif self.tm.context_range[0] <= cell_id < self.tm.context_range[1]:
+                type_ = 1  # context
+                active = cell_id in self.tm.active_cells_context.sparse
+                winner = False
             elif self.tm.feedback_range[0] <= cell_id < self.tm.feedback_range[1]:
                 type_ = 2  # feedback
-                active = cell_id in self.tm.active_feedback_columns.sparse
+                active = cell_id in self.tm.active_cells_feedback.sparse
                 winner = False
             else:
                 raise ValueError("Cell id is out of range")
 
             predictive = cell_id in self.tm.predicted_cells.sparse
 
-            cells.append({'segments': {'basal': self.write_segments(basal_segments, self.tm.active_basal_segments,
-                                                                    self.tm.matching_basal_segments,
-                                                                    self.tm.basal_connections,
-                                                                    self.tm.connected_threshold),
-                                       'apical': self.write_segments(apical_segments, self.tm.active_apical_segments,
-                                                                     self.tm.matching_apical_segments,
-                                                                     self.tm.apical_connections,
-                                                                     self.tm.connected_threshold),
-                                       'inhib': self.write_segments(inhibit_segments, self.tm.active_inhib_segments,
-                                                                    self.tm.matching_inhib_segments,
-                                                                    self.tm.inhib_connections,
-                                                                    self.tm.connected_threshold),
-                                       'exec': self.write_segments(exec_segments, self.tm.active_exec_segments,
-                                                                   self.tm.matching_exec_segments,
-                                                                   self.tm.exec_feedback_connections,
-                                                                   self.tm.connected_threshold)},
-                          'type': type_,
-                          'active': active,
-                          'winner': winner,
-                          'predictive': predictive,
-                          'id': cell_id})
+            cells.append(
+                {
+                    'segments': {
+                        'basal': self.write_segments(
+                            basal_segments,
+                            self.tm.active_segments_basal,
+                            self.tm.matching_segments_basal,
+                            self.tm.basal_connections,
+                            self.tm.connected_threshold_basal
+                        ),
+                        'apical': self.write_segments(
+                            apical_segments,
+                            self.tm.active_segments_apical,
+                            self.tm.matching_segments_apical,
+                            self.tm.apical_connections,
+                            self.tm.connected_threshold_apical
+                        ),
+                    },
+                    'type': type_,
+                    'active': active,
+                    'winner': winner,
+                    'predictive': predictive,
+                    'id': cell_id
+                }
+            )
         self.cells.append(cells)
-        self.basal_symbols.append(basal_symbol)
-        self.apical_symbols.append(apical_symbol)
+        self.forward_symbols.append(forward_symbol)
         self.feedback_symbols.append(feedback_symbol)
+        self.context_symbols.append(context_symbol)
 
         self.time_step += 1
 
@@ -94,25 +100,36 @@ class HTMWriter:
 
     def save(self):
         with open(os.path.join(self.directory, self.name + f'_{self.time_step}.pkl'), 'wb') as file:
-            dump({'cells': self.cells,
-                  'symbols': {'basal': self.basal_symbols,
-                              'apical': self.apical_symbols,
-                              'feedback': self.feedback_symbols}}, file)
+            dump(
+                {
+                    'cells': self.cells,
+                    'symbols': {
+                        'forward': self.forward_symbols,
+                        'feedback': self.feedback_symbols,
+                        'context': self.context_symbols
+                    }
+                }, file
+            )
 
         self.cells.clear()
-        self.basal_symbols.clear()
-        self.apical_symbols.clear()
+        self.forward_symbols.clear()
         self.feedback_symbols.clear()
+        self.context_symbols.clear()
 
     @staticmethod
-    def write_segments(segment_ids, active_segments, matching_segments, connections, permanence_threshold):
+    def write_segments(
+            segment_ids, active_segments, matching_segments, connections, permanence_threshold
+    ):
         segments = list()
         for segment in segment_ids:
             synapses = connections.synapsesForSegment(segment)
-            synapses = [(s,
-                         connections.presynapticCellForSynapse(s),
-                         connections.permanenceForSynapse(s),
-                         connections.permanenceForSynapse(s) >= permanence_threshold) for s in synapses]
+            synapses = [
+                (
+                    s,
+                    connections.presynapticCellForSynapse(s),
+                    connections.permanenceForSynapse(s),
+                    connections.permanenceForSynapse(s) >= permanence_threshold
+                ) for s in synapses]
             if segment in active_segments:
                 state = 1  # active
             elif segment in matching_segments:
@@ -120,7 +137,11 @@ class HTMWriter:
             else:
                 state = 0  # inactive
 
-            segments.append({'synapses': synapses,
-                             'state': state,
-                             'id': segment})
+            segments.append(
+                {
+                    'synapses': synapses,
+                    'state': state,
+                    'id': segment
+                }
+            )
         return segments

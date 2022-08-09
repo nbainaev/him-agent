@@ -9,6 +9,7 @@ from hima.envs.mpg import MultiMarkovProcessGrammar
 from hima.common.sdr_encoders import IntBucketEncoder
 from hima.modules.htm.belief_tm import HybridNaiveBayesTM
 from hima.modules.htm.pattern_sorter import PatternToStateMemory
+from hima.modules.htm.tm_writer import HTMWriter
 
 from scipy.special import rel_entr
 import pickle
@@ -78,6 +79,16 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
         config['run']['min_pattern_distance']
     )
 
+    if config['run']['debug_tm_state']:
+        state_logger = HTMWriter(
+            'belief_tm',
+            config['run']['state_log_path'],
+            tm,
+            config['run']['chunk_size']
+        )
+    else:
+        state_logger = None
+
     density = np.zeros((policy_encoder.n_values, len(mpg.states), len(mpg.alphabet)))
     hist_dist = np.zeros((policy_encoder.n_values, len(mpg.states), len(mpg.alphabet)))
     lr = 0.02
@@ -133,6 +144,14 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
             tm.activate_basal_dendrites(learn=True)
             tm.predict_cells()
             tm.predict_columns_density()
+
+            if state_logger is not None:
+                if len(word) > 1:
+                    prev_letter = word[-2]
+                else:
+                    prev_letter = None
+
+                state_logger.write(letter, prev_letter, str(policy))
 
             letter_dist = np.mean(
                 tm.column_probs.reshape((-1, config['run']['bucket_size'])).T, axis=0
@@ -246,15 +265,13 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
 
     if logger is not None:
         name = logger.name
-    else:
-        name = np.random.bytes(32)
 
-    np.save(f'logs/density_{name}.npy', density)
-    np.save(f'logs/hist_dist_{name}.npy', hist_dist)
+        np.save(f'logs/density_{name}.npy', density)
+        np.save(f'logs/hist_dist_{name}.npy', hist_dist)
 
-    if config['run']['save_model']:
-        with open(f"logs/model_env_{name}_{config['run']['epochs']}.pkl", 'wb') as file:
-            pickle.dump((tm, mpg, obs_encoder, policy_encoder, ptsm), file)
+        if config['run']['save_model']:
+            with open(f"logs/model_env_{name}_{config['run']['epochs']}.pkl", 'wb') as file:
+                pickle.dump((tm, mpg, obs_encoder, policy_encoder, ptsm), file)
 
 
 if __name__ == '__main__':
