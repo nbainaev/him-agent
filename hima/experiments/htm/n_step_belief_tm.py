@@ -10,6 +10,7 @@ from scipy.special import rel_entr
 import wandb
 import os
 import matplotlib.pyplot as plt
+from functools import reduce
 
 
 def main(
@@ -19,7 +20,7 @@ def main(
         config = yaml.load(file, Loader=yaml.Loader)
 
     with open(config['model'], 'rb') as file:
-        tm, mpg, obs_encoder, policy_encoder = pickle.load(file)
+        tm, mpg, obs_encoder, policy_encoder, ptsm = pickle.load(file)
 
     if config['log']:
         if config['logger'] == 'wandb':
@@ -54,11 +55,20 @@ def main(
         letter = '∅'
         encoded_letter = np.empty(0, dtype=np.dtype('int32'))
 
-    tm.set_active_columns(encoded_letter)
-    tm.activate_cells(learn=False)
+    if not config['use_ptsm']:
+        tm.set_active_columns(encoded_letter)
+        tm.set_active_feedback_cells(policy_encoder.encode(config['policy']))
+        tm.activate_apical_dendrites(learn=False)
+        tm.predict_cells()
+        tm.activate_cells(learn=False)
+        active_cells = tm.get_active_cells()
+    else:
+        active_cells = reduce(
+            np.union1d,
+            ptsm.state_to_patterns(config['state'], config['policy'])
+        )
 
-    tm.set_active_context_cells(tm.get_active_cells())
-    tm.set_active_feedback_cells(policy_encoder.encode(config['policy']))
+    tm.set_active_context_cells(active_cells)
     tm.predict_columns_density()
 
     letter_dist = np.mean(
