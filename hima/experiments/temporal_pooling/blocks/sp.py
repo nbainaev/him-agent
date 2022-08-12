@@ -12,6 +12,7 @@ from htm.bindings.sdr import SDR
 from hima.common.config_utils import resolve_init_params, extracted
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
+from hima.experiments.temporal_pooling.blocks.base_block import Block
 from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
 from hima.experiments.temporal_pooling.sdr_seq_stats import SdrSequenceStats
 
@@ -102,3 +103,75 @@ def resolve_sp(sp_config, ff_sds: Sds, output_sds: Sds, seed: int):
     )
 
     return SpatialPoolerBlock(feedforward_sds=ff_sds, output_sds=output_sds, **sp_config)
+
+
+class SpatialPoolerBlockNew(Block):
+    family = "spatial_pooler"
+
+    output_sdr: SparseSdr
+    sp: Any
+    stats: SpatialPoolerBlockStats
+
+    _active_input: SDR
+    _active_output: SDR
+
+    def __init__(self, id_: int, name: str, **sp_config):
+        super(SpatialPoolerBlockNew, self).__init__(id_, name)
+
+        sp_config, ff_sds, output_sds = extracted(sp_config, 'ff_sds', 'output_sds')
+
+        self.sds = {}
+        self.resolve_sds('feedforward', ff_sds)
+        self.resolve_sds('output', output_sds)
+
+        self.output_sdr = []
+        self._sp_config = sp_config
+
+    def build(self):
+        sp_config = self._sp_config
+        ff_sds = self.feedforward_sds
+        output_sds = self.output_sds
+
+        # if FF/Out SDS was defined in config, they aren't Sds objects, hence explicit conversion
+        ff_sds = Sds.as_sds(ff_sds)
+        output_sds = Sds.as_sds(output_sds)
+
+        sp_config = resolve_init_params(
+            sp_config,
+            inputDimensions=ff_sds.shape, potentialRadius=ff_sds.size,
+            columnDimensions=output_sds.shape, localAreaDensity=output_sds.sparsity,
+        )
+        self.sp = SpatialPooler(
+            **sp_config
+        )
+        self.stats = SpatialPoolerBlockStats(self.output_sds)
+        self._active_input = SDR(self.feedforward_sds.size)
+        self._active_output = SDR(self.output_sds.size)
+
+    @property
+    def tag(self) -> str:
+        return f'{self.id}_sp'
+
+    def reset(self):
+        self._active_input.sparse = []
+        self._active_output.sparse = []
+
+    def reset_stats(self, stats: SpatialPoolerBlockStats = None):
+        if stats is None:
+            self.stats = SpatialPoolerBlockStats(self.output_sds)
+        else:
+            self.stats = stats
+
+    def compute(self, active_input: SparseSdr, learn: bool = True) -> SparseSdr:
+        self._active_input.sparse = active_input.copy()
+
+        self.sp.compute(self._active_input, learn=learn, output=self._active_output)
+        self.output_sdr = np.array(self._active_output.sparse, copy=True)
+
+        self.stats.update(self.output_sdr)
+        return self.output_sdr
+
+
+def resolve_sp_new(sp_config, block_id: int, block_name: str, **induction_registry):
+    sp_config = resolve_init_params(sp_config, raise_if_not_resolved=False, **induction_registry)
+    return SpatialPoolerBlockNew(block_id, block_name, **sp_config)
