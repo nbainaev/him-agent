@@ -14,7 +14,8 @@ from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone, timed
-from hima.experiments.temporal_pooling.blocks.builder import build_block
+from hima.experiments.temporal_pooling.blocks.base_block import Block
+from hima.experiments.temporal_pooling.blocks.builder import build_block, build_connection
 from hima.experiments.temporal_pooling.blocks.dataset_policies import Policy
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator
 from hima.experiments.temporal_pooling.blocks.sp import resolve_sp
@@ -34,11 +35,9 @@ from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
 
 
 class RunSetup:
-    n_policies: int
-    n_states: int
-    n_actions: int
-    steps_per_policy: int
-    policy_repeats: int
+    n_sequences: int
+    steps_per_sequence: Optional[int]
+    sequence_repeats: int
     epochs: int
     log_repeat_schedule: int
     log_epoch_schedule: int
@@ -47,17 +46,15 @@ class RunSetup:
     sp_output_sds: Sds
 
     def __init__(
-            self, n_policies: int, n_states: int, n_actions: int,
-            steps_per_policy: Optional[int], policy_repeats: int, epochs: int, total_repeats: int,
+            self, n_sequences: int, steps_per_sequence: Optional[int],
+            sequence_repeats: int, epochs: int, total_repeats: int,
             tp_output_sds: Sds.TShortNotation, sp_output_sds: Sds.TShortNotation,
             log_repeat_schedule: int = 1, log_epoch_schedule: int = 1
     ):
-        self.n_policies = n_policies
-        self.n_states = n_states
-        self.n_actions = n_actions
-        self.steps_per_policy = isnone(steps_per_policy, self.n_states)
-        self.policy_repeats, self.epochs = resolve_epoch_runs(
-            policy_repeats, epochs, total_repeats
+        self.n_sequences = n_sequences
+        self.steps_per_sequence = steps_per_sequence
+        self.sequence_repeats, self.epochs = resolve_epoch_runs(
+            sequence_repeats, epochs, total_repeats
         )
         self.log_repeat_schedule = log_repeat_schedule
         self.log_epoch_schedule = log_epoch_schedule
@@ -74,7 +71,7 @@ class ObservationsLayeredExperiment(Runner):
     run_setup: RunSetup
     stats_config: StatsMetricsConfig
     pipeline: list[str]
-    blocks: dict[str, Any]
+    blocks: dict[str, Block]
     progress: RunProgress
     stats: ExperimentStats
 
@@ -82,22 +79,31 @@ class ObservationsLayeredExperiment(Runner):
 
     def __init__(
             self, config: TConfig, seed: int, debug: bool,
-            blocks: dict[str, dict],
-            # run_setup: Union[dict, str],
-            # pipeline: list[str], temporal_pooler: str, stats_and_metrics: dict,
+            blocks: dict[str, TConfig], connections: list[TConfig],
+            run_setup: TConfig, stats_and_metrics: TConfig,
+            # pipeline: list[str], temporal_pooler: str,
             **_
     ):
         super().__init__(config, **config)
         print('==> Init')
 
         self.seed = resolve_random_seed(seed)
+        self.run_setup = resolve_run_setup(config, run_setup, experiment_type='layered')
+        self.stats_config = StatsMetricsConfig(**stats_and_metrics)
 
-        induction_registry = dict(seed=seed)
-        for block_name in blocks:
-            build_block(config, block_name, **induction_registry)
+        induction_registry = dict(
+            seed=seed,
+            debug=debug,
+            stats_config=self.stats_config,
+            n_sequences=self.run_setup.n_sequences,
+        )
+        blocks = {
+            block_name: build_block(config, block_id, block_name, **induction_registry)
+            for block_id, block_name in enumerate(blocks)
+        }
 
-        # self.run_setup = resolve_run_setup(config, run_setup, experiment_type='policies')
-        # self.stats_config = StatsMetricsConfig(**stats_and_metrics)
+        for connection in connections:
+            build_connection(connection, blocks)
         #
         # self.pipeline = pipeline
         # self.blocks = self.build_blocks(temporal_pooler)
