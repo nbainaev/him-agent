@@ -8,9 +8,11 @@ from typing import Iterator, Any
 import numpy as np
 from numpy.random import Generator
 
+from hima.common.config_utils import check_all_resolved
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import clip
+from hima.experiments.temporal_pooling.blocks.base_block import Block
 from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_encoder
 from hima.experiments.temporal_pooling.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
@@ -95,7 +97,37 @@ class SyntheticSequencesDatasetBlock:
         ...
 
 
+class SyntheticSequencesDatasetBlockNew(Block):
+    family = "generator"
+
+    n_values: int
+    stats: SyntheticSequencesDatasetBlockStats
+
+    _sequences: list[Sequence]
+
+    def __init__(self, id_: int, name: str, n_values: int, sequences: list[Sequence]):
+        super(SyntheticSequencesDatasetBlockNew, self).__init__(id_, name)
+
+        self.n_values = n_values
+        self._sequences = sequences
+
+    def build(self, stats_config: StatsMetricsConfig):
+        assert check_all_resolved(self.output_sds)
+
+        self.stats = SyntheticSequencesDatasetBlockStats(
+            self._sequences, self.output_sds, stats_config
+        )
+
+    def __iter__(self) -> Iterator[Sequence]:
+        return iter(self._sequences)
+
+    def reset_stats(self):
+        ...
+
+
 class SyntheticSequencesGenerator:
+    family = "generator"
+
     sequence_length: int
     n_values: int
     values_sds: Sds
@@ -130,10 +162,8 @@ class SyntheticSequencesGenerator:
         self.seed = seed
         self._rng = np.random.default_rng(seed)
 
-    def generate_sequences(
-            self, n_sequences, stats_config: StatsMetricsConfig
-    ) -> SyntheticSequencesDatasetBlock:
-        values_encoding = [self.value_encoder.encode(s) for s in range(self.sequence_length)]
+    def generate_sequences(self, n_sequences: int) -> list[Sequence]:
+        values_encoding = [self.value_encoder.encode(x) for x in range(self.n_values)]
 
         sequences = generate_synthetic_sequences(
             n_sequences=n_sequences,
@@ -151,11 +181,20 @@ class SyntheticSequencesGenerator:
             for i_sequence, sequence in enumerate(sequences)
         ]
 
-        return SyntheticSequencesDatasetBlock(
-            n_values=self.n_values, sds=self.values_sds,
-            sequences=encoded_sequences,
-            seed=self.seed, stats_config=stats_config
+        return encoded_sequences
+
+    def build_block(
+            self, block_id: int, block_name: str,
+            sequences: list[Sequence], stats_config: StatsMetricsConfig
+    ) -> SyntheticSequencesDatasetBlockNew:
+        block = SyntheticSequencesDatasetBlockNew(
+            id_=block_id, name=block_name,
+            n_values=self.n_values, sequences=sequences
         )
+        print(self.values_sds)
+        block.resolve_sds('output', self.values_sds)
+        block.build(stats_config=stats_config)
+        return block
 
 
 def generate_synthetic_sequences(
