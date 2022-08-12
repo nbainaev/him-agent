@@ -197,10 +197,12 @@ def resolve_init_params(config: dict, **induction_registry):
     }
 
 
-def assert_all_resolved(*values):
-    """Assert all provided values are resolved, i.e. there is no value equal to specific constant"""
+def check_all_resolved(*values) -> bool:
+    """Check all provided values are resolved, i.e. there is no value equal to specific constant"""
+    resolved = True
     for x in values:
-        assert x != _TO_BE_NONE_VALUE and x != _TO_BE_INDUCED_VALUE
+        resolved &= x != _TO_BE_NONE_VALUE and x != _TO_BE_INDUCED_VALUE
+    return resolved
 
 
 # ==================== config dict compilation and values parsing ====================
