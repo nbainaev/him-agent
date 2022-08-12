@@ -15,7 +15,8 @@ from hima.common.utils import ensure_list
 # TODO: rename file to `config` and add top-level description comment
 
 
-# Register config-related conventional constants here. Start them with `_` as non-importable!
+# Register config-related conventional constants here.
+# NB: They are intended to be non-importable, i.e. to be used only here!
 _TYPE_KEY = '_type_'
 _TYPE_FAMILY_KEY = '_type_family_'
 _BASE_CONFIG_KEY = '_base_config_'
@@ -101,14 +102,12 @@ def resolve_nested_configs(
 ) -> TConfig:
     # if config itself is not provided, we need to resolve it by name from the registry
     if config is None:
-        print(config_name)
         if config_name is None:
             return {}
         config = config_registry[config_name]
 
     # recursively build base configs starting from the innermost one
     config, base_config_name = extracted_base_config(config)
-    print(base_config_name)
     if base_config_name is not None:
         base_config = resolve_nested_configs(config_registry, config_name=base_config_name)
         # TODO: it may require unusual dict merge logic for the special values
@@ -167,30 +166,41 @@ def resolve_relative_quantity(abs_or_relative: Union[int, float], baseline: int)
 
 
 def resolve_value(
-        value: Any, key: str = None, induction_registry: dict = None,
-        raise_if_not_resolved: bool = True
+        value: Any, *,
+        substitute_with: Any = None,
+        key: str = None, induction_registry: dict = None
 ) -> Any:
+    """
+    Resolve value defined with the config. Some values have specific meaning, which is handled here.
+    """
     if value == _TO_BE_NONE_VALUE:
         return None
     elif value == _TO_BE_INDUCED_VALUE:
-        if raise_if_not_resolved:
-            return induction_registry[key]
+        if key is None:
+            # direct substitution
+            return substitute_with
         else:
+            # try substitute using registry or leave it unchanged
             return induction_registry.get(key, _TO_BE_INDUCED_VALUE)
-
     return value
 
 
-def resolve_init_params(config: dict, *, raise_if_not_resolved: bool = True, **induction_registry):
+def resolve_init_params(config: dict, **induction_registry):
+    """
+    Resolve params defined with the config. Some values are intended to be resolved
+    later at runtime - so, it tries to substitute special values with the
+    values from the induction registry.
+    """
     return {
-        k: resolve_value(config[k], k, induction_registry, raise_if_not_resolved)
+        k: resolve_value(config[k], key=k, induction_registry=induction_registry)
         for k in config
     }
 
 
-def assert_all_resolved(config: dict):
-    for k in config:
-        resolve_value(config[k], k, {}, raise_if_not_resolved=True)
+def assert_all_resolved(*values):
+    """Assert all provided values are resolved, i.e. there is no value equal to specific constant"""
+    for x in values:
+        assert x != _TO_BE_NONE_VALUE and x != _TO_BE_INDUCED_VALUE
 
 
 # ==================== config dict compilation and values parsing ====================
