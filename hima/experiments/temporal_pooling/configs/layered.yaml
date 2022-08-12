@@ -2,27 +2,27 @@ _type_: tp.layered
 project: tp_layered
 log: True    # wandb logging
 
-#run_setup: full
+run_setup: full
 #policy_selection_rule: ordered
 temporal_pooler: ablation_utp
 seed: 42
 debug: False
 
-#stats_and_metrics:
-#  normalization: mean
-#  prefix_similarity_discount: 1.
-#  loss_on_mae: True
-#  loss_layer_discount: 0.75
-#  symmetrical_similarity: False
+stats_and_metrics:
+  normalization: mean
+  prefix_similarity_discount: 1.
+  loss_on_mae: True
+  loss_layer_discount: 0.75
+  symmetrical_similarity: False
 
 connections:
   - src:
       block: generator
-      connect: output
+      what: output
+      sds: ???
     dst:
       block: spatial_pooler
-      connect: feedforward
-    sds: ???
+      where: feedforward
 
 blocks:
   generator:
@@ -58,7 +58,7 @@ generator:
 run_setups:
   simple:
     n_sequences: 3
-    steps_per_sequence: ...
+    steps_per_sequence: 10
     sequence_repeats: 3
     epochs: 2
     total_repeats: ...
@@ -69,7 +69,7 @@ run_setups:
 
   full:
     n_sequences: 10
-    steps_per_sequence: ...
+    steps_per_sequence: 30
     sequence_repeats: 10
     epochs: 10
     total_repeats: ...
