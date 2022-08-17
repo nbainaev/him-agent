@@ -5,7 +5,7 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
 from hima.modules.htm.temporal_memory import GeneralFeedbackTM
-from pickle import dump
+from json import dump
 import os
 from pathlib import Path
 
@@ -30,11 +30,13 @@ class HTMWriter:
             'cells_per_column': tm.cells_per_column,
             'context_cells': tm.context_cells,
             'feedback_cells': tm.feedback_cells,
+            'segments_per_cell_apical': tm.max_segments_per_cell_apical,
+            'segments_per_cell_basal': tm.max_segments_per_cell_basal,
             'chunk_size': self.save_every
         }
 
         Path(self.directory).mkdir(parents=True, exist_ok=True)
-        with open(os.path.join(directory, name + '_info.pkl'), 'wb') as file:
+        with open(os.path.join(directory, name + '_info.json'), 'w') as file:
             dump(self.info, file)
 
     def write(self, forward_symbol=None, context_symbol=None, feedback_symbol=None, save=False):
@@ -99,7 +101,7 @@ class HTMWriter:
                     self.save()
 
     def save(self):
-        with open(os.path.join(self.directory, self.name + f'_{self.time_step}.pkl'), 'wb') as file:
+        with open(os.path.join(self.directory, self.name + f'_{self.time_step}.json'), 'w') as file:
             dump(
                 {
                     'cells': self.cells,
