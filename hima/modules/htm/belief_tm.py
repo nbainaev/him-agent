@@ -752,8 +752,12 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
 
         # update segment reliability
         # filter predicted segments by apical neighbours
-        cells_for_basal_true_segments = self.basal_connections.mapSegmentsToCells(true_positive_segments_basal)
-        cells_for_basal_false_segments = self.basal_connections.mapSegmentsToCells(false_positive_segments_basal)
+        cells_for_basal_true_segments = self.basal_connections.mapSegmentsToCells(
+            true_positive_segments_basal
+        )
+        cells_for_basal_false_segments = self.basal_connections.mapSegmentsToCells(
+            false_positive_segments_basal
+        )
 
         mask1 = np.in1d(
             cells_for_basal_true_segments,
@@ -771,11 +775,13 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
 
         if len(true_positive_segments_basal_with_apical) > 0:
             self.beta1[true_positive_segments_basal_with_apical] += self.beta_lr * (
-                        1 - self.beta1[true_positive_segments_basal_with_apical])
+                1 - self.beta1[true_positive_segments_basal_with_apical]
+            )
 
         if len(false_positive_segments_basal_with_apical) > 0:
-            self.beta1[false_positive_segments_basal_with_apical] -= self.beta_lr * self.beta1[
-                false_positive_segments_basal_with_apical]
+            self.beta1[false_positive_segments_basal_with_apical] -= self.beta_lr * (
+                self.beta1[false_positive_segments_basal_with_apical]
+            )
 
         true_positive_segments_basal_no_apical = true_positive_segments_basal[~mask1]
 
@@ -783,11 +789,13 @@ class HybridNaiveBayesTM(GeneralFeedbackTM):
 
         if len(true_positive_segments_basal_no_apical) > 0:
             self.beta2[true_positive_segments_basal_no_apical] += self.beta_lr * (
-                    1 - self.beta2[true_positive_segments_basal_no_apical])
+                1 - self.beta2[true_positive_segments_basal_no_apical]
+            )
 
         if len(false_positive_segments_basal_no_apical) > 0:
-            self.beta2[false_positive_segments_basal_no_apical] -= self.beta_lr * self.beta2[
-                false_positive_segments_basal_no_apical]
+            self.beta2[false_positive_segments_basal_no_apical] -= self.beta_lr * (
+                self.beta2[false_positive_segments_basal_no_apical]
+            )
 
         # update conditional probs
         old_active_context_cells_dense = np.zeros_like(self.cell_probs_context)

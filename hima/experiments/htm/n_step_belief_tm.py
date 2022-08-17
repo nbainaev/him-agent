@@ -55,9 +55,10 @@ def main(
         letter = '∅'
         encoded_letter = np.empty(0, dtype=np.dtype('int32'))
 
+    tm.set_active_feedback_cells(policy_encoder.encode(config['policy']))
+
     if not config['use_ptsm']:
         tm.set_active_columns(encoded_letter)
-        tm.set_active_feedback_cells(policy_encoder.encode(config['policy']))
         tm.activate_apical_dendrites(learn=False)
         tm.predict_cells()
         tm.activate_cells(learn=False)
@@ -69,7 +70,7 @@ def main(
         )
 
     tm.set_active_context_cells(active_cells)
-    tm.predict_columns_density()
+    tm.predict_columns_density(update_receptive_fields=False)
 
     letter_dist = np.mean(
         tm.column_probs.reshape((-1, obs_encoder.n_active_bits)).T, axis=0

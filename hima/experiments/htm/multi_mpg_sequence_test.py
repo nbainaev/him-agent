@@ -69,6 +69,8 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
         learning_threshold_inhib=learning_threshold,
         activation_threshold_apical=activation_threshold,
         learning_threshold_apical=learning_threshold,
+        max_synapses_per_segment_apical=config['run']['bucket_size'],
+        max_synapses_per_segment_basal=config['run']['bucket_size'],
         seed=config['run']['seed'],
         **config['tm']
     )
@@ -147,7 +149,11 @@ def run_hybrid_naive_bayes_tm(config, mpg, obs_encoder, policy_encoder, logger):
             tm.predict_cells()
             tm.predict_columns_density()
 
-            if state_logger is not None:
+            if (
+                    state_logger is not None
+                    and
+                    (config['run']['debug_range'][0] <= i <= config['run']['debug_range'][1])
+            ):
                 if len(word) > 1:
                     prev_letter = word[-2]
                 else:

@@ -1,14 +1,14 @@
-w_lr: 0.01
-nu_lr: 0.01
-b_lr: 0.01
-beta_lr: 0.01
+w_lr: 0.02
+nu_lr: 0.02
+b_lr: 0.02
+beta_lr: 0.02
 
-w_lr_apical: 0.01
-nu_lr_apical: 0.01
-b_lr_apical: 0.01
+w_lr_apical: 0.02
+nu_lr_apical: 0.02
+b_lr_apical: 0.02
 
-theta_lr: 0.01
-gamma_lr: 0.01
+theta_lr: 0.02
+gamma_lr: 0.02
 
 init_w: 0.5
 init_nu: 0.5
@@ -33,7 +33,6 @@ permanence_decrement_basal: 0.01
 initial_permanence_basal: 0.4
 predicted_segment_decrement_basal: 0.001
 sample_size_basal: -1
-max_synapses_per_segment_basal: -1
 max_segments_per_cell_basal: 6
 
 connected_threshold_apical: 0.5
@@ -42,7 +41,6 @@ permanence_decrement_apical: 0.01
 initial_permanence_apical: 0.4
 predicted_segment_decrement_apical: 0.001
 sample_size_apical: -1
-max_synapses_per_segment_apical: -1
 max_segments_per_cell_apical: 6
 
 
