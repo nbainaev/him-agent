@@ -411,6 +411,7 @@ class GwExhaustibleResource(Runner):
         return encoding_scheme
 
     def log_agent(self):
+        # TODO: check agent properties
         observations = self.get_all_observations()
         value_map = np.zeros(self.environment.shape)
         obstacle_mask = self.environment.aggregated_mask[EntityType.Obstacle]
