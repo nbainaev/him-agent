@@ -35,7 +35,7 @@ class HTMWriter:
             'chunk_size': self.save_every
         }
 
-        Path(self.directory).mkdir(parents=True, exist_ok=True)
+        Path(os.path.join(self.directory, 'stream')).mkdir(parents=True, exist_ok=True)
         with open(os.path.join(directory, name + '_info.json'), 'w') as file:
             dump(self.info, file)
 
@@ -101,7 +101,7 @@ class HTMWriter:
                     self.save()
 
     def save(self):
-        with open(os.path.join(self.directory, self.name + f'_{self.time_step}.json'), 'w') as file:
+        with open(os.path.join(self.directory, 'stream', self.name + f'_{self.time_step}.json'), 'w') as file:
             dump(
                 {
                     'cells': self.cells,
