@@ -9,10 +9,11 @@ from typing import Union
 from hima.common.config_utils import resolve_value, is_resolved_value, get_unresolved_value
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import isnone
 
 
 class Block(ABC):
+    """Base building block of the computational graph / neural network."""
+
     family: str = "base_block"
     id: int
     name: str
@@ -70,6 +71,8 @@ class Block(ABC):
 
 
 class Stream:
+    """Stream defines the named dataflow to or from a block."""
+
     name: str
     block: Block
 
@@ -92,6 +95,8 @@ class Stream:
 
 
 class Pipe:
+    """Pipe connects two blocks' streams. Thus, both streams operate in the same SDS."""
+
     src: Stream
     dst: Stream
 
@@ -124,6 +129,12 @@ class Pipe:
 
 
 class ComputationUnit:
+    """
+    Computational unit defines a node in the computational graph.
+    It joins several input connections of a block to represent a single computational unit —
+    connections provide the input data for a single computation inside the block.
+    """
+
     block: Block
     connections: list[Pipe]
 
@@ -139,6 +150,10 @@ class ComputationUnit:
 
 
 class Pipeline:
+    """
+    Pipeline is the ordered traversal of the computational graph, that is it defines both —
+    the graph itself and the order of the computations.
+    """
     units: list[ComputationUnit]
 
     def __init__(self, units: list[ComputationUnit]):

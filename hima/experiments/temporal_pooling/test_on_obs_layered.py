@@ -14,8 +14,8 @@ from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone, timed
-from hima.experiments.temporal_pooling.blocks.base_block import Block
-from hima.experiments.temporal_pooling.blocks.builder import build_block, build_connection
+from hima.experiments.temporal_pooling.blocks.computational_graph import Block
+from hima.experiments.temporal_pooling.blocks.builder import build_block, PipelineResolver
 from hima.experiments.temporal_pooling.blocks.dataset_policies import Policy
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator
 from hima.experiments.temporal_pooling.blocks.sp import resolve_sp
@@ -79,9 +79,9 @@ class ObservationsLayeredExperiment(Runner):
 
     def __init__(
             self, config: TConfig, seed: int, debug: bool,
-            blocks: dict[str, TConfig], connections: list[TConfig],
+            blocks: dict[str, TConfig], pipeline: list,
             run_setup: TConfig, stats_and_metrics: TConfig,
-            # pipeline: list[str], temporal_pooler: str,
+            # temporal_pooler: str,
             **_
     ):
         super().__init__(config, **config)
@@ -101,9 +101,10 @@ class ObservationsLayeredExperiment(Runner):
             block_name: build_block(config, block_id, block_name, **induction_registry)
             for block_id, block_name in enumerate(blocks)
         }
+        print(blocks)
 
-        for connection in connections:
-            build_connection(connection, blocks)
+        pipeline = PipelineResolver(blocks).resolve(pipeline)
+        print(pipeline)
         #
         # self.pipeline = pipeline
         # self.blocks = self.build_blocks(temporal_pooler)

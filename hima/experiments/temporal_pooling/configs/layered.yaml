@@ -15,16 +15,12 @@ stats_and_metrics:
   loss_layer_discount: 0.75
   symmetrical_similarity: False
 
-pipeline:
-  - gen.output -> sp1.feedforward
-  - pipe: ???.output -> sp2.feedforward
-    sds: [400, 0.1]
+pipeline: ???
 
 blocks:
   gen:
     _type_family_: generator
     _base_config_: synthetic_sequences
-
     sequence_length: 10
     n_values: 4
   sp1:
