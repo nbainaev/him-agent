@@ -6,110 +6,131 @@
 
 import numpy as np
 from hima.common.sdr import SparseSdr
-from hima.common.utils import softmax
-from hima.common.config_utils import TConfig
 from hima.modules.td_lambda import TDLambda
+
+
+class SparseDopamineWeights:
+    def __init__(
+            self, seed: int, input_size: int, output_size: int, potential_fraction: float,
+            discount_factor: float, trace_factor: float, learning_rate: float, trace_reset: bool
+    ):
+        self._rng = np.random.default_rng(seed)
+        self.potential_size = int(input_size * potential_fraction)
+        self.pre_cells = np.empty((output_size, self.potential_size), dtype=int)
+        self.size = output_size * self.potential_size
+        self.dopa_weights = TDLambda(
+            seed, self.size, discount_factor, learning_rate, trace_factor, trace_reset
+        )
+
+        self.output_size = output_size
+        for cell in range(output_size):
+            potential_cells = self._rng.permutation(input_size)[:self.potential_size]
+            potential_cells.sort()
+            self.pre_cells[cell] = potential_cells
+
+    def __mul__(self, other: SparseSdr) -> np.ndarray:
+        other_dense = np.isin(self.pre_cells, other)
+        other_norm = np.sqrt(np.sum(other_dense * other_dense, axis=1))
+        w = self.dopa_weights.synapse_values.values.reshape((self.output_size, self.potential_size))
+        this_norm = np.sqrt(np.sum(w * w, axis=1))
+        res = (w * other_dense).sum(axis=1) / (other_norm * this_norm)
+        return res
+
+    def selective_mult(self, other: SparseSdr, condition: SparseSdr):
+        other_dense = np.isin(self.pre_cells, other)[condition, :]
+        other_norm = np.sqrt(np.sum(other_dense * other_dense, axis=1))
+        w = self.dopa_weights.synapse_values.values.reshape((self.output_size, self.potential_size))
+        w = w[condition, :]
+        this_norm = np.sqrt(np.sum(w * w, axis=1))
+        res = (w * other_dense).sum(axis=1) / (other_norm * this_norm)
+        return res
+
+    def update(self, sdr: SparseSdr, reward: float, next_sdr: SparseSdr):
+        self.dopa_weights.update(sdr, reward, next_sdr)
+
+    def reset(self):
+        self.dopa_weights.reset()
+
+    def xa2sdr(self, x: SparseSdr, a: SparseSdr) -> SparseSdr:
+        s = np.nonzero(np.isin(self.pre_cells[a, :], x))
+        s = a[s[0]] * self.potential_size + s[1]
+        return s
 
 
 class Striatum:
     def __init__(
-            self, input_size: int, output_size: int, field_size: int, synapse_threshold: float,
-            potential_pct: float, seed: int, connected_pct: float,
-            stimulus_threshold: float, active_neurons: int, syn_increment: float,
-            syn_decrement: float, output_temperature: float,
-            dopa_config: TConfig, dopamine_strength: float
+            self, seed: int, state_size: int, motiv_size: int, action_size: int, trace_reset: bool,
+            motiv_fraction: float, state_fraction: float, potential_fraction: float,
+            discount_factor: float, trace_factor: float, boost_strength: float,
+            learning_rate: float, activity_factor: float
     ):
-        self.input_size = input_size
-        self.spn_size = output_size * field_size
-        self.output_size = output_size
-        self.field_size = field_size
+        self.state_weights = SparseDopamineWeights(
+            seed, state_size, action_size, potential_fraction,
+            discount_factor, trace_factor, learning_rate, trace_reset
+        )
+        self.motiv_weights = SparseDopamineWeights(
+            seed, motiv_size, action_size, potential_fraction,
+            discount_factor, trace_factor, learning_rate, trace_reset
+        )
+        self.boost_factors = np.ones(action_size)
+        self.mean_activity = np.zeros(action_size)
 
-        self.stimulus_threshold = stimulus_threshold
-        self.dopamine_strength = dopamine_strength
-        self.output_temperature = output_temperature
-        self.n_active_neurons = active_neurons
-        self.syn_increment = syn_increment
-        self.syn_decrement = syn_decrement
-        self.syn_threshold = synapse_threshold
-        self._rng = np.random.default_rng(seed)
+        self.activity_factor = activity_factor
+        self.boost_strength = boost_strength
 
-        # connections from input to spn neurons
-        n_potential_cells = int(potential_pct * input_size)
-        self.spn_synapses = np.empty((self.spn_size, n_potential_cells), dtype=int)
-        self.spn_synapses_permanence = np.empty((self.spn_size, n_potential_cells), dtype=float)
-        self._connected_synapses = np.zeros((self.spn_size, n_potential_cells), dtype=bool)
-        for cell in range(self.spn_size):
-            potential_cells = self._rng.permutation(input_size)[:n_potential_cells]
-            potential_cells.sort()
-            for syn, presyn_cell in enumerate(potential_cells):
-                if self._rng.uniform() < connected_pct:
-                    permanence = self._rng.uniform(synapse_threshold, 1)
-                else:
-                    permanence = self._rng.uniform(0, synapse_threshold)
-                self.spn_synapses[cell, syn] = presyn_cell
-                self.spn_synapses_permanence[cell, syn] = permanence
+        self.action_size = action_size
+        self.motiv_no_active_size = int(action_size * (1 - motiv_fraction))
+        motiv_active_size = action_size - self.motiv_no_active_size
+        self.state_no_active_size = int(motiv_active_size * (1 - state_fraction))
 
-        # connections from spn to output neurons
-        self.projection_spn = np.arange(self.spn_size).reshape((output_size, field_size))
+        self.last_sa = None
+        self.last_ma = None
+        self.last_reward = None
+        self.is_first = True
 
-        # modulation connections
-        self.dopamine_module = TDLambda(seed, n_potential_cells * self.spn_size, **dopa_config)
-        self.boost_factors = np.ones(self.spn_size)
+    def compute(self, state: SparseSdr, motiv: SparseSdr) -> SparseSdr:
+        # p is top under motiv
+        bwm = self.boost_factors * (self.motiv_weights * motiv)
+        k = self.motiv_no_active_size
+        p = np.argpartition(bwm, k)[k:]
 
-    @property
-    def spn_connected_syn(self):
-        self._connected_synapses.fill(0)
-        self._connected_synapses[self.spn_synapses_permanence > self.syn_threshold] = 1
-        return self._connected_synapses
+        # a is top under p conditioned by state
+        ws = self.state_weights.selective_mult(state, p)
+        bws = self.boost_factors[p] * ws
+        k = self.state_no_active_size
+        pa = np.argpartition(bws, k)[k:]
+        a = p[pa]
+        return a
 
-    @property
-    def spn_excitability(self):
-        dop_factors = self.dopamine_module.value_network.cell_value.reshape((
-            self.spn_size, -1
-        )).copy()
-        thr = np.median(dop_factors)
-        dop_factors = np.exp(self.dopamine_strength * (dop_factors - thr))
-        return dop_factors
+    def update(self, state: SparseSdr, motiv: SparseSdr, action: SparseSdr, reward: float):
+        # update boosting
+        self.mean_activity[action] += 1
+        self.mean_activity *= self.activity_factor
+        a_mean = np.mean(self.mean_activity)
+        self.boost_factors = np.exp(-self.boost_strength * (self.mean_activity - a_mean))
 
-    def compute(self, sdr: SparseSdr, reward: float, learn: bool) -> int:
-        # compute spn activity
-        potential_activation = np.isin(self.spn_synapses, sdr)
-        spn_exc = self.spn_excitability
-        activity = potential_activation * spn_exc * self.spn_connected_syn
-        activity = np.sum(activity, axis=1)
+        # update values
+        sa = self.state_weights.xa2sdr(state, action)
+        ma = self.motiv_weights.xa2sdr(motiv, action)
+        if self.is_first:
+            self.is_first = False
+        else:
+            self.state_weights.update(self.last_sa, self.last_reward, sa)
+            self.motiv_weights.update(self.last_ma, self.last_reward, ma)
 
-        spn = activity * self.boost_factors
-        theta = self.stimulus_threshold * spn_exc.mean()
-
-        k = self.spn_size - self.n_active_neurons
-        spn_out = np.argpartition(spn, k)[k:]
-        possible_output = np.flatnonzero(spn > theta)
-        spn_out = np.intersect1d(spn_out, possible_output)
-
-        if learn:
-            incr_cells = potential_activation[spn_out, :]
-            decr_cells = np.invert(potential_activation)[spn_out, :]
-            self.spn_synapses_permanence[spn_out, :] += self.syn_increment * incr_cells
-            self.spn_synapses_permanence[spn_out, :] -= self.syn_increment * decr_cells
-            self.spn_synapses_permanence[self.spn_synapses_permanence < 0] = 0
-            self.spn_synapses_permanence[self.spn_synapses_permanence > 1] = 1
-
-        values = spn.reshape((self.output_size, -1)) * np.isin(self.projection_spn, spn_out)
-        values = values.sum(axis=1)
-        probs = softmax(values, self.output_temperature)
-        action = self._rng.choice(self.output_size, 1, p=probs)[0]
-
-        if learn:
-            spn_upd = np.intersect1d(
-                np.arange(action * self.field_size, (action + 1) * self.field_size), spn_out
-            )
-            not_upd = np.setdiff1d(np.arange(self.spn_size), spn_upd)
-            inp_upd = np.isin(self.spn_synapses, sdr)
-            inp_upd[not_upd] = False
-            upd_sdr = np.flatnonzero(inp_upd)
-            self.dopamine_module.update(upd_sdr, reward)
-
-        return action
+        self.last_reward = reward
+        self.last_sa = sa
+        self.last_ma = ma
 
     def reset(self):
-        self.dopamine_module.reset()
+        self.mean_activity.fill(0)
+        self.boost_factors.fill(1)
+        self.state_weights.update(self.last_sa, self.last_reward, [])
+        self.motiv_weights.update(self.last_ma, self.last_reward, [])
+        self.state_weights.reset()
+        self.motiv_weights.reset()
+        self.last_sa = None
+        self.last_ma = None
+        self.last_reward = None
+        self.is_first = True
+

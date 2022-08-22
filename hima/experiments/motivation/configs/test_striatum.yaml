@@ -1,11 +1,11 @@
 _type_: motivation.str
 seed: 1337
-project: striatum
+project: new_striatum
 log: True
 
 environment:
-  seed: 43291
-  shape_xy: [9, 9]
+  seed: 42
+  shape_xy: [5, 5]
 
   actions_cost:
     base_cost: -0.005
@@ -28,8 +28,7 @@ environment:
 
   obstacle:
     rendering: false
-    density: 0.1
-    map_name: 'maps/four_rooms_9x9.map'
+    density: 0.001
 
   food:
     rendering: False
@@ -49,28 +48,15 @@ environment:
     n_items_to_collect: 1
 
 n_episodes: 100
-
-agent_config:
-  seed: 54484
-  amygdala:
-    gamma: 0.9
-    alpha: 0.01
-    lambda_: 0.9
-    with_reset: True
-    filter_factor: 0.1
-  striatum:
-    output_temperature: 0.01
-    dopamine_strength: 1
-    field_size: 100
-    synapse_threshold: 0.5
-    potential_pct: 0.9
-    connected_pct: 0.5
-    stimulus_threshold: 0
-    active_neurons: 20
-    syn_increment: 0.1
-    syn_decrement: 0.01
-    dopa_config:
-      gamma: 0.9
-      alpha: 0.01
-      lambda_: 0.9
-      with_reset: True
+temperature: 1
+striatum:
+  action_size: 1000
+  trace_reset: True
+  motiv_fraction: 0.3
+  state_fraction: 0.1
+  potential_fraction: 0.8
+  discount_factor: 0.999
+  trace_factor: 0.5
+  boost_strength: 0
+  learning_rate: 0.001
+  activity_factor: 0.99
