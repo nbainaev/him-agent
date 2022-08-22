@@ -165,6 +165,14 @@ def resolve_relative_quantity(abs_or_relative: Union[int, float], baseline: int)
         raise TypeError(f'Function does not support type {type(abs_or_relative)}')
 
 
+def get_unresolved_value() -> Any:
+    return _TO_BE_INDUCED_VALUE
+
+
+def is_resolved_value(value: Any) -> bool:
+    return value != _TO_BE_NONE_VALUE and value != _TO_BE_INDUCED_VALUE
+
+
 def resolve_value(
         value: Any, *,
         substitute_with: Any = None,
@@ -201,7 +209,7 @@ def check_all_resolved(*values) -> bool:
     """Check all provided values are resolved, i.e. there is no value equal to specific constant"""
     resolved = True
     for x in values:
-        resolved &= x != _TO_BE_NONE_VALUE and x != _TO_BE_INDUCED_VALUE
+        resolved &= is_resolved_value(x)
     return resolved
 
 

@@ -12,7 +12,7 @@ from hima.common.config_utils import check_all_resolved
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import clip
-from hima.experiments.temporal_pooling.blocks.base_block import Block
+from hima.experiments.temporal_pooling.blocks.computational_graph import Block
 from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_encoder
 from hima.experiments.temporal_pooling.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix

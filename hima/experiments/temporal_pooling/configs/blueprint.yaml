@@ -15,36 +15,43 @@ stats_and_metrics:
   loss_layer_discount: 0.75
   symmetrical_similarity: False
 
+# pipeline: ... means chaining prev.output -> cur.feedforward all blacks
+
 pipeline:
   - gen.output -> sp1.feedforward
-  - pipe: ???.output -> sp2.feedforward
-    sds: [400, 0.1]
+  - ???.output -> sp2.feedforward
+
+  - pipe: gen.output -> sp1.feedforward
+    sds: ???
+
+  - block: sp2
+    pipes:
+      - pipe: ???.output -> feedforward
+        sds: ???
+      - pipe: ???.output -> context
+        sds: ???
+    in_alt:
+      - ???.output -> feedforward
+      - ???.output -> context
 
 blocks:
   gen:
     _type_family_: generator
     _base_config_: synthetic_sequences
-
+    requires: ... # feedforward by default
+    exposes: ???  # induced from the pipeline
     sequence_length: 10
     n_values: 4
   sp1:
     _type_family_: spatial_pooler
     _base_config_: wide
-    output_sds: [400, 0.1]
   sp2:
     _type_family_: spatial_pooler
     _base_config_: wide
-    output_sds: [500, 0.1]
 
 generator:
-  base_generator:
-    requires: []
-
   synthetic_sequences:
     _type_: synthetic_sequences
-    _base_config_: base_generator
-    exposes: ...
-
     sequence_length: 40
     n_values: 8
     active_size: 10
@@ -52,13 +59,8 @@ generator:
     sequence_similarity: 0.35
     sequence_similarity_std: 0.35
     seed: ???
-
   synthetic_policies:
     _type_: synthetic_policies
-    _base_config_: base_generator
-    exposes:
-      - actions
-      - states
     n_states: 40
     n_actions: 8
     active_size: 10
@@ -74,7 +76,6 @@ run_setups:
     steps_per_sequence: 10
     sequence_repeats: 3
     epochs: 2
-    # FIXME: to ???
     total_repeats: ...
     sp_output_sds: [400, 10]
     tp_output_sds: [400, 10]
@@ -114,9 +115,6 @@ spatial_pooler:
     minPctOverlapDutyCycle: 0.0002
 
   default:
-    requires: ...
-    exposes: ...
-
     ff_sds: ???
     output_sds: ???
 

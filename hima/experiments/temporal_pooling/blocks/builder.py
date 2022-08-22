@@ -3,10 +3,17 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from typing import Optional, Any
+
 from hima.common.config_utils import (
-    extracted_family, resolve_nested_configs, TConfig
+    extracted_family, resolve_nested_configs, TConfig, is_resolved_value, resolve_value, extracted
 )
-from hima.experiments.temporal_pooling.blocks.base_block import BlocksConnection, Block
+from hima.common.sds import Sds
+from hima.common.utils import isnone
+from hima.experiments.temporal_pooling.blocks.computational_graph import (
+    Pipe, Block, Pipeline,
+    ComputationUnit, Stream
+)
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator_new
 from hima.experiments.temporal_pooling.blocks.sp import resolve_sp_new
 
@@ -20,9 +27,21 @@ def build_block(config: TConfig, block_id: int, block_name: str, **induction_reg
     family_registry = config[block_family]
 
     block_config = resolve_nested_configs(family_registry, config=block_config)
-    return _resolve_block(
+
+    # extract block's stream interface declaration to be registered further
+    block_config, requires, exposes = extracted(block_config, 'requires', 'exposes')
+
+    block = _resolve_block(
         config, block_config, block_family, block_id, block_name, **induction_registry
     )
+
+    # register block's stream interface sds (it still can be expanded later during building)
+    for stream in _resolve_interface(requires, default_streams=['feedforward']):
+        block.register_sds(stream)
+    for stream in _resolve_interface(exposes, default_streams=['output']):
+        block.register_sds(stream)
+
+    return block
 
 
 def _resolve_block(
@@ -38,7 +57,99 @@ def _resolve_block(
         return resolve_sp_new(block_config, block_id, block_name, **induction_registry)
 
 
-def build_connection(connection_config: TConfig, blocks: dict):
-    connection = BlocksConnection(block_registry=blocks, **connection_config)
-    connection.align_dimensions()
-    print(connection.src_stream, connection.dst_stream)
+class PipelineResolver:
+    blocks: dict[str, Block]
+
+    _previous_block: Optional[str]
+    _current_block: Optional[str]
+
+    def __init__(self, block_registry: dict[str, Block]):
+        self.blocks = block_registry
+        self._current_block = None
+        self._previous_block = None
+
+    def resolve(self, pipeline: list) -> Pipeline:
+        if not is_resolved_value(pipeline):
+            # default: blocks chaining "output -> feedforward"
+            units = []
+            blocks = list(self.blocks.keys())
+            src = blocks[0]
+            for dst in blocks[1:]:
+                units.append(ComputationUnit([
+                    Pipe(
+                        src=Stream('output', self.blocks[src]),
+                        dst=Stream('feedforward', self.blocks[dst])
+                    )
+                ]))
+                src = dst
+        else:
+            # defined with config
+            units = []
+            self._current_block = self._previous_block = None
+            for unit in pipeline:
+                unit = self.parse_unit(unit)
+                units.append(unit)
+                self._previous_block = unit.block.name
+                self._current_block = None
+
+        pipeline = Pipeline(units)
+        resolved = pipeline.resolve_dimensions()
+        assert resolved, 'Cannot resolve one of the sds in pipeline!'
+
+        return pipeline
+
+    def parse_unit(self, unit) -> ComputationUnit:
+        def _parse_unit(
+                pipe: str = None, *, sds: Sds = None,
+                block: str = None, pipes: list[str, dict] = None
+        ) -> ComputationUnit:
+            if block is not None:
+                # it is used to resolve pipes during parsing
+                self._current_block = block
+
+            pipes = isnone(pipes, [pipe])
+            connections = []
+            for pipe in pipes:
+                if isinstance(pipe, dict):
+                    pipe = self.parse_pipe(**pipe)
+                else:
+                    pipe = self.parse_pipe(pipe, sds=sds)
+                connections.append(pipe)
+
+            return ComputationUnit(connections=connections)
+
+        if isinstance(unit, dict):
+            return _parse_unit(**unit)
+        elif isinstance(unit, str):
+            return _parse_unit(pipe=unit)
+
+    def parse_pipe(self, pipe: str, *, sds: Any = None) -> Pipe:
+        src, dst = pipe.strip().split('->')
+        src = self.parse_stream(src, default_block=self._previous_block)
+        dst = self.parse_stream(dst, default_block=self._current_block)
+        pipe = Pipe(src=src, dst=dst, sds=sds)
+        return pipe
+
+    def parse_stream(self, s: str, default_block: str = None) -> Stream:
+        stream_parts = s.strip().split('.')
+        if len(stream_parts) == 1:
+            # default block with the given stream name
+            block_name = default_block
+            stream_name = stream_parts[0]
+        elif len(stream_parts) == 2:
+            block_name, stream_name = stream_parts
+            # resolve with default if needed
+            block_name = resolve_value(block_name, substitute_with=default_block)
+        else:
+            raise ValueError(f'Cannot parse stream from "{s}"')
+
+        block = self.blocks[block_name]
+        return Stream(name=stream_name, block=block)
+
+
+def _resolve_interface(streams: list[str], default_streams: list[str]) -> list[str]:
+    # None means default, unresolved means do nothing it is inducted later
+    streams = resolve_value(streams)
+    streams = isnone(streams, default_streams)
+
+    return streams if is_resolved_value(streams) else []

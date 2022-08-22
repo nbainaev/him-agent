@@ -8,6 +8,8 @@ from typing import Union, Optional
 
 import numpy as np
 
+from hima.common.config_utils import is_resolved_value
+
 
 class Sds:
     """
@@ -128,7 +130,13 @@ class Sds:
 
     @staticmethod
     def as_sds(sds: Union['Sds', TShortNotation]) -> 'Sds':
+        if not is_resolved_value(sds):
+            # allow keeping unresolved values as is, because there's nothing you can do with it RN
+            return sds
+
         if sds is None:
+            # allow empty sds
+            print("WARNING: allow empty SDS?")
             return Sds(size=0, sparsity=0., active_size=0)
         if isinstance(sds, Sds):
             return sds
