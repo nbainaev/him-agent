@@ -31,7 +31,7 @@ from hima.experiments.temporal_pooling.config_resolvers import (
     resolve_run_setup
 )
 from hima.experiments.temporal_pooling.test_stats import (
-    ExperimentStats,
+    ExperimentStatsNew,
     RunProgress
 )
 from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
@@ -76,7 +76,7 @@ class ObservationsLayeredExperiment(Runner):
     pipeline: Pipeline
     blocks: dict[str, Block]
     progress: RunProgress
-    stats: ExperimentStats
+    stats: ExperimentStatsNew
 
     normalization_unbias: str
 
@@ -108,12 +108,12 @@ class ObservationsLayeredExperiment(Runner):
 
         self.input_data = self.pipeline.entry_block
         self.progress = RunProgress()
-        # self.stats = ExperimentStats(
-        #     n_sequences=self.run_setup.n_policies,
-        #     progress=self.progress, logger=self.logger, blocks=self.blocks,
-        #     stats_config=self.stats_config,
-        #     debug=debug
-        # )
+        self.stats = ExperimentStatsNew(
+            n_sequences=self.run_setup.n_sequences,
+            progress=self.progress, logger=self.logger, blocks=self.blocks,
+            stats_config=self.stats_config,
+            debug=debug
+        )
 
     def run(self):
         print('==> Run')
@@ -203,66 +203,6 @@ class ObservationsLayeredExperiment(Runner):
         for block_name in self.pipeline:
             if block_name.startswith(block_type):
                 self.blocks[block_name].reset()
-
-    def build_blocks(self, temporal_pooler: str) -> dict:
-        blocks = {}
-        feedforward_sds, context_sds = None, None
-        prev_block = None
-        for block_ind, block_name in enumerate(self.pipeline):
-            if block_name == 'generator':
-                data_generator = resolve_data_generator(
-                    self.config,
-                    n_states=self.run_setup.n_states,
-                    n_actions=self.run_setup.n_actions,
-                    seed=self.seed
-                )
-                block = data_generator.generate_policies(
-                    n_policies=self.run_setup.n_policies,
-                    stats_config=self.stats_config
-                )
-                feedforward_sds = block.output_sds
-                context_sds = block.context_sds
-
-            elif block_name.startswith('spatial_pooler'):
-                block = resolve_sp(
-                    sp_config=self.config['spatial_pooler'],
-                    ff_sds=feedforward_sds,
-                    output_sds=self.run_setup.sp_output_sds,
-                    seed=self.seed
-                )
-                feedforward_sds = block.output_sds
-
-            elif block_name.startswith('temporal_memory'):
-                block = resolve_tm(
-                    tm_config=self.config['temporal_memory'],
-                    ff_sds=feedforward_sds,
-                    bc_sds=context_sds,
-                    seed=self.seed
-                )
-                feedforward_sds = block.output_sds
-
-            elif block_name.startswith('temporal_pooler'):
-                block = resolve_tp(
-                    self.config['temporal_poolers'][temporal_pooler],
-                    feedforward_sds=feedforward_sds,
-                    output_sds=self.run_setup.tp_output_sds,
-                    seed=self.seed
-                )
-                if prev_block.name.startswith('temporal_memory'):
-                    resolve_tm_apical_feedback(
-                        fb_sds=block.output_sds, tm_block=prev_block
-                    )
-                feedforward_sds = block.output_sds
-
-            else:
-                raise KeyError(f'Block name "{block_name}" is not supported')
-
-            block.id = block_ind
-            block.name = block_name
-            blocks[block.name] = block
-            prev_block = block
-
-        return blocks
 
     @staticmethod
     def define_metrics(logger, blocks: dict[str, Any]):

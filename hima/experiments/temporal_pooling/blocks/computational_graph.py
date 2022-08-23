@@ -9,6 +9,7 @@ from typing import Union
 from hima.common.config_utils import resolve_value, is_resolved_value, get_unresolved_value
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
+from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
 
 
 class Block(ABC):
