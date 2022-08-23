@@ -14,10 +14,8 @@ from hima.envs.env import unwrap
 
 from hima.common.run_utils import Runner
 from hima.common.config_utils import TConfig
-from hima.common.utils import softmax
-
-from hima.modules.motivation import Striatum
 from hima.common.plot_utils import transform_fig_to_image
+from hima.agents.motivation.agent import Agent
 
 
 class GwStriatumTest(Runner):
@@ -35,11 +33,10 @@ class GwStriatumTest(Runner):
             map_image = wandb.Image(map_image)
             self.logger.log({'map': map_image}, step=0)
 
-        self.str = Striatum(
-            self.seed, self.environment.output_sdr_size, 50,
-            **config['striatum']
+        self.agent = Agent(
+            self.environment.output_sdr_size, self.environment.n_actions,
+            50, config['agent_config']
         )
-        self.temperature = config['temperature']
 
         self.episode = 0
         self.steps = 0
@@ -52,34 +49,22 @@ class GwStriatumTest(Runner):
         motiv = np.arange(10)
         while True:
             _, obs, _ = self.environment.observe()
-
-            action = self.str.compute(obs, motiv)
-            sa = self.str.state_weights.xa2sdr(obs, action)
-            v = self.str.state_weights.dopa_weights.get_value(sa)
-            self.v_map[self.environment.agent.position] = v
-
-            size = self.str.action_size // self.environment.n_actions
-            actions = np.array([
-                len(np.intersect1d(action, np.arange(size * i, size * (i+1))))
-                for i in range(self.environment.n_actions)
-            ])
-            p = softmax(actions, self.temperature)
+            a = self.agent.act(obs, motiv)
+            self.v_map[self.environment.agent.position] = self.agent.get_value()
             self.q_map[
                 self.environment.agent.position[0],
                 self.environment.agent.position[1],
                 :
-            ] = p
-            a = self._rng.choice(self.environment.n_actions, 1, p=p)[0]
+            ] = self.agent.get_probs()
 
             self.environment.act(a)
             self.steps += 1
             reward, _, _ = self.environment.observe()
+            self.agent.update(reward)
 
-            action = np.intersect1d(action, np.arange(size * a, size * (a+1)))
-            self.str.update(obs, motiv, action, reward)
             if self.environment.is_terminal():
                 self.environment.act(a)
-                self.str.reset()
+                self.agent.reset()
                 self.episode += 1
                 if self.logger:
                     self.log_metrics()
