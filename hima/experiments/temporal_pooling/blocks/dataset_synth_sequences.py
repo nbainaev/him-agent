@@ -28,8 +28,9 @@ class Sequence:
         self.id = id_
         self._sequence = sequence
 
-    def __iter__(self) -> Iterator[SparseSdr]:
-        return iter(self._sequence)
+    def __iter__(self) -> Iterator[dict]:
+        for sdr in self._sequence:
+            yield dict(feedforward=sdr)
 
     def __len__(self):
         return len(self._sequence)
@@ -111,15 +112,19 @@ class SyntheticSequencesDatasetBlockNew(Block):
         self.n_values = n_values
         self._sequences = sequences
 
-    def build(self, stats_config: StatsMetricsConfig):
+    def build(self, stats_config: StatsMetricsConfig = None):
         assert check_all_resolved(self.output_sds)
 
-        self.stats = SyntheticSequencesDatasetBlockStats(
-            self._sequences, self.output_sds, stats_config
-        )
+        if stats_config is not None:
+            self.stats = SyntheticSequencesDatasetBlockStats(
+                self._sequences, self.output_sds, stats_config
+            )
 
     def __iter__(self) -> Iterator[Sequence]:
         return iter(self._sequences)
+
+    def compute(self, data: dict[str, SparseSdr], **kwargs):
+        self.sdr['output'] = data['feedforward']
 
     def reset_stats(self):
         ...
@@ -191,7 +196,6 @@ class SyntheticSequencesGenerator:
             id_=block_id, name=block_name,
             n_values=self.n_values, sequences=sequences
         )
-        print(self.values_sds)
         block.resolve_sds('output', self.values_sds)
         block.build(stats_config=stats_config)
         return block

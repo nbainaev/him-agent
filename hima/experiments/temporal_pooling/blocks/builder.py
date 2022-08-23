@@ -18,43 +18,50 @@ from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_da
 from hima.experiments.temporal_pooling.blocks.sp import resolve_sp_new
 
 
-def build_block(config: TConfig, block_id: int, block_name: str, **induction_registry) -> Block:
-    block_config = config['blocks'][block_name]
+class BlockBuilder:
+    config: TConfig
+    induction_registry: dict[str, Any]
 
-    block_config, block_family = extracted_family(block_config)
-    assert block_family is not None
+    def __init__(self, config: TConfig, **induction_registry):
+        self.config = config
+        self.induction_registry = induction_registry
 
-    family_registry = config[block_family]
+    def build_all(self, blocks: dict[str, TConfig]) -> dict[str, Block]:
+        return {
+            block_name: self.build(block_id, block_name, blocks[block_name])
+            for block_id, block_name in enumerate(blocks)
+        }
 
-    block_config = resolve_nested_configs(family_registry, config=block_config)
+    def build(self, block_id: int, block_name: str, block_config: TConfig) -> Block:
+        block_config, block_family = extracted_family(block_config)
+        assert block_family is not None
+        family_registry = self.config[block_family]
+        block_config = resolve_nested_configs(family_registry, config=block_config)
 
-    # extract block's stream interface declaration to be registered further
-    block_config, requires, exposes = extracted(block_config, 'requires', 'exposes')
+        # extract block's stream interface declaration to be registered further
+        block_config, requires, exposes = extracted(block_config, 'requires', 'exposes')
 
-    block = _resolve_block(
-        config, block_config, block_family, block_id, block_name, **induction_registry
-    )
+        block = self._resolve_block(block_config, block_family, block_id, block_name)
 
-    # register block's stream interface sds (it still can be expanded later during building)
-    for stream in _resolve_interface(requires, default_streams=['feedforward']):
-        block.register_sds(stream)
-    for stream in _resolve_interface(exposes, default_streams=['output']):
-        block.register_sds(stream)
+        # register block's stream interface sds (it still can be expanded later during building)
+        for stream in _resolve_interface(requires, default_streams=['feedforward']):
+            block.register_sds(stream)
+        for stream in _resolve_interface(exposes, default_streams=['output']):
+            block.register_sds(stream)
+            block.register_sdr(stream)
 
-    return block
+        return block
 
-
-def _resolve_block(
-        global_config: TConfig, block_config: TConfig,
-        family: str, block_id: int, block_name: str,
-        **induction_registry
-) -> Block:
-    if family == 'generator':
-        return resolve_data_generator_new(
-            global_config, block_config, block_id, block_name, **induction_registry
-        )
-    elif family == 'spatial_pooler':
-        return resolve_sp_new(block_config, block_id, block_name, **induction_registry)
+    def _resolve_block(
+            self, block_config: TConfig,
+            block_family: str, block_id: int, block_name: str,
+    ) -> Block:
+        if block_family == 'generator':
+            return resolve_data_generator_new(
+                self.config, block_config, block_id, block_name, **self.induction_registry
+            )
+        elif block_family == 'spatial_pooler':
+            return resolve_sp_new(block_config, block_id, block_name, **self.induction_registry)
 
 
 class PipelineResolver:
@@ -92,9 +99,12 @@ class PipelineResolver:
                 self._previous_block = unit.block.name
                 self._current_block = None
 
-        pipeline = Pipeline(units)
+        pipeline = Pipeline(units, block_registry=self.blocks)
         resolved = pipeline.resolve_dimensions()
         assert resolved, 'Cannot resolve one of the sds in pipeline!'
+
+        for block in self.blocks:
+            self.blocks[block].build()
 
         return pipeline
 

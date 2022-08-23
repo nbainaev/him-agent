@@ -162,8 +162,11 @@ class SpatialPoolerBlockNew(Block):
         else:
             self.stats = stats
 
-    def compute(self, active_input: SparseSdr, learn: bool = True) -> SparseSdr:
-        self._active_input.sparse = active_input.copy()
+    def compute(self, data: dict[str, SparseSdr], **kwargs):
+        self._compute(**data, **kwargs)
+
+    def _compute(self, feedforward: SparseSdr, learn: bool = True) -> SparseSdr:
+        self._active_input.sparse = feedforward.copy()
 
         self.sp.compute(self._active_input, learn=learn, output=self._active_output)
         self.output_sdr = np.array(self._active_output.sparse, copy=True)

@@ -19,21 +19,36 @@ class Block(ABC):
     name: str
 
     sds: dict[str, Sds]
+    sdr: dict[str, SparseSdr]
 
     # TODO: log to charts, what to log?
 
-    output_sdr: SparseSdr
-
-    def __init__(
-            self, id_: int, name: str, *,
-            requires: list[str] = None, exposes: list[str] = None
-    ):
+    def __init__(self, id_: int, name: str):
         self.id = id_
         self.name = name
         self.sds = {}
+        self.sdr = {}
+
+    @abstractmethod
+    def build(self, **kwargs):
+        """Build block when all its configurable parameters are resolved."""
+        raise NotImplementedError()
+
+    def compute(self, data: dict[str, SparseSdr], **kwargs):
+        """Make a computation given the provided input data streams."""
+        raise NotImplementedError()
+
+    def request(self, stream: str):
+        """Request a value from the block's output data stream."""
+        return self.sdr[stream]
+
+    # --------------- SDS interface helpers ---------------
 
     def register_sds(self, name: str):
         self.resolve_sds(name, sds=get_unresolved_value())
+
+    def register_sdr(self, name: str):
+        self.sdr[name] = []
 
     def resolve_sds(self, name: str, sds: Sds) -> Sds:
         """Resolve sds value and add it to the block's sds dictionary."""
@@ -42,15 +57,6 @@ class Block(ABC):
 
         self.sds[name] = Sds.as_sds(sds)
         return sds
-
-    @abstractmethod
-    def build(self, **kwargs):
-        """Build block when all its configurable parameters are resolved."""
-        raise NotImplementedError()
-
-    @property
-    def tag(self):
-        return f'{self.id}_{self.family}'
 
     # --------------- Common streams ---------------
 
@@ -65,6 +71,12 @@ class Block(ABC):
     @property
     def context_sds(self):
         return self.sds['context']
+
+    # --------------- String representation ---------------
+
+    @property
+    def tag(self):
+        return f'{self.id}_{self.family}'
 
     def __repr__(self):
         return f'{self.tag} {self.name}'
@@ -142,6 +154,13 @@ class ComputationUnit:
         self.connections = connections
         self.block = connections[0].dst.block
 
+    def compute(self, **kwargs):
+        input_data = {
+            connection.dst.name: connection.src.block.request(connection.src.name)
+            for connection in self.connections
+        }
+        self.block.compute(input_data, **kwargs)
+
     def __repr__(self):
         if len(self.connections) == 1:
             return f'{self.connections[0]}'
@@ -155,9 +174,20 @@ class Pipeline:
     the graph itself and the order of the computations.
     """
     units: list[ComputationUnit]
+    blocks: dict[str, Block]
 
-    def __init__(self, units: list[ComputationUnit]):
+    entry_block: Block
+
+    def __init__(self, units: list[ComputationUnit], block_registry: dict[str, Block]):
         self.units = units
+        self.blocks = block_registry
+        self.entry_block = self.blocks[list(self.blocks.keys())[0]]
+
+    def step(self, input_data, **kwargs):
+        self.entry_block.compute(input_data)
+
+        for unit in self.units:
+            unit.compute(**kwargs)
 
     def resolve_dimensions(self, max_iters: int = 100) -> bool:
         all_dimensions_resolved = False

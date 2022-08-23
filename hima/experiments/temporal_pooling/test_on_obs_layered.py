@@ -14,8 +14,11 @@ from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone, timed
-from hima.experiments.temporal_pooling.blocks.computational_graph import Block
-from hima.experiments.temporal_pooling.blocks.builder import build_block, PipelineResolver
+from hima.experiments.temporal_pooling.blocks.computational_graph import Block, Pipeline
+from hima.experiments.temporal_pooling.blocks.builder import (
+    PipelineResolver,
+    BlockBuilder
+)
 from hima.experiments.temporal_pooling.blocks.dataset_policies import Policy
 from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator
 from hima.experiments.temporal_pooling.blocks.sp import resolve_sp
@@ -70,7 +73,7 @@ class ObservationsLayeredExperiment(Runner):
     seed: int
     run_setup: RunSetup
     stats_config: StatsMetricsConfig
-    pipeline: list[str]
+    pipeline: Pipeline
     blocks: dict[str, Block]
     progress: RunProgress
     stats: ExperimentStats
@@ -91,25 +94,20 @@ class ObservationsLayeredExperiment(Runner):
         self.run_setup = resolve_run_setup(config, run_setup, experiment_type='layered')
         self.stats_config = StatsMetricsConfig(**stats_and_metrics)
 
-        induction_registry = dict(
+        self.blocks = BlockBuilder(
+            config,
             seed=seed,
             debug=debug,
             stats_config=self.stats_config,
             n_sequences=self.run_setup.n_sequences,
-        )
-        blocks = {
-            block_name: build_block(config, block_id, block_name, **induction_registry)
-            for block_id, block_name in enumerate(blocks)
-        }
-        print(blocks)
+        ).build_all(blocks)
+        print(self.blocks)
 
-        pipeline = PipelineResolver(blocks).resolve(pipeline)
-        print(pipeline)
-        #
-        # self.pipeline = pipeline
-        # self.blocks = self.build_blocks(temporal_pooler)
-        # self.input_data = self.blocks[self.pipeline[0]]
-        # self.progress = RunProgress()
+        self.pipeline = PipelineResolver(self.blocks).resolve(pipeline)
+        print(self.pipeline)
+
+        self.input_data = self.pipeline.entry_block
+        self.progress = RunProgress()
         # self.stats = ExperimentStats(
         #     n_sequences=self.run_setup.n_policies,
         #     progress=self.progress, logger=self.logger, blocks=self.blocks,
@@ -121,38 +119,39 @@ class ObservationsLayeredExperiment(Runner):
         print('==> Run')
         # self.define_metrics(self.logger, self.blocks)
         #
-        # for epoch in range(self.run_setup.epochs):
-        #     _, elapsed_time = self.train_epoch()
-        #     print(f'Epoch {epoch}: {elapsed_time}')
+        for epoch in range(self.run_setup.epochs):
+            _, elapsed_time = self.train_epoch()
+            print(f'Epoch {epoch}: {elapsed_time}')
         print('<==')
 
     @timed
     def train_epoch(self):
         self.progress.next_epoch()
-        self.stats.on_new_epoch()
+        # self.stats.on_new_epoch()
 
-        for policy in self.input_data:
-            for i_repeat in range(self.run_setup.policy_repeats):
-                self.run_policy(policy, i_repeat, learn=True)
+        # noinspection PyTypeChecker
+        for sequence in self.input_data:
+            for i_repeat in range(self.run_setup.sequence_repeats):
+                self.run_sequence(sequence, i_repeat, learn=True)
 
-        epoch_final_log_scheduled = scheduled(
-            i=self.progress.epoch, schedule=self.run_setup.log_epoch_schedule,
-            always_report_first=True, always_report_last=True, i_max=self.run_setup.epochs
-        )
-        self.stats.on_finish(epoch_final_log_scheduled)
+        # epoch_final_log_scheduled = scheduled(
+        #     i=self.progress.epoch, schedule=self.run_setup.log_epoch_schedule,
+        #     always_report_first=True, always_report_last=True, i_max=self.run_setup.epochs
+        # )
+        # self.stats.on_finish(epoch_final_log_scheduled)
 
-    def run_policy(self, policy: Policy, i_repeat: int = 0, learn=True):
-        self.reset_blocks(block_type='temporal_memory')
-        self.reset_blocks(block_type='temporal_pooler')
+    def run_sequence(self, policy: Policy, i_repeat: int = 0, learn=True):
+        # self.reset_blocks(block_type='temporal_memory')
+        # self.reset_blocks(block_type='temporal_pooler')
 
-        log_scheduled = scheduled(
-            i=i_repeat, schedule=self.run_setup.log_repeat_schedule,
-            always_report_first=True, always_report_last=True, i_max=self.run_setup.policy_repeats
-        )
-        self.stats.on_new_sequence(policy.id, log_scheduled)
+        # log_scheduled = scheduled(
+        #     i=i_repeat, schedule=self.run_setup.log_repeat_schedule,
+        #     always_report_first=True, always_report_last=True, i_max=self.run_setup.sequence_repeats
+        # )
+        # self.stats.on_new_sequence(policy.id, log_scheduled)
 
-        for action, state in policy:
-            self.step(state, action, learn)
+        for input_data in policy:
+            self.pipeline.step(input_data, learn=learn)
 
     def step(self, state: SparseSdr, action: SparseSdr, learn: bool):
         self.progress.next_step()

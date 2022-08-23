@@ -40,7 +40,6 @@ def resolve_data_generator_new(
 
     sequences = generator.generate_sequences(n_sequences)
     generator_block = generator.build_block(block_id, block_name, sequences, stats_config)
-    print(generator_block.id, generator_block.name, generator_block.tag)
     return generator_block
 
 
