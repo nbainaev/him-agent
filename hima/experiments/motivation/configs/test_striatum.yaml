@@ -5,7 +5,7 @@ log: True
 
 environment:
   seed: 42
-  shape_xy: [5, 5]
+  shape_xy: [7, 7]
 
   actions_cost:
     base_cost: -0.005
@@ -29,13 +29,16 @@ environment:
   obstacle:
     rendering: false
     density: 0.001
+    map_name: 'maps/arena_7x7.map'
 
   food:
     rendering: False
     n_items: 1
     reward: 1.
+    positions: [[2, 2]]
 
   agent:
+    positions: [[3, 3]]
     rendering:
       what:
         - position
@@ -47,15 +50,22 @@ environment:
     early_stop: true
     n_items_to_collect: 1
 
-n_episodes: 100
+n_episodes: 200
+change_step: 50
+tasks:
+  - [1, 1]
+  - [5, 5]
+task_queue: [0, 1, 0, 1]
+motiv_size: 10
+motiv_dim: 50
 agent_config:
   seed: 4548
-  temperature: 0.1
+  temperature: 1
   striatum:
-    action_size: 1000
+    action_size: 100
     trace_reset: True
-    motiv_fraction: 0.3
-    state_fraction: 0.1
+    motiv_fraction: 0.8
+    state_fraction: 0.5
     potential_fraction: 0.8
     discount_factor: 0.999
     trace_factor: 0.5

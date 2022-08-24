@@ -26,16 +26,18 @@ class GwStriatumTest(Runner):
         self.n_episodes = config['n_episodes']
         self._rng = np.random.default_rng(self.seed)
         self.environment: Environment = unwrap(BioGwLabEnvironment(**config['environment']))
-        map_image = self.environment.callmethod('render_rgb')
-        if isinstance(map_image, list):
-            map_image = map_image[0]
-        if self.logger:
-            map_image = wandb.Image(map_image)
-            self.logger.log({'map': map_image}, step=0)
 
+        self.task = -1
+        self.task_queue = config['task_queue']
+        self.tasks = config['tasks']
+        self.change_step = config['change_step']
+        self.change_task()
+
+        self.motiv_size = config['motiv_size']
+        self.motiv_dim = config['motiv_dim']
         self.agent = Agent(
             self.environment.output_sdr_size, self.environment.n_actions,
-            50, config['agent_config']
+            self.motiv_dim, config['agent_config']
         )
 
         self.episode = 0
@@ -46,8 +48,9 @@ class GwStriatumTest(Runner):
         self.v_map[:, :] = np.ma.masked
 
     def run(self):
-        motiv = np.arange(10)
         while True:
+            t = self.task_queue[self.task]
+            motiv = np.arange(t * self.motiv_size, (t + 1) * self.motiv_size)
             _, obs, _ = self.environment.observe()
             a = self.agent.act(obs, motiv)
             self.v_map[self.environment.agent.position] = self.agent.get_value()
@@ -66,12 +69,30 @@ class GwStriatumTest(Runner):
                 self.environment.act(a)
                 self.agent.reset()
                 self.episode += 1
+                self.draw_map()
+                if self.episode % self.change_step == 0:
+                    self.change_task()
                 if self.logger:
                     self.log_metrics()
                     self.logger.log({'steps': self.steps}, step=self.episode)
                 self.steps = 0
                 if self.episode == self.n_episodes:
                     break
+
+    def draw_map(self):
+        map_image = self.environment.callmethod('render_rgb')
+        if isinstance(map_image, list):
+            map_image = map_image[0]
+        if self.logger:
+            map_image = wandb.Image(map_image)
+            self.logger.log({'map': map_image}, step=self.episode)
+
+    def change_task(self):
+        if self.task < len(self.task_queue) - 1:
+            self.task += 1
+        t = self.tasks[self.task_queue[self.task]]
+        self.environment.modules['food'].generator.positions = [t]
+        self.environment.callmethod('reset')
 
     def log_metrics(self):
         base_vectors = np.array([
