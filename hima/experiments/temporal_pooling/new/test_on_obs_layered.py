@@ -4,7 +4,7 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from typing import Optional, Any, Union
+from typing import Optional, Any
 
 import numpy as np
 from wandb.sdk.wandb_run import Run
@@ -13,28 +13,21 @@ from hima.common.config_utils import TConfig, resolve_value
 from hima.common.run_utils import Runner
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.common.utils import isnone, timed
-from hima.experiments.temporal_pooling.blocks.computational_graph import Block, Pipeline
-from hima.experiments.temporal_pooling.blocks.builder import (
-    PipelineResolver,
-    BlockBuilder
-)
-from hima.experiments.temporal_pooling.blocks.dataset_policies import Policy
-from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator
-from hima.experiments.temporal_pooling.blocks.sp import resolve_sp
-from hima.experiments.temporal_pooling.blocks.tm_context import (
-    resolve_tm,
-    resolve_tm_apical_feedback
-)
-from hima.experiments.temporal_pooling.blocks.tp import resolve_tp
+from hima.common.utils import timed
 from hima.experiments.temporal_pooling.config_resolvers import (
     resolve_run_setup
 )
-from hima.experiments.temporal_pooling.test_stats import (
-    ExperimentStatsNew,
+from hima.experiments.temporal_pooling.new.blocks.builder import (
+    PipelineResolver,
+    BlockBuilder
+)
+from hima.experiments.temporal_pooling.new.blocks.computational_graph import Block, Pipeline
+from hima.experiments.temporal_pooling.new.blocks.dataset_synth_sequences import Sequence
+from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfig
+from hima.experiments.temporal_pooling.new.test_stats import (
+    ExperimentStats,
     RunProgress
 )
-from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
 
 
 class RunSetup:
@@ -76,7 +69,7 @@ class ObservationsLayeredExperiment(Runner):
     pipeline: Pipeline
     blocks: dict[str, Block]
     progress: RunProgress
-    stats: ExperimentStatsNew
+    stats: ExperimentStats
 
     normalization_unbias: str
 
@@ -84,7 +77,6 @@ class ObservationsLayeredExperiment(Runner):
             self, config: TConfig, seed: int, debug: bool,
             blocks: dict[str, TConfig], pipeline: list,
             run_setup: TConfig, stats_and_metrics: TConfig,
-            # temporal_pooler: str,
             **_
     ):
         super().__init__(config, **config)
@@ -108,7 +100,7 @@ class ObservationsLayeredExperiment(Runner):
 
         self.input_data = self.pipeline.entry_block
         self.progress = RunProgress()
-        self.stats = ExperimentStatsNew(
+        self.stats = ExperimentStats(
             n_sequences=self.run_setup.n_sequences,
             progress=self.progress, logger=self.logger, blocks=self.blocks,
             stats_config=self.stats_config,
@@ -117,8 +109,8 @@ class ObservationsLayeredExperiment(Runner):
 
     def run(self):
         print('==> Run')
-        # self.define_metrics(self.logger, self.blocks)
-        #
+        self.define_metrics(self.logger, self.blocks)
+
         for epoch in range(self.run_setup.epochs):
             _, elapsed_time = self.train_epoch()
             print(f'Epoch {epoch}: {elapsed_time}')
@@ -127,31 +119,32 @@ class ObservationsLayeredExperiment(Runner):
     @timed
     def train_epoch(self):
         self.progress.next_epoch()
-        # self.stats.on_new_epoch()
+        self.stats.on_new_epoch()
 
         # noinspection PyTypeChecker
         for sequence in self.input_data:
             for i_repeat in range(self.run_setup.sequence_repeats):
                 self.run_sequence(sequence, i_repeat, learn=True)
 
-        # epoch_final_log_scheduled = scheduled(
-        #     i=self.progress.epoch, schedule=self.run_setup.log_epoch_schedule,
-        #     always_report_first=True, always_report_last=True, i_max=self.run_setup.epochs
-        # )
-        # self.stats.on_finish(epoch_final_log_scheduled)
+        epoch_final_log_scheduled = scheduled(
+            i=self.progress.epoch, schedule=self.run_setup.log_epoch_schedule,
+            always_report_first=True, always_report_last=True, i_max=self.run_setup.epochs
+        )
+        self.stats.on_finish(epoch_final_log_scheduled)
 
-    def run_sequence(self, policy: Policy, i_repeat: int = 0, learn=True):
-        # self.reset_blocks(block_type='temporal_memory')
-        # self.reset_blocks(block_type='temporal_pooler')
+    def run_sequence(self, sequence: Sequence, i_repeat: int = 0, learn=True):
+        self.reset_blocks(block_type='temporal_memory')
+        self.reset_blocks(block_type='temporal_pooler')
 
-        # log_scheduled = scheduled(
-        #     i=i_repeat, schedule=self.run_setup.log_repeat_schedule,
-        #     always_report_first=True, always_report_last=True, i_max=self.run_setup.sequence_repeats
-        # )
-        # self.stats.on_new_sequence(policy.id, log_scheduled)
+        log_scheduled = scheduled(
+            i=i_repeat, schedule=self.run_setup.log_repeat_schedule,
+            always_report_first=True, always_report_last=True, i_max=self.run_setup.sequence_repeats
+        )
+        self.stats.on_new_sequence(sequence.id, log_scheduled)
 
-        for input_data in policy:
+        for input_data in sequence:
             self.pipeline.step(input_data, learn=learn)
+            self.stats.on_step()
 
     def step(self, state: SparseSdr, action: SparseSdr, learn: bool):
         self.progress.next_step()
@@ -200,9 +193,10 @@ class ObservationsLayeredExperiment(Runner):
         self.stats.on_step()
 
     def reset_blocks(self, block_type):
-        for block_name in self.pipeline:
-            if block_name.startswith(block_type):
-                self.blocks[block_name].reset()
+        for name in self.blocks:
+            block = self.blocks[name]
+            if block.family == block_type:
+                self.blocks[name].reset()
 
     @staticmethod
     def define_metrics(logger, blocks: dict[str, Any]):

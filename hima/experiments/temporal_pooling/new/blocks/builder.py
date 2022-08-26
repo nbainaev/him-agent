@@ -10,12 +10,12 @@ from hima.common.config_utils import (
 )
 from hima.common.sds import Sds
 from hima.common.utils import isnone
-from hima.experiments.temporal_pooling.blocks.computational_graph import (
+from hima.experiments.temporal_pooling.new.blocks.computational_graph import (
     Pipe, Block, Pipeline,
     ComputationUnit, Stream
 )
-from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_data_generator_new
-from hima.experiments.temporal_pooling.blocks.sp import resolve_sp_new
+from hima.experiments.temporal_pooling.new.blocks.dataset_resolver import resolve_data_generator
+from hima.experiments.temporal_pooling.new.blocks.sp import resolve_sp
 
 
 class BlockBuilder:
@@ -57,11 +57,11 @@ class BlockBuilder:
             block_family: str, block_id: int, block_name: str,
     ) -> Block:
         if block_family == 'generator':
-            return resolve_data_generator_new(
+            return resolve_data_generator(
                 self.config, block_config, block_id, block_name, **self.induction_registry
             )
         elif block_family == 'spatial_pooler':
-            return resolve_sp_new(block_config, block_id, block_name, **self.induction_registry)
+            return resolve_sp(block_config, block_id, block_name, **self.induction_registry)
 
 
 class PipelineResolver:

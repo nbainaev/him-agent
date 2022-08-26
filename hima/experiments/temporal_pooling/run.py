@@ -7,7 +7,7 @@
 from hima.common.run_utils import (
     get_run_command_arg_parser, run_experiment
 )
-from hima.experiments.temporal_pooling.test_on_obs_layered import ObservationsLayeredExperiment
+from hima.experiments.temporal_pooling.new.test_on_obs_layered import ObservationsLayeredExperiment
 from hima.experiments.temporal_pooling.test_on_policies import PoliciesExperiment
 from hima.experiments.temporal_pooling.test_on_states import ObservationsExperiment
 

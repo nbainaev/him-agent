@@ -12,11 +12,11 @@ from hima.common.config_utils import check_all_resolved
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import clip
-from hima.experiments.temporal_pooling.blocks.computational_graph import Block
-from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
-from hima.experiments.temporal_pooling.blocks.dataset_resolver import resolve_encoder
-from hima.experiments.temporal_pooling.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
-from hima.experiments.temporal_pooling.stats_config import StatsMetricsConfig
+from hima.experiments.temporal_pooling.new.blocks.computational_graph import Block
+from hima.experiments.temporal_pooling.new.blocks.base_block_stats import BlockStats
+from hima.experiments.temporal_pooling.new.blocks.dataset_resolver import resolve_encoder
+from hima.experiments.temporal_pooling.new.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
+from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfig
 
 
 class Sequence:
@@ -62,43 +62,7 @@ class SyntheticSequencesDatasetBlockStats(BlockStats):
         return self.cross_stats.final_metrics()
 
 
-class SyntheticSequencesDatasetBlock:
-    id: int
-    name: str
-    n_values: int
-
-    output_sds: Sds
-
-    stats: SyntheticSequencesDatasetBlockStats
-
-    _sequences: list[Sequence]
-    _rng: Generator
-
-    def __init__(
-            self, n_values: int, sds: Sds,
-            sequences: list[Sequence], seed: int, stats_config: StatsMetricsConfig
-    ):
-        self.n_values = n_values
-        self.output_sds = sds
-        self._sequences = sequences
-
-        self.stats = SyntheticSequencesDatasetBlockStats(
-            self._sequences, self.output_sds, stats_config
-        )
-        self._rng = np.random.default_rng(seed)
-
-    @property
-    def tag(self) -> str:
-        return f'{self.id}_in'
-
-    def __iter__(self) -> Iterator[Sequence]:
-        return iter(self._sequences)
-
-    def reset_stats(self):
-        ...
-
-
-class SyntheticSequencesDatasetBlockNew(Block):
+class SyntheticSequencesDatasetBlock(Block):
     family = "generator"
 
     n_values: int
@@ -107,7 +71,7 @@ class SyntheticSequencesDatasetBlockNew(Block):
     _sequences: list[Sequence]
 
     def __init__(self, id_: int, name: str, n_values: int, sequences: list[Sequence]):
-        super(SyntheticSequencesDatasetBlockNew, self).__init__(id_, name)
+        super(SyntheticSequencesDatasetBlock, self).__init__(id_, name)
 
         self.n_values = n_values
         self._sequences = sequences
@@ -191,8 +155,8 @@ class SyntheticSequencesGenerator:
     def build_block(
             self, block_id: int, block_name: str,
             sequences: list[Sequence], stats_config: StatsMetricsConfig
-    ) -> SyntheticSequencesDatasetBlockNew:
-        block = SyntheticSequencesDatasetBlockNew(
+    ) -> SyntheticSequencesDatasetBlock:
+        block = SyntheticSequencesDatasetBlock(
             id_=block_id, name=block_name,
             n_values=self.n_values, sequences=sequences
         )
