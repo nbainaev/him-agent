@@ -18,7 +18,7 @@ from hima.experiments.temporal_pooling.config_resolvers import (
 )
 from hima.experiments.temporal_pooling.new.blocks.builder import (
     PipelineResolver,
-    BlockBuilder
+    BlockRegistryResolver
 )
 from hima.experiments.temporal_pooling.new.blocks.computational_graph import Block, Pipeline
 from hima.experiments.temporal_pooling.new.blocks.dataset_synth_sequences import Sequence
@@ -85,34 +85,34 @@ class ObservationsLayeredExperiment(Runner):
         self.run_setup = resolve_run_setup(config, run_setup, experiment_type='layered')
         self.stats_config = StatsMetricsConfig(**stats_and_metrics)
 
-        self.blocks = BlockBuilder(
-            config,
-            seed=seed,
-            debug=debug,
-            stats_config=self.stats_config,
-            n_sequences=self.run_setup.n_sequences,
-        ).build_all(blocks)
-        print(self.blocks)
-
-        self.pipeline = PipelineResolver(self.blocks).resolve(pipeline)
+        self.pipeline = PipelineResolver(
+            block_registry=BlockRegistryResolver(
+                config=config, block_configs=blocks,
+                seed=seed,
+                debug=debug,
+                stats_config=self.stats_config,
+                n_sequences=self.run_setup.n_sequences,
+            )
+        ).resolve(pipeline)
+        print(self.pipeline.blocks)
         print(self.pipeline)
 
-        self.input_data = self.pipeline.entry_block
-        self.progress = RunProgress()
-        self.stats = ExperimentStats(
-            n_sequences=self.run_setup.n_sequences,
-            progress=self.progress, logger=self.logger, blocks=self.blocks,
-            stats_config=self.stats_config,
-            debug=debug
-        )
+        # self.input_data = self.pipeline.entry_block
+        # self.progress = RunProgress()
+        # self.stats = ExperimentStats(
+        #     n_sequences=self.run_setup.n_sequences,
+        #     progress=self.progress, logger=self.logger, blocks=self.blocks,
+        #     stats_config=self.stats_config,
+        #     debug=debug
+        # )
 
     def run(self):
         print('==> Run')
-        define_metrics(self.logger, self.blocks)
-
-        for epoch in range(self.run_setup.epochs):
-            _, elapsed_time = self.train_epoch()
-            print(f'Epoch {epoch}: {elapsed_time}')
+        # define_metrics(self.logger, self.blocks)
+        #
+        # for epoch in range(self.run_setup.epochs):
+        #     _, elapsed_time = self.train_epoch()
+        #     print(f'Epoch {epoch}: {elapsed_time}')
         print('<==')
 
     @timed

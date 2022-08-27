@@ -22,30 +22,29 @@ from hima.experiments.temporal_pooling.new.blocks.dataset_resolver import (
 
 
 class BlockRegistryResolver:
-    config: TConfig
-    supplementary_config: dict[str, Any]
+    _config: TConfig
+    _supplementary_config: dict[str, Any]
 
-    blocks: dict[str, Block]
-
+    _id: int
     _block_configs: dict[str, TConfig]
     _block_resolvers: dict[str, BlockResolver]
-    _id: int
+    _blocks: dict[str, Block]
 
     def __init__(self, config: TConfig, block_configs: TConfig, **supplementary_config):
-        self.config = config
-        self.supplementary_config = supplementary_config
-        self.blocks = {}
+        self._config = config
+        self._supplementary_config = supplementary_config
 
         self._id = 0
         self._block_configs = block_configs
         self._block_resolvers = {
             DataGeneratorResolver.family: DataGeneratorResolver()
         }
+        self._blocks = {}
 
     def __getitem__(self, item: str) -> Block:
-        if item not in self.blocks:
-            self.blocks[item] = self._resolve_block(block_name=item)
-        return self.blocks[item]
+        if item not in self._blocks:
+            self._blocks[item] = self._resolve_block(block_name=item)
+        return self._blocks[item]
 
     def _resolve_block(self, block_name: str):
         block_id = self._id
@@ -56,15 +55,20 @@ class BlockRegistryResolver:
 
         block_config, block_family = extracted_family(config=self._block_configs[block_name])
         block_config = resolve_nested_configs(
-            config_registry=self.config[block_family], config=block_config
+            config_registry=self._config[block_family], config=block_config
         )
         return self._block_resolvers[block_family].resolve(
-            global_config=self.config,
+            global_config=self._config,
             config=block_config,
             block_id=block_id,
             block_name=block_name,
-            **self.supplementary_config
+            **self._supplementary_config
         )
+
+    def build(self) -> dict[str, Block]:
+        for name in self._blocks:
+            self._blocks[name].build()
+        return self._blocks
 
 
 class PipelineResolver:
@@ -88,7 +92,26 @@ class PipelineResolver:
             self._previous_block = unit.block.name
             self._current_block = None
 
-        return Pipeline(units, block_registry=self.block_registry.blocks)
+        # finish building
+        self.resolve_dimensions(units)
+        blocks = self.block_registry.build()
+
+        return Pipeline(units=units, blocks=blocks)
+
+    @staticmethod
+    def resolve_dimensions(units: list[ComputationUnit], max_iters: int = 100):
+        unresolved = []
+        for i in range(max_iters):
+            unresolved = [
+                pipe
+                for unit in units
+                for pipe in unit.connections
+                if not pipe.align_dimensions()
+            ]
+            if not unresolved:
+                break
+
+        assert not unresolved, f'Cannot resolve {unresolved} pipeline units!'
 
     def parse_unit(self, unit) -> ComputationUnit:
         def _parse_unit(
@@ -135,8 +158,8 @@ class PipelineResolver:
         else:
             raise ValueError(f'Cannot parse stream from "{s}"')
 
-        block = self.block_registry[block_name]
-        return Stream(name=stream_name, block=block)
+        stream = self.block_registry[block_name].register_stream(stream_name)
+        return stream
 
 
 def _resolve_interface(streams: list[str], default_streams: list[str]) -> list[str]:

@@ -203,14 +203,10 @@ class Pipeline:
 
     entry_block: Block
 
-    def __init__(self, units: list[ComputationUnit], block_registry: dict[str, Block]):
+    def __init__(self, units: list[ComputationUnit], blocks: dict[str, Block]):
         self.units = units
-        self.blocks = block_registry
-        self.entry_block = self.blocks[list(self.blocks.keys())[0]]
-
-        self.resolve_dimensions()
-        for block_name in self.blocks:
-            self.blocks[block_name].build()
+        self.blocks = blocks
+        # self.entry_block = self.blocks[list(self.blocks.keys())[0]]
 
     def step(self, input_data, stats_tracker, **kwargs):
         self.entry_block.compute(input_data)
@@ -218,20 +214,6 @@ class Pipeline:
         for unit in self.units:
             output_sdr = unit.compute(**kwargs)
             stats_tracker.on_block_step(unit.block, )
-
-    def resolve_dimensions(self, max_iters: int = 100):
-        unresolved = []
-        for i in range(max_iters):
-            unresolved = [
-                pipe
-                for unit in self.units
-                for pipe in unit.connections
-                if not pipe.align_dimensions()
-            ]
-            if not unresolved:
-                break
-
-        assert not unresolved, f'Cannot resolve {unresolved} pipeline units!'
 
     def __repr__(self):
         return f'{self.units}'

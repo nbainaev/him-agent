@@ -86,8 +86,8 @@ class SyntheticSequencesDatasetBlock(Block):
             self._sequences, self.output_sds, stats_config
         )
 
-    def build(self, stats_config: StatsMetricsConfig = None):
-        assert check_all_resolved(self.output_sds)
+    def build(self):
+        ...
 
     def __iter__(self) -> Iterator[Sequence]:
         return iter(self._sequences)
