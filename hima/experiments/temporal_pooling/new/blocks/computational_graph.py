@@ -4,34 +4,64 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from abc import ABC, abstractmethod
-from typing import Union
+from typing import Union, Any, Optional
 
-from hima.common.config_utils import resolve_value, is_resolved_value, get_unresolved_value
+from hima.common.config_utils import (
+    resolve_value, is_resolved_value, get_unresolved_value,
+    get_none_value
+)
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.new.blocks.base_block_stats import BlockStats
 from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfig
+
+
+class Stream:
+    """Stream defines the named dataflow to or from a block."""
+    name: str
+    sds: Sds
+    sdr: SparseSdr
+    block: 'Block'
+    stats: Optional['StreamStats']
+
+    def __init__(self, name: str, block: 'Block'):
+        self.block = block
+        self.name = name
+        self.sds = get_unresolved_value()
+        self.stats = None
+
+    def resolve_sds(self, sds: Sds) -> Sds:
+        self.sds = resolve_value(self.sds, substitute_with=sds)
+        self.sds = Sds.as_sds(self.sds)
+        return self.sds
+
+    def track_stats(self, stats: 'StreamStats'):
+        self.stats = stats
+
+    def put_value(self, sdr: SparseSdr):
+        self.sdr = sdr
+        if self.stats:
+            self.stats.update(sdr)
+
+    def __repr__(self):
+        return f'{self.block.name}.{self.name}'
 
 
 class Block(ABC):
     """Base building block of the computational graph / neural network."""
 
     family: str = "base_block"
+    supported_streams: set[str] = {}
+
     id: int
     name: str
-
-    sds: dict[str, Sds]
-    sdr: dict[str, SparseSdr]
-    stats: dict[str, BlockStats]
+    streams: dict[str, Stream]
 
     # TODO: log to charts, what to log?
 
-    def __init__(self, id_: int, name: str):
-        self.id = id_
+    def __init__(self, id: int, name: str):
+        self.id = id
         self.name = name
-        self.sds = {}
-        self.sdr = {}
-        self.stats = {}
+        self.streams = {}
 
     @abstractmethod
     def build(self, **kwargs):
@@ -44,23 +74,21 @@ class Block(ABC):
 
     def request(self, stream: str):
         """Request a value from the block's output data stream."""
-        return self.sdr[stream]
+        # FIXME: remove it
+        raise NotImplementedError()
 
     # --------------- SDS interface helpers ---------------
-
-    def register_sds(self, name: str):
-        self.resolve_sds(name, sds=get_unresolved_value())
-
-    def register_sdr(self, name: str):
-        assert name in self.sds
-        self.sdr[name] = []
+    def register_stream(self, name: str) -> 'Stream':
+        if name not in self.streams:
+            self.streams[name] = Stream(name=name, block=self)
+        return self.streams[name]
 
     def resolve_sds(self, name: str, sds: Sds) -> Sds:
         """Resolve sds value and add it to the block's sds dictionary."""
         if name in self.sds:
             sds = resolve_value(self.sds[name], substitute_with=sds)
 
-        self.sds[name] = Sds.as_sds(sds)
+        self.sds[name] = sds = Sds.as_sds(sds)
         return sds
 
     # --------------- Stats interface helpers ---------------
@@ -69,20 +97,6 @@ class Block(ABC):
 
     def reset_stats(self):
         raise NotImplementedError()
-
-    # --------------- Common streams ---------------
-
-    @property
-    def feedforward_sds(self):
-        return self.sds['feedforward']
-
-    @property
-    def output_sds(self):
-        return self.sds['output']
-
-    @property
-    def context_sds(self):
-        return self.sds['context']
 
     # --------------- String representation ---------------
 
@@ -97,28 +111,24 @@ class Block(ABC):
         return f'{self.tag} {self.name}'
 
 
-class Stream:
-    """Stream defines the named dataflow to or from a block."""
+class StreamStats:
+    stream: Stream
 
-    name: str
-    block: Block
-
-    def __init__(self, name: str, block: Block):
-        self.block = block
-        self.name = name
-
-        # register the stream
-        self.block.register_sds(self.name)
-
-    def resolve_sds(self, sds: Sds):
-        return self.block.resolve_sds(self.name, sds)
+    def __init__(self, stream: Stream):
+        self.stream = stream
 
     @property
     def sds(self):
-        return self.block.sds[self.name]
+        return self.stream.sds
 
-    def __repr__(self):
-        return f'{self.block.name}.{self.name}'
+    def update(self, **kwargs):
+        ...
+
+    def step_metrics(self) -> dict[str, Any]:
+        return {}
+
+    def aggregated_metrics(self) -> dict[str, Any]:
+        ...
 
 
 class Pipe:
@@ -198,6 +208,10 @@ class Pipeline:
         self.blocks = block_registry
         self.entry_block = self.blocks[list(self.blocks.keys())[0]]
 
+        self.resolve_dimensions()
+        for block_name in self.blocks:
+            self.blocks[block_name].build()
+
     def step(self, input_data, stats_tracker, **kwargs):
         self.entry_block.compute(input_data)
 
@@ -205,17 +219,42 @@ class Pipeline:
             output_sdr = unit.compute(**kwargs)
             stats_tracker.on_block_step(unit.block, )
 
-    def resolve_dimensions(self, max_iters: int = 100) -> bool:
-        all_dimensions_resolved = False
+    def resolve_dimensions(self, max_iters: int = 100):
+        unresolved = []
         for i in range(max_iters):
-            if all_dimensions_resolved:
-                return True
+            unresolved = [
+                pipe
+                for unit in self.units
+                for pipe in unit.connections
+                if not pipe.align_dimensions()
+            ]
+            if not unresolved:
+                break
 
-            all_dimensions_resolved = True
-            for unit in self.units:
-                for pipe in unit.connections:
-                    all_dimensions_resolved &= pipe.align_dimensions()
-        return False
+        assert not unresolved, f'Cannot resolve {unresolved} pipeline units!'
 
     def __repr__(self):
         return f'{self.units}'
+
+
+class ExternalApiBlock(Block):
+    INPUT = 'input'
+    OUTPUT = 'output'
+
+    family = '_ext_api_'
+    supported_streams = {INPUT, OUTPUT}
+
+    def build(self, **kwargs):
+        pass
+
+    def compute(self, data: dict[str, SparseSdr], **kwargs):
+        pass
+
+    def request(self, stream: str):
+        pass
+
+    def track_stats(self, name: str, stats_config: StatsMetricsConfig):
+        pass
+
+    def reset_stats(self):
+        pass

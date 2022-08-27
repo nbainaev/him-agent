@@ -14,7 +14,7 @@ from hima.common.sds import Sds
 from hima.common.utils import clip
 from hima.experiments.temporal_pooling.new.blocks.computational_graph import Block
 from hima.experiments.temporal_pooling.new.blocks.base_block_stats import BlockStats
-from hima.experiments.temporal_pooling.new.blocks.dataset_resolver import resolve_encoder
+from hima.experiments.temporal_pooling.new.blocks.encoder_resolver import resolve_encoder
 from hima.experiments.temporal_pooling.new.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
 from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfig
 
@@ -63,16 +63,23 @@ class SyntheticSequencesDatasetBlockStats(BlockStats):
 
 
 class SyntheticSequencesDatasetBlock(Block):
+    OUTPUT = 'output'
+
     family = "generator"
+    supported_streams = {OUTPUT}
 
     n_values: int
     _sequences: list[Sequence]
 
-    def __init__(self, id_: int, name: str, n_values: int, sequences: list[Sequence]):
+    def __init__(
+            self, id_: int, name: str, n_values: int, sequences: list[Sequence],
+            values_sds: Sds
+    ):
         super(SyntheticSequencesDatasetBlock, self).__init__(id_, name)
 
         self.n_values = n_values
         self._sequences = sequences
+        self.register_stream(self.OUTPUT).resolve_sds(values_sds)
 
     def track_stats(self, name: str, stats_config: StatsMetricsConfig):
         self.stats[name] = SyntheticSequencesDatasetBlockStats(
@@ -116,7 +123,7 @@ class SyntheticSequencesGenerator:
         self.sequence_length = sequence_length
         self.n_values = n_values
         self.value_encoder = resolve_encoder(
-            config, value_encoder, 'encoder',
+            config, value_encoder,
             n_values=self.n_values,
             active_size=active_size,
             seed=seed
@@ -150,17 +157,15 @@ class SyntheticSequencesGenerator:
 
         return encoded_sequences
 
-    def build_block(
-            self, block_id: int, block_name: str,
-            sequences: list[Sequence], stats_config: StatsMetricsConfig
+    def make_block(
+            self, block_id: int, block_name: str, sequences: list[Sequence]
     ) -> SyntheticSequencesDatasetBlock:
-        block = SyntheticSequencesDatasetBlock(
+        return SyntheticSequencesDatasetBlock(
             id_=block_id, name=block_name,
-            n_values=self.n_values, sequences=sequences
+            n_values=self.n_values,
+            sequences=sequences,
+            values_sds=self.values_sds
         )
-        block.resolve_sds('output', self.values_sds)
-        # block.build(stats_config=stats_config)
-        return block
 
 
 def generate_synthetic_sequences(

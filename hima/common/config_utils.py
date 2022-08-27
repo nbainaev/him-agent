@@ -165,6 +165,10 @@ def resolve_relative_quantity(abs_or_relative: Union[int, float], baseline: int)
         raise TypeError(f'Function does not support type {type(abs_or_relative)}')
 
 
+def get_none_value() -> Any:
+    return _TO_BE_NONE_VALUE
+
+
 def get_unresolved_value() -> Any:
     return _TO_BE_INDUCED_VALUE
 
