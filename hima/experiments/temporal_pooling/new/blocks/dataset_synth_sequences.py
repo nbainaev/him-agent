@@ -66,8 +66,6 @@ class SyntheticSequencesDatasetBlock(Block):
     family = "generator"
 
     n_values: int
-    stats: SyntheticSequencesDatasetBlockStats
-
     _sequences: list[Sequence]
 
     def __init__(self, id_: int, name: str, n_values: int, sequences: list[Sequence]):
@@ -76,13 +74,13 @@ class SyntheticSequencesDatasetBlock(Block):
         self.n_values = n_values
         self._sequences = sequences
 
+    def track_stats(self, name: str, stats_config: StatsMetricsConfig):
+        self.stats[name] = SyntheticSequencesDatasetBlockStats(
+            self._sequences, self.output_sds, stats_config
+        )
+
     def build(self, stats_config: StatsMetricsConfig = None):
         assert check_all_resolved(self.output_sds)
-
-        if stats_config is not None:
-            self.stats = SyntheticSequencesDatasetBlockStats(
-                self._sequences, self.output_sds, stats_config
-            )
 
     def __iter__(self) -> Iterator[Sequence]:
         return iter(self._sequences)
@@ -161,7 +159,7 @@ class SyntheticSequencesGenerator:
             n_values=self.n_values, sequences=sequences
         )
         block.resolve_sds('output', self.values_sds)
-        block.build(stats_config=stats_config)
+        # block.build(stats_config=stats_config)
         return block
 
 

@@ -9,7 +9,8 @@ from typing import Union
 from hima.common.config_utils import resolve_value, is_resolved_value, get_unresolved_value
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.blocks.base_block_stats import BlockStats
+from hima.experiments.temporal_pooling.new.blocks.base_block_stats import BlockStats
+from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfig
 
 
 class Block(ABC):
@@ -21,6 +22,7 @@ class Block(ABC):
 
     sds: dict[str, Sds]
     sdr: dict[str, SparseSdr]
+    stats: dict[str, BlockStats]
 
     # TODO: log to charts, what to log?
 
@@ -29,6 +31,7 @@ class Block(ABC):
         self.name = name
         self.sds = {}
         self.sdr = {}
+        self.stats = {}
 
     @abstractmethod
     def build(self, **kwargs):
@@ -49,6 +52,7 @@ class Block(ABC):
         self.resolve_sds(name, sds=get_unresolved_value())
 
     def register_sdr(self, name: str):
+        assert name in self.sds
         self.sdr[name] = []
 
     def resolve_sds(self, name: str, sds: Sds) -> Sds:
@@ -58,6 +62,13 @@ class Block(ABC):
 
         self.sds[name] = Sds.as_sds(sds)
         return sds
+
+    # --------------- Stats interface helpers ---------------
+    def track_stats(self, name: str, stats_config: StatsMetricsConfig):
+        raise NotImplementedError()
+
+    def reset_stats(self):
+        raise NotImplementedError()
 
     # --------------- Common streams ---------------
 
@@ -78,6 +89,9 @@ class Block(ABC):
     @property
     def tag(self):
         return f'{self.id}_{self.family}'
+
+    def stream_tag(self, stream: str):
+        return f'{self.tag}.{stream}'
 
     def __repr__(self):
         return f'{self.tag} {self.name}'
@@ -160,7 +174,7 @@ class ComputationUnit:
             connection.dst.name: connection.src.block.request(connection.src.name)
             for connection in self.connections
         }
-        self.block.compute(input_data, **kwargs)
+        return self.block.compute(input_data, **kwargs)
 
     def __repr__(self):
         if len(self.connections) == 1:
@@ -184,11 +198,12 @@ class Pipeline:
         self.blocks = block_registry
         self.entry_block = self.blocks[list(self.blocks.keys())[0]]
 
-    def step(self, input_data, **kwargs):
+    def step(self, input_data, stats_tracker, **kwargs):
         self.entry_block.compute(input_data)
 
         for unit in self.units:
-            unit.compute(**kwargs)
+            output_sdr = unit.compute(**kwargs)
+            stats_tracker.on_block_step(unit.block, )
 
     def resolve_dimensions(self, max_iters: int = 100) -> bool:
         all_dimensions_resolved = False

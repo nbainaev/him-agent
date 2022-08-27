@@ -15,6 +15,7 @@ from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.new.blocks.computational_graph import Block
 from hima.experiments.temporal_pooling.new.blocks.base_block_stats import BlockStats
 from hima.experiments.temporal_pooling.new.sdr_seq_stats import SdrSequenceStats
+from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfig
 
 
 class SpatialPoolerBlockStats(BlockStats):
@@ -39,7 +40,6 @@ class SpatialPoolerBlock(Block):
 
     output_sdr: SparseSdr
     sp: Any
-    stats: SpatialPoolerBlockStats
 
     _active_input: SDR
     _active_output: SDR
@@ -73,9 +73,15 @@ class SpatialPoolerBlock(Block):
         self.sp = SpatialPooler(
             **sp_config
         )
-        self.stats = SpatialPoolerBlockStats(self.output_sds)
         self._active_input = SDR(self.feedforward_sds.size)
         self._active_output = SDR(self.output_sds.size)
+
+    def track_stats(self, name: str, stats_config: StatsMetricsConfig):
+        self.stats[name] = SpatialPoolerBlockStats(self.sds[name])
+
+    def reset_stats(self):
+        for name in self.stats:
+            self.stats[name] = SpatialPoolerBlockStats(self.sds[name])
 
     @property
     def tag(self) -> str:
@@ -84,12 +90,6 @@ class SpatialPoolerBlock(Block):
     def reset(self):
         self._active_input.sparse = []
         self._active_output.sparse = []
-
-    def reset_stats(self, stats: SpatialPoolerBlockStats = None):
-        if stats is None:
-            self.stats = SpatialPoolerBlockStats(self.output_sds)
-        else:
-            self.stats = stats
 
     def compute(self, data: dict[str, SparseSdr], **kwargs):
         self._compute(**data, **kwargs)
@@ -100,7 +100,7 @@ class SpatialPoolerBlock(Block):
         self.sp.compute(self._active_input, learn=learn, output=self._active_output)
         self.output_sdr = np.array(self._active_output.sparse, copy=True)
 
-        self.stats.update(self.output_sdr)
+        self.stats['output'].update(current_output_sdr=self.output_sdr)
         return self.output_sdr
 
 

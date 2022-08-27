@@ -11,7 +11,6 @@ from wandb.sdk.wandb_run import Run
 
 from hima.common.config_utils import TConfig, resolve_value
 from hima.common.run_utils import Runner
-from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import timed
 from hima.experiments.temporal_pooling.config_resolvers import (
@@ -109,7 +108,7 @@ class ObservationsLayeredExperiment(Runner):
 
     def run(self):
         print('==> Run')
-        self.define_metrics(self.logger, self.blocks)
+        define_metrics(self.logger, self.blocks)
 
         for epoch in range(self.run_setup.epochs):
             _, elapsed_time = self.train_epoch()
@@ -146,67 +145,21 @@ class ObservationsLayeredExperiment(Runner):
             self.pipeline.step(input_data, learn=learn)
             self.stats.on_step()
 
-    def step(self, state: SparseSdr, action: SparseSdr, learn: bool):
-        self.progress.next_step()
-
-        feedforward, feedback = [], []
-        # context is fixed for all levels (as I don't know what another context to take)
-        context = state
-        prev_block = None
-
-        for block_name in self.pipeline:
-            block = self.blocks[block_name]
-
-            if block_name == 'generator':
-                output = action
-
-            elif block_name.startswith('spatial_pooler'):
-                output = block.compute(active_input=feedforward, learn=learn)
-
-            elif block_name.startswith('temporal_memory'):
-                output = block.compute(
-                    feedforward_input=feedforward, basal_context=context, learn=learn
-                )
-
-            elif block_name.startswith('temporal_pooler'):
-                goes_after_tm = prev_block.name.startswith('temporal_memory')
-                if goes_after_tm:
-                    active_input, correctly_predicted_input = feedforward
-                    output = block.compute(
-                        active_input=active_input,
-                        predicted_input=correctly_predicted_input,
-                        learn=learn
-                    )
-                    prev_block.pass_feedback(output)
-                else:
-                    output = block.compute(
-                        active_input=feedforward, predicted_input=feedforward, learn=learn
-                    )
-
-            else:
-                raise ValueError(f'Unknown block type: {block_name}')
-
-            self.stats.on_block_step(block, output)
-            feedforward = output
-            prev_block = block
-
-        self.stats.on_step()
-
     def reset_blocks(self, block_type):
         for name in self.blocks:
             block = self.blocks[name]
             if block.family == block_type:
                 self.blocks[name].reset()
 
-    @staticmethod
-    def define_metrics(logger, blocks: dict[str, Any]):
-        if not logger:
-            return
 
-        logger.define_metric('epoch')
-        for k in blocks:
-            block = blocks[k]
-            logger.define_metric(f'{block.tag}/epoch/*', step_metric='epoch')
+def define_metrics(logger, blocks: dict[str, Any]):
+    if not logger:
+        return
+
+    logger.define_metric('epoch')
+    for k in blocks:
+        block = blocks[k]
+        logger.define_metric(f'{block.tag}/epoch/*', step_metric='epoch')
 
 
 def resolve_random_seed(seed: Optional[int]) -> int:

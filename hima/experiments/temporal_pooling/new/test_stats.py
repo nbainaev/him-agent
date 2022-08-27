@@ -89,8 +89,9 @@ class ExperimentStats:
         self.sequences_block_stats[sequence_id] = {}
         for block_name in self.blocks:
             block = self.blocks[block_name]
-            block.reset_stats()
-            self.current_block_stats[block.name] = block.stats
+            for stream in block.stats:
+                block.reset_stats()
+                self.current_block_stats[block.stream_tag(stream)] = block.stats[stream]
 
     @property
     def current_sequence_id(self):
@@ -121,11 +122,12 @@ class ExperimentStats:
         metrics = {
             'epoch': self.progress.epoch
         }
-        for block_name in self.current_block_stats:
-            block = self.blocks[block_name]
-            block_stats = self.current_block_stats[block_name]
+        for stats_name in self.current_block_stats:
+            # block_name, stream_name = stats_name.split('.')
+            # block = self.blocks[block_name]
+            block_stats = self.current_block_stats[stats_name]
             block_metrics = block_stats.step_metrics()
-            block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/')
+            block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{stats_name}/')
             metrics |= block_metrics
 
         if self.logger:
@@ -177,8 +179,9 @@ class ExperimentStats:
 
         # noinspection PyUnresolvedReferences
         pmfs = [
-            self.sequences_block_stats[seq_id][block.name].seq_stats.aggregate_pmf()
+            self.sequences_block_stats[seq_id][block.stream_tag(stream)].seq_stats.aggregate_pmf()
             for seq_id in range(self.n_sequences)
+            for stream in block.stats
         ]
         # offline pmf similarity matrices sim_mx
         offline_pmf_similarity = OfflinePmfSimilarityMatrix(
@@ -203,8 +206,9 @@ class ExperimentStats:
 
         # noinspection PyUnresolvedReferences
         pmfs = [
-            self.sequences_block_stats[seq_id][block.name].seq_stats.aggregate_pmf()
+            self.sequences_block_stats[seq_id][block.stream_tag(stream)].seq_stats.aggregate_pmf()
             for seq_id in range(self.n_sequences)
+            for stream in block.stats
         ]
         # offline pmf similarity matrices sim_mx
         offline_pmf_similarity_matrix = OfflinePmfSimilarityMatrix(
@@ -286,12 +290,13 @@ class ExperimentStats:
         result = {}
         # collect/reorder from (seq_id, block, metric) -> (block, metric, seq_id)
         for seq_id in range(self.n_sequences):
-            block_stat = self.sequences_block_stats[seq_id][block.name]
-            final_metrics = block_stat.final_metrics()
-            for metric_key in final_metrics:
-                if metric_key not in result:
-                    result[metric_key] = [None]*self.n_sequences
-                result[metric_key][seq_id] = final_metrics[metric_key]
+            for stream in block.stats:
+                block_stat = self.sequences_block_stats[seq_id][block.stream_tag(stream)]
+                final_metrics = block_stat.final_metrics()
+                for metric_key in final_metrics:
+                    if metric_key not in result:
+                        result[metric_key] = [None]*self.n_sequences
+                    result[metric_key][seq_id] = final_metrics[metric_key]
 
         for metric_key in result:
             if isinstance(result[metric_key][0], np.ndarray):

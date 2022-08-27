@@ -27,6 +27,7 @@ class BlockBuilder:
         self.induction_registry = induction_registry
 
     def build_all(self, blocks: dict[str, TConfig]) -> dict[str, Block]:
+        # TODO: build blocks on demand, i.e. only used in the pipeline
         return {
             block_name: self.build(block_id, block_name, blocks[block_name])
             for block_id, block_name in enumerate(blocks)
@@ -49,6 +50,7 @@ class BlockBuilder:
         for stream in _resolve_interface(exposes, default_streams=['output']):
             block.register_sds(stream)
             block.register_sdr(stream)
+            block.track_stats(stream, self.induction_registry['stats_config'])
 
         return block
 
