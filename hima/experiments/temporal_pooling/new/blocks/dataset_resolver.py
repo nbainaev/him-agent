@@ -4,8 +4,8 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from hima.common.config_utils import extracted_type, resolve_init_params, TConfig
-from hima.experiments.temporal_pooling.new.blocks.block_resolver import BlockResolver
-from hima.experiments.temporal_pooling.new.blocks.computational_graph import Block
+from hima.experiments.temporal_pooling.new.blocks.graph_resolver import BlockResolver
+from hima.experiments.temporal_pooling.new.blocks.graph import Block
 
 
 class DataGeneratorResolver(BlockResolver):

@@ -3,6 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from abc import ABC
 from typing import Optional, Any
 
 from hima.common.config_utils import (
@@ -10,14 +11,22 @@ from hima.common.config_utils import (
 )
 from hima.common.sds import Sds
 from hima.common.utils import isnone
-from hima.experiments.temporal_pooling.new.blocks.block_resolver import BlockResolver
 from hima.experiments.temporal_pooling.new.blocks.graph import (
     Pipe, Block, Pipeline,
     ComputationUnit, Stream, ExternalApiBlock
 )
-from hima.experiments.temporal_pooling.new.blocks.dataset_resolver import (
-    DataGeneratorResolver
-)
+
+
+class BlockResolver(ABC):
+    family: str = "base"
+
+    @staticmethod
+    def resolve(
+        global_config: TConfig, config: TConfig,
+        block_id: int, block_name: str,
+        **kwargs
+    ) -> Block:
+        raise NotImplementedError()
 
 
 class BlockRegistryResolver:
@@ -35,10 +44,19 @@ class BlockRegistryResolver:
 
         self._id = 0
         self._block_configs = block_configs
-        self._block_resolvers = {
+        self._block_resolvers = self._get_block_resolvers()
+        self._blocks = {}
+
+    @staticmethod
+    def _get_block_resolvers():
+        # to prevent circular imports resolvers should be imported locally
+        from hima.experiments.temporal_pooling.new.blocks.dataset_resolver import (
+            DataGeneratorResolver
+        )
+
+        return {
             DataGeneratorResolver.family: DataGeneratorResolver()
         }
-        self._blocks = {}
 
     def __getitem__(self, item: str) -> Block:
         if item not in self._blocks:

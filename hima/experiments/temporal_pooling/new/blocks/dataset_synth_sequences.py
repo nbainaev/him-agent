@@ -8,14 +8,14 @@ from typing import Iterator, Any
 import numpy as np
 from numpy.random import Generator
 
-from hima.common.config_utils import check_all_resolved
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import clip
-from hima.experiments.temporal_pooling.new.blocks.computational_graph import Block
-from hima.experiments.temporal_pooling.new.blocks.base_block_stats import BlockStats
 from hima.experiments.temporal_pooling.new.blocks.encoder_resolver import resolve_encoder
-from hima.experiments.temporal_pooling.new.sdr_seq_cross_stats import OfflineElementwiseSimilarityMatrix
+from hima.experiments.temporal_pooling.new.blocks.graph import Block, Stream
+from hima.experiments.temporal_pooling.new.blocks.stats import StreamStats
+from hima.experiments.temporal_pooling.new.sdr_seq_cross_stats import \
+    OfflineElementwiseSimilarityMatrix
 from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfig
 
 
@@ -30,27 +30,27 @@ class Sequence:
 
     def __iter__(self) -> Iterator[dict]:
         for sdr in self._sequence:
-            yield dict(feedforward=sdr)
+            yield dict(input=sdr)
 
     def __len__(self):
         return len(self._sequence)
 
 
-class SyntheticSequencesDatasetBlockStats(BlockStats):
+class SyntheticSequencesDatasetBlockStats(StreamStats):
     n_sequences: int
-    actions_sds: Sds
     sequences: list[list[set[int]]]
     cross_stats: OfflineElementwiseSimilarityMatrix
 
-    def __init__(self, sequences: list[Sequence], actions_sds: Sds, stats_config: StatsMetricsConfig):
-        super(SyntheticSequencesDatasetBlockStats, self).__init__(output_sds=actions_sds)
+    def __init__(
+            self, sequences: list[Sequence], stream: Stream, stats_config: StatsMetricsConfig
+    ):
+        super(SyntheticSequencesDatasetBlockStats, self).__init__(stream=stream)
 
         self.n_sequences = len(sequences)
         self.sequences = [
             [set(sdr) for sdr in seq]
             for seq in sequences
         ]
-        self.actions_sds = actions_sds
         self.cross_stats = OfflineElementwiseSimilarityMatrix(
             sequences=self.sequences,
             normalization=stats_config.normalization,
@@ -58,8 +58,8 @@ class SyntheticSequencesDatasetBlockStats(BlockStats):
             symmetrical=False
         )
 
-    def final_metrics(self) -> dict[str, Any]:
-        return self.cross_stats.final_metrics()
+    def aggregate_metrics(self) -> dict[str, Any]:
+        return self.cross_stats.aggregate_metrics()
 
 
 class SyntheticSequencesDatasetBlock(Block):
@@ -81,9 +81,11 @@ class SyntheticSequencesDatasetBlock(Block):
         self._sequences = sequences
         self.register_stream(self.OUTPUT).resolve_sds(values_sds)
 
-    def track_stats(self, name: str, stats_config: StatsMetricsConfig):
-        self.stats[name] = SyntheticSequencesDatasetBlockStats(
-            self._sequences, self.output_sds, stats_config
+    def make_stream_stats_tracker(
+            self, *, stream: str, stats_config: StatsMetricsConfig, **kwargs
+    ) -> StreamStats:
+        return SyntheticSequencesDatasetBlockStats(
+            self._sequences, self.streams[stream], stats_config
         )
 
     def build(self):
@@ -93,7 +95,7 @@ class SyntheticSequencesDatasetBlock(Block):
         return iter(self._sequences)
 
     def compute(self, data: dict[str, SparseSdr], **kwargs):
-        self.sdr['output'] = data['feedforward']
+        ...
 
     def reset_stats(self):
         ...

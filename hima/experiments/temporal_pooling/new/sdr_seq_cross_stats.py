@@ -44,7 +44,7 @@ class SimilarityMatrix:
     def on_step(self, **kwargs):
         ...
 
-    def final_metrics(self) -> dict[str, Any]:
+    def aggregate_metrics(self) -> dict[str, Any]:
         tag = self.tag
         if self._mx is None:
             self._mx = standardize_sample_distribution(self._raw_mx, normalization=self.unbias_func)
@@ -141,11 +141,11 @@ class OnlineSimilarityMatrix(SimilarityMatrix):
     def _handle_finished_sequence(self):
         ...
 
-    def final_metrics(self) -> dict[str, Any]:
+    def aggregate_metrics(self) -> dict[str, Any]:
         self.on_new_sequence()
 
         self._mx = standardize_sample_distribution(self._raw_mx, normalization=self.unbias_func)
-        return super(OnlineSimilarityMatrix, self).final_metrics()
+        return super(OnlineSimilarityMatrix, self).aggregate_metrics()
 
 
 class OnlineElementwiseSimilarityMatrix(OnlineSimilarityMatrix):

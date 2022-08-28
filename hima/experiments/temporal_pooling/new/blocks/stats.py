@@ -3,18 +3,20 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-
 from typing import Any
 
-from hima.common.sdr import SparseSdr
-from hima.common.sds import Sds
+from hima.experiments.temporal_pooling.new.blocks.graph import Stream
 
 
-class BlockStats:
-    output_sds: Sds
+class StreamStats:
+    stream: Stream
 
-    def __init__(self, output_sds: Sds):
-        self.output_sds = output_sds
+    def __init__(self, stream: Stream):
+        self.stream = stream
+
+    @property
+    def sds(self):
+        return self.stream.sds
 
     def update(self, **kwargs):
         ...
@@ -22,5 +24,5 @@ class BlockStats:
     def step_metrics(self) -> dict[str, Any]:
         return {}
 
-    def final_metrics(self) -> dict[str, Any]:
+    def aggregate_metrics(self) -> dict[str, Any]:
         ...
