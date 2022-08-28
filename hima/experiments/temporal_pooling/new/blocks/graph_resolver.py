@@ -3,7 +3,6 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from abc import ABC
 from typing import Optional, Any
 
 from hima.common.config_utils import (
@@ -12,7 +11,7 @@ from hima.common.config_utils import (
 from hima.common.sds import Sds
 from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.new.blocks.block_resolver import BlockResolver
-from hima.experiments.temporal_pooling.new.blocks.computational_graph import (
+from hima.experiments.temporal_pooling.new.blocks.graph import (
     Pipe, Block, Pipeline,
     ComputationUnit, Stream, ExternalApiBlock
 )
@@ -50,7 +49,7 @@ class BlockRegistryResolver:
         block_id = self._id
         self._id += 1
 
-        if block_name == '___':
+        if block_name == ExternalApiBlock.name:
             return ExternalApiBlock(id=block_id, name=block_name)
 
         block_config, block_family = extracted_family(config=self._block_configs[block_name])

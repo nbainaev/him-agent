@@ -4,15 +4,14 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from abc import ABC, abstractmethod
-from typing import Union, Any, Optional
+from typing import Union
 
 from hima.common.config_utils import (
-    resolve_value, is_resolved_value, get_unresolved_value,
-    get_none_value
+    resolve_value, is_resolved_value, get_unresolved_value
 )
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfig
+from hima.common.utils import isnone
 
 
 class Stream:
@@ -21,26 +20,17 @@ class Stream:
     sds: Sds
     sdr: SparseSdr
     block: 'Block'
-    stats: Optional['StreamStats']
 
     def __init__(self, name: str, block: 'Block'):
         self.block = block
         self.name = name
         self.sds = get_unresolved_value()
-        self.stats = None
+        self.sdr = []
 
     def resolve_sds(self, sds: Sds) -> Sds:
         self.sds = resolve_value(self.sds, substitute_with=sds)
         self.sds = Sds.as_sds(self.sds)
         return self.sds
-
-    def track_stats(self, stats: 'StreamStats'):
-        self.stats = stats
-
-    def put_value(self, sdr: SparseSdr):
-        self.sdr = sdr
-        if self.stats:
-            self.stats.update(sdr)
 
     def __repr__(self):
         return f'{self.block.name}.{self.name}'
@@ -63,39 +53,19 @@ class Block(ABC):
         self.name = name
         self.streams = {}
 
-    @abstractmethod
-    def build(self, **kwargs):
-        """Build block when all its configurable parameters are resolved."""
-        raise NotImplementedError()
-
-    def compute(self, data: dict[str, SparseSdr], **kwargs):
-        """Make a computation given the provided input data streams."""
-        raise NotImplementedError()
-
-    def request(self, stream: str):
-        """Request a value from the block's output data stream."""
-        # FIXME: remove it
-        raise NotImplementedError()
-
-    # --------------- SDS interface helpers ---------------
     def register_stream(self, name: str) -> 'Stream':
         if name not in self.streams:
             self.streams[name] = Stream(name=name, block=self)
         return self.streams[name]
 
-    def resolve_sds(self, name: str, sds: Sds) -> Sds:
-        """Resolve sds value and add it to the block's sds dictionary."""
-        if name in self.sds:
-            sds = resolve_value(self.sds[name], substitute_with=sds)
-
-        self.sds[name] = sds = Sds.as_sds(sds)
-        return sds
-
-    # --------------- Stats interface helpers ---------------
-    def track_stats(self, name: str, stats_config: StatsMetricsConfig):
+    @abstractmethod
+    def build(self, **kwargs):
+        """Build block after all its configurable parameters are resolved."""
         raise NotImplementedError()
 
-    def reset_stats(self):
+    @abstractmethod
+    def compute(self, data: dict[str, SparseSdr], **kwargs):
+        """Make a computation given the provided input data streams."""
         raise NotImplementedError()
 
     # --------------- String representation ---------------
@@ -111,24 +81,17 @@ class Block(ABC):
         return f'{self.tag} {self.name}'
 
 
-class StreamStats:
-    stream: Stream
+class ExternalApiBlock(Block):
+    family = '_ext_api_'
+    name = '___'
 
-    def __init__(self, stream: Stream):
-        self.stream = stream
+    def build(self, **kwargs):
+        pass
 
-    @property
-    def sds(self):
-        return self.stream.sds
-
-    def update(self, **kwargs):
-        ...
-
-    def step_metrics(self) -> dict[str, Any]:
-        return {}
-
-    def aggregated_metrics(self) -> dict[str, Any]:
-        ...
+    def compute(self, data: dict[str, SparseSdr], **kwargs):
+        for stream_name in data:
+            stream = self.streams[stream_name]
+            stream.sdr = data[stream_name]
 
 
 class Pipe:
@@ -145,8 +108,10 @@ class Pipe:
         self.src = src
         self.dst = dst
 
-        if sds is not None:
-            self.src.resolve_sds(sds)
+        self.src.resolve_sds(isnone(sds, get_unresolved_value()))
+
+    def forward(self):
+        self.dst.sdr = self.src.sdr
 
     def align_dimensions(self) -> bool:
         if is_resolved_value(self.src.sds) and is_resolved_value(self.dst.sds):
@@ -180,8 +145,11 @@ class ComputationUnit:
         self.block = connections[0].dst.block
 
     def compute(self, **kwargs):
+        for connection in self.connections:
+            connection.forward()
+
         input_data = {
-            connection.dst.name: connection.src.block.request(connection.src.name)
+            connection.dst.name: connection.dst.sdr
             for connection in self.connections
         }
         return self.block.compute(input_data, **kwargs)
@@ -201,42 +169,21 @@ class Pipeline:
     units: list[ComputationUnit]
     blocks: dict[str, Block]
 
-    entry_block: Block
+    api: Block
 
     def __init__(self, units: list[ComputationUnit], blocks: dict[str, Block]):
         self.units = units
         self.blocks = blocks
-        # self.entry_block = self.blocks[list(self.blocks.keys())[0]]
+        self.api = self.blocks[ExternalApiBlock.name]
 
-    def step(self, input_data, stats_tracker, **kwargs):
-        self.entry_block.compute(input_data)
+    def step(self, input_data: dict[str, SparseSdr], **kwargs):
+        # pass input data to the api block
+        self.api.compute(input_data)
 
         for unit in self.units:
-            output_sdr = unit.compute(**kwargs)
-            stats_tracker.on_block_step(unit.block, )
+            unit.compute(**kwargs)
+
+        return self.api.streams
 
     def __repr__(self):
         return f'{self.units}'
-
-
-class ExternalApiBlock(Block):
-    INPUT = 'input'
-    OUTPUT = 'output'
-
-    family = '_ext_api_'
-    supported_streams = {INPUT, OUTPUT}
-
-    def build(self, **kwargs):
-        pass
-
-    def compute(self, data: dict[str, SparseSdr], **kwargs):
-        pass
-
-    def request(self, stream: str):
-        pass
-
-    def track_stats(self, name: str, stats_config: StatsMetricsConfig):
-        pass
-
-    def reset_stats(self):
-        pass
