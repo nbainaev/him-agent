@@ -8,6 +8,9 @@ from typing import Any
 from hima.experiments.temporal_pooling.new.blocks.graph import Stream
 
 
+TMetrics = dict[str, Any]
+
+
 class StreamStats:
     stream: Stream
 
@@ -21,8 +24,8 @@ class StreamStats:
     def update(self, **kwargs):
         ...
 
-    def step_metrics(self) -> dict[str, Any]:
+    def step_metrics(self) -> TMetrics:
         return {}
 
-    def aggregate_metrics(self) -> dict[str, Any]:
+    def aggregate_metrics(self) -> TMetrics:
         ...

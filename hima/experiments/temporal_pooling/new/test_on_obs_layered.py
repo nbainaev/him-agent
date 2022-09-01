@@ -4,7 +4,7 @@
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 
-from typing import Optional, Any
+from typing import Optional
 
 import numpy as np
 from wandb.sdk.wandb_run import Run
@@ -16,12 +16,14 @@ from hima.common.utils import timed
 from hima.experiments.temporal_pooling.config_resolvers import (
     resolve_run_setup
 )
-from hima.experiments.temporal_pooling.new.blocks.builder import (
+from hima.experiments.temporal_pooling.new.blocks.dataset_synth_sequences import Sequence
+from hima.experiments.temporal_pooling.new.blocks.graph import (
+    Block, Pipeline
+)
+from hima.experiments.temporal_pooling.new.blocks.graph_resolver import (
     PipelineResolver,
     BlockRegistryResolver
 )
-from hima.experiments.temporal_pooling.new.blocks.computational_graph import Block, Pipeline
-from hima.experiments.temporal_pooling.new.blocks.dataset_synth_sequences import Sequence
 from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfig
 from hima.experiments.temporal_pooling.new.test_stats import (
     ExperimentStats,
@@ -66,7 +68,7 @@ class ObservationsLayeredExperiment(Runner):
     run_setup: RunSetup
     stats_config: StatsMetricsConfig
     pipeline: Pipeline
-    blocks: dict[str, Block]
+    generator: Block
     progress: RunProgress
     stats: ExperimentStats
 
@@ -76,6 +78,7 @@ class ObservationsLayeredExperiment(Runner):
             self, config: TConfig, seed: int, debug: bool,
             blocks: dict[str, TConfig], pipeline: list,
             run_setup: TConfig, stats_and_metrics: TConfig,
+            track_stats: TConfig,
             **_
     ):
         super().__init__(config, **config)
@@ -89,30 +92,29 @@ class ObservationsLayeredExperiment(Runner):
             block_registry=BlockRegistryResolver(
                 config=config, block_configs=blocks,
                 seed=seed,
-                debug=debug,
-                stats_config=self.stats_config,
                 n_sequences=self.run_setup.n_sequences,
             )
         ).resolve(pipeline)
         print(self.pipeline.blocks)
         print(self.pipeline)
 
-        # self.input_data = self.pipeline.entry_block
-        # self.progress = RunProgress()
-        # self.stats = ExperimentStats(
-        #     n_sequences=self.run_setup.n_sequences,
-        #     progress=self.progress, logger=self.logger, blocks=self.blocks,
-        #     stats_config=self.stats_config,
-        #     debug=debug
-        # )
+        self.generator = self.pipeline.blocks['gen']
+        self.progress = RunProgress()
+        self.stats = ExperimentStats(
+            n_sequences=self.run_setup.n_sequences,
+            progress=self.progress, logger=self.logger,
+            blocks=self.pipeline.blocks, track_stats=track_stats,
+            stats_config=self.stats_config,
+            debug=debug
+        )
 
     def run(self):
         print('==> Run')
-        # define_metrics(self.logger, self.blocks)
-        #
-        # for epoch in range(self.run_setup.epochs):
-        #     _, elapsed_time = self.train_epoch()
-        #     print(f'Epoch {epoch}: {elapsed_time}')
+        self.stats.define_metrics()
+
+        for epoch in range(self.run_setup.epochs):
+            _, elapsed_time = self.train_epoch()
+            print(f'Epoch {epoch}: {elapsed_time}')
         print('<==')
 
     @timed
@@ -121,7 +123,7 @@ class ObservationsLayeredExperiment(Runner):
         self.stats.on_new_epoch()
 
         # noinspection PyTypeChecker
-        for sequence in self.input_data:
+        for sequence in self.generator:
             for i_repeat in range(self.run_setup.sequence_repeats):
                 self.run_sequence(sequence, i_repeat, learn=True)
 
@@ -132,8 +134,8 @@ class ObservationsLayeredExperiment(Runner):
         self.stats.on_finish(epoch_final_log_scheduled)
 
     def run_sequence(self, sequence: Sequence, i_repeat: int = 0, learn=True):
-        self.reset_blocks(block_type='temporal_memory')
-        self.reset_blocks(block_type='temporal_pooler')
+        # self.reset_blocks(block_type='temporal_memory')
+        # self.reset_blocks(block_type='temporal_pooler')
 
         log_scheduled = scheduled(
             i=i_repeat, schedule=self.run_setup.log_repeat_schedule,
@@ -142,6 +144,7 @@ class ObservationsLayeredExperiment(Runner):
         self.stats.on_new_sequence(sequence.id, log_scheduled)
 
         for input_data in sequence:
+            self.progress.next_step()
             self.pipeline.step(input_data, learn=learn)
             self.stats.on_step()
 
@@ -150,16 +153,6 @@ class ObservationsLayeredExperiment(Runner):
             block = self.blocks[name]
             if block.family == block_type:
                 self.blocks[name].reset()
-
-
-def define_metrics(logger, blocks: dict[str, Any]):
-    if not logger:
-        return
-
-    logger.define_metric('epoch')
-    for k in blocks:
-        block = blocks[k]
-        logger.define_metric(f'{block.tag}/epoch/*', step_metric='epoch')
 
 
 def resolve_random_seed(seed: Optional[int]) -> int:

@@ -32,8 +32,12 @@ class Stream:
         self.sds = Sds.as_sds(self.sds)
         return self.sds
 
-    def __repr__(self):
+    @property
+    def fullname(self):
         return f'{self.block.name}.{self.name}'
+
+    def __repr__(self):
+        return self.fullname
 
 
 class Block(ABC):
@@ -57,6 +61,10 @@ class Block(ABC):
         if name not in self.streams:
             self.streams[name] = Stream(name=name, block=self)
         return self.streams[name]
+
+    @abstractmethod
+    def make_stream_stats_tracker(self, *, stream: str, stats_config, **kwargs):
+        raise NotImplementedError()
 
     @abstractmethod
     def build(self, **kwargs):
@@ -84,6 +92,9 @@ class Block(ABC):
 class ExternalApiBlock(Block):
     family = '_ext_api_'
     name = '___'
+
+    def make_stream_stats_tracker(self, *, stream: str, stats_config, **kwargs):
+        raise NotImplementedError()
 
     def build(self, **kwargs):
         pass

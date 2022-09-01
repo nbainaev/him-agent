@@ -12,10 +12,10 @@ import wandb
 from matplotlib import pyplot as plt
 from wandb.sdk.wandb_run import Run
 
-from hima.common.sdr import SparseSdr
+from hima.common.config_utils import TConfig
 from hima.common.utils import ensure_list
-from hima.experiments.temporal_pooling.new.blocks.base_block_stats import BlockStats
-from hima.experiments.temporal_pooling.new.blocks.computational_graph import Block
+from hima.experiments.temporal_pooling.new.blocks.graph import Block, Stream
+from hima.experiments.temporal_pooling.new.blocks.stats import StreamStats
 from hima.experiments.temporal_pooling.new.metrics import (
     multiplicative_loss, DISTR_SIM_PMF
 )
@@ -42,39 +42,54 @@ class RunProgress:
 
 
 class ExperimentStats:
+    TSequenceId = int
+    TStreamName = str
+    TMetricsName = str
+
     n_sequences: int
     progress: RunProgress
     logger: Optional[Run]
-    blocks: dict[str, Block]
+
+    tracked_streams: dict[TStreamName, Stream]
     stats_config: StatsMetricsConfig
 
-    sequence_ids_order: list[int]
+    sequence_ids_order: list[TSequenceId]
     logging_temporally_disabled: int
-    sequences_block_stats: dict[int, dict[str, BlockStats]]
-    sequences_block_cross_stats: dict[str, dict[str, SimilarityMatrix]]
+    stats_registry: dict[TSequenceId, dict[TStreamName, StreamStats]]
+    cross_stats_registry: dict[TStreamName, dict[TMetricsName, SimilarityMatrix]]
 
     debug: bool
 
     def __init__(
             self, n_sequences: int, progress: RunProgress, logger: Optional[Run],
-            blocks: dict[str, Block], stats_config: StatsMetricsConfig, debug: bool
+            blocks: dict[str, Block], track_stats: TConfig,
+            stats_config: StatsMetricsConfig, debug: bool
     ):
         self.n_sequences = n_sequences
         self.progress = progress
         self.logger = logger
-        self.blocks = blocks
         self.stats_config = stats_config
         self.debug = debug
 
-        self.sequences_block_stats = {}
+        self.tracked_streams = _get_tracked_streams(track_stats=track_stats, blocks=blocks)
+        self.stats_registry = {}
         self.sequence_ids_order = []
         self.logging_temporally_disabled = True
 
-        self.sequences_block_cross_stats = {}
+        self.cross_stats_registry = {}
         self._init_cross_stats()
 
+    def define_metrics(self):
+        if not self.logger:
+            return
+
+        self.logger.define_metric('epoch')
+        for name in self.tracked_streams:
+            stream = self.tracked_streams[name]
+            self.logger.define_metric(f'{stream.fullname}/epoch/*', step_metric='epoch')
+
     def on_new_epoch(self):
-        self.sequences_block_stats.clear()
+        self.stats_registry.clear()
         self.sequence_ids_order.clear()
 
     def on_new_sequence(self, sequence_id: int, logging_scheduled: bool):
@@ -85,13 +100,9 @@ class ExperimentStats:
             return
 
         self.sequence_ids_order.append(sequence_id)
-
-        self.sequences_block_stats[sequence_id] = {}
-        for block_name in self.blocks:
-            block = self.blocks[block_name]
-            for stream in block.stats:
-                block.reset_stats()
-                self.current_block_stats[block.stream_tag(stream)] = block.stats[stream]
+        self.stats_registry[sequence_id] = _make_stat_trackers(
+            streams=self.tracked_streams, stats_config=self.stats_config
+        )
 
     @property
     def current_sequence_id(self):
@@ -102,16 +113,18 @@ class ExperimentStats:
         return self.sequence_ids_order[-2] if len(self.sequence_ids_order) >= 2 else None
 
     @property
-    def current_block_stats(self):
-        return self.sequences_block_stats[self.current_sequence_id]
+    def current_stats(self):
+        return self.stats_registry[self.current_sequence_id]
 
-    def on_block_step(self, block, block_output_sdr: SparseSdr):
+    def on_stream_step(self, stream: Stream):
         if not self.logger and not self.debug:
             return
         if self.logging_temporally_disabled:
             return
 
-        self.update_block_cross_stats(block, block_output_sdr)
+        cross_stats_metrics = self.cross_stats_registry[stream.fullname]
+        for block_online_similarity_matrix in cross_stats_metrics.values():
+            block_online_similarity_matrix.on_step(sdr=stream.sdr)
 
     def on_step(self):
         if self.logger is None and not self.debug:
@@ -119,16 +132,20 @@ class ExperimentStats:
         if self.logging_temporally_disabled:
             return
 
+        # collect stream stats
+        for name in self.tracked_streams:
+            self.on_stream_step(self.tracked_streams[name])
+
         metrics = {
             'epoch': self.progress.epoch
         }
-        for stats_name in self.current_block_stats:
-            # block_name, stream_name = stats_name.split('.')
-            # block = self.blocks[block_name]
-            block_stats = self.current_block_stats[stats_name]
-            block_metrics = block_stats.step_metrics()
-            block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{stats_name}/')
-            metrics |= block_metrics
+        current_stats = self.current_stats
+        for name in self.tracked_streams:
+            stream_stats = current_stats[name]
+            stream = stream_stats.stream
+            stream_metrics = stream_stats.step_metrics()
+            stream_metrics = rename_dict_keys(stream_metrics, add_prefix=f'{stream.fullname}/')
+            metrics |= stream_metrics
 
         if self.logger:
             self.logger.log(metrics, step=self.progress.step)
@@ -142,10 +159,13 @@ class ExperimentStats:
         metrics = {}
         diff_metrics = []
         optimized_metrics = []
-        for block_name in self.current_block_stats:
-            block = self.blocks[block_name]
+        current_stats = self.current_stats
+        for name in self.tracked_streams:
+            stats = current_stats[name]
+            block = stats.stream.block
+
             if block.family == 'generator':
-                self.summarize_input(block, metrics, diff_metrics)
+                self.summarize_input(stats, metrics, diff_metrics)
             elif block.family == 'spatial_pooler':
                 self.summarize_sp(block, metrics)
             elif block.family == 'temporal_memory':
@@ -153,33 +173,34 @@ class ExperimentStats:
             elif block.family == 'temporal_pooler':
                 self.summarize_tp(block, metrics, diff_metrics, optimized_metrics)
             else:
-                raise KeyError(f'Block {block.name} is not supported')
+                raise KeyError(f'Block {block.family} is not supported')
 
-        metrics |= self.summarize_similarity_errors(diff_metrics, optimized_metrics)
+        # metrics |= self.summarize_similarity_errors(diff_metrics, optimized_metrics)
 
         if self.logger:
             self.logger.log(metrics, step=self.progress.step)
 
-    def summarize_input(self, block, metrics: dict, diff_metrics: list):
-        block_metrics = self.current_block_stats[block.name].final_metrics()
+    def summarize_input(self, stream_stats: StreamStats, metrics: dict, diff_metrics: list):
+        stream = stream_stats.stream
+        stream_metrics = stream_stats.aggregate_metrics()
 
         block_diff_metrics = {
-            'raw_sim_mx': block_metrics['raw_sim_mx_el'],
-            'sim_mx': block_metrics['sim_mx_el']
+            'raw_sim_mx': stream_metrics['raw_sim_mx_el'],
+            'sim_mx': stream_metrics['sim_mx_el']
         }
-        diff_metrics.append((block.tag, block_diff_metrics))
+        diff_metrics.append((stream.name, block_diff_metrics))
 
-        block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/epoch/')
-        self.transform_sim_mx_to_plots(block_metrics)
+        stream_metrics = rename_dict_keys(stream_metrics, add_prefix=f'{stream.fullname}/epoch/')
+        self.transform_sim_mx_to_plots(stream_metrics)
 
-        metrics |= block_metrics
+        metrics |= stream_metrics
 
     def summarize_sp(self, block, metrics: dict):
         block_metrics = self._collect_block_final_stats(block)
 
         # noinspection PyUnresolvedReferences
         pmfs = [
-            self.sequences_block_stats[seq_id][block.stream_tag(stream)].seq_stats.aggregate_pmf()
+            self.stats_registry[seq_id][block.stream_tag(stream)].seq_stats.aggregate_pmf()
             for seq_id in range(self.n_sequences)
             for stream in block.stats
         ]
@@ -189,11 +210,11 @@ class ExperimentStats:
             normalization=self.stats_config.normalization,
             algorithm=DISTR_SIM_PMF, symmetrical=self.stats_config.symmetrical_similarity
         )
-        block_metrics |= offline_pmf_similarity.final_metrics()
+        block_metrics |= offline_pmf_similarity.aggregate_metrics()
 
         # online pmf similarity matrices
-        for block_online_similarity_matrix in self.sequences_block_cross_stats[block.name].values():
-            block_metrics |= block_online_similarity_matrix.final_metrics()
+        for block_online_similarity_matrix in self.cross_stats_registry[block.name].values():
+            block_metrics |= block_online_similarity_matrix.aggregate_metrics()
 
         block_metrics = rename_dict_keys(block_metrics, add_prefix=f'{block.tag}/epoch/')
         self.transform_sim_mx_to_plots(block_metrics)
@@ -206,7 +227,7 @@ class ExperimentStats:
 
         # noinspection PyUnresolvedReferences
         pmfs = [
-            self.sequences_block_stats[seq_id][block.stream_tag(stream)].seq_stats.aggregate_pmf()
+            self.stats_registry[seq_id][block.stream_tag(stream)].seq_stats.aggregate_pmf()
             for seq_id in range(self.n_sequences)
             for stream in block.stats
         ]
@@ -216,7 +237,7 @@ class ExperimentStats:
             normalization=self.stats_config.normalization,
             algorithm=DISTR_SIM_PMF, symmetrical=self.stats_config.symmetrical_similarity
         )
-        offline_pmf_similarity = offline_pmf_similarity_matrix.final_metrics()
+        offline_pmf_similarity = offline_pmf_similarity_matrix.aggregate_metrics()
 
         block_metrics |= offline_pmf_similarity
         block_diff_metrics = {
@@ -226,8 +247,8 @@ class ExperimentStats:
         diff_metrics.append((block.tag, block_diff_metrics))
 
         # online pmf similarity matrices
-        for block_online_similarity_matrix in self.sequences_block_cross_stats[block.name].values():
-            block_metrics |= block_online_similarity_matrix.final_metrics()
+        for block_online_similarity_matrix in self.cross_stats_registry[block.name].values():
+            block_metrics |= block_online_similarity_matrix.aggregate_metrics()
 
         # track first TP pmf coverage
         if block.tag[0] in {'2', 3}:
@@ -291,7 +312,7 @@ class ExperimentStats:
         # collect/reorder from (seq_id, block, metric) -> (block, metric, seq_id)
         for seq_id in range(self.n_sequences):
             for stream in block.stats:
-                block_stat = self.sequences_block_stats[seq_id][block.stream_tag(stream)]
+                block_stat = self.stats_registry[seq_id][block.stream_tag(stream)]
                 final_metrics = block_stat.final_metrics()
                 for metric_key in final_metrics:
                     if metric_key not in result:
@@ -306,27 +327,34 @@ class ExperimentStats:
         return result
 
     def notify_cross_stats_new_sequence(self, sequence_id: int):
-        for block_name in self.blocks:
-            current_block_cross_stats = self.sequences_block_cross_stats[block_name]
-            for block_online_similarity_matrix in current_block_cross_stats.values():
-                block_online_similarity_matrix.on_new_sequence(sequence_id=sequence_id)
+        for name in self.tracked_streams:
+            stream = self.tracked_streams[name]
+            stream_cross_stats = self.cross_stats_registry[stream.fullname]
 
-    def update_block_cross_stats(self, block, block_output_sdr: SparseSdr):
-        current_block_cross_stats = self.sequences_block_cross_stats[block.name]
-        for block_online_similarity_matrix in current_block_cross_stats.values():
-            block_online_similarity_matrix.on_step(sdr=block_output_sdr)
+            for online_similarity_matrix in stream_cross_stats.values():
+                online_similarity_matrix.on_new_sequence(sequence_id=sequence_id)
 
     def _init_cross_stats(self):
-        self.sequences_block_cross_stats = {}
+        self.cross_stats_registry = {}
 
-        for block_name in self.blocks:
-            block = self.blocks[block_name]
+        for name in self.tracked_streams:
+            stream = self.tracked_streams[name]
+            block = stream.block
 
-            if block.family.startswith('generator'):
-                self.sequences_block_cross_stats[block.name] = {}
-            elif block.family.startswith('spatial_pooler'):
-                self.sequences_block_cross_stats[block.name] = {}
-                self.sequences_block_cross_stats[block.name] = {
+            if block.family == 'generator':
+                self.cross_stats_registry[stream.fullname] = {
+                    'online_pmf': OnlinePmfSimilarityMatrix(
+                        n_sequences=self.n_sequences,
+                        sds=stream.sds,
+                        normalization=self.stats_config.normalization,
+                        discount=self.stats_config.prefix_similarity_discount,
+                        symmetrical=self.stats_config.symmetrical_similarity,
+                        algorithm=DISTR_SIM_PMF
+                    ),
+                }
+            elif block.family == 'spatial_pooler':
+                self.cross_stats_registry[block.name] = {}
+                self.cross_stats_registry[block.name] = {
                     # 'online_el': OnlineElementwiseSimilarityMatrix(
                     #     n_sequences=self.n_sequences,
                     #     unbias_func=self.stats_config.normalization_unbias,
@@ -335,7 +363,7 @@ class ExperimentStats:
                     # ),
                     'online_pmf': OnlinePmfSimilarityMatrix(
                         n_sequences=self.n_sequences,
-                        sds=block.output_sds,
+                        sds=stream.sds,
                         normalization=self.stats_config.normalization,
                         discount=self.stats_config.prefix_similarity_discount,
                         symmetrical=self.stats_config.symmetrical_similarity,
@@ -352,9 +380,9 @@ class ExperimentStats:
                     # )
                 }
             elif block.family.startswith('temporal_memory'):
-                self.sequences_block_cross_stats[block.name] = {}
+                self.cross_stats_registry[block.name] = {}
             elif block.family.startswith('temporal_pooler'):
-                self.sequences_block_cross_stats[block.name] = {
+                self.cross_stats_registry[block.name] = {
                     # 'online_el': OnlineElementwiseSimilarityMatrix(
                     #     n_sequences=self.n_sequences,
                     #     unbias_func=self.stats_config.normalization_unbias,
@@ -388,6 +416,32 @@ class ExperimentStats:
             metric_value = metrics[metric_key]
             if isinstance(metric_value, np.ndarray) and metric_value.ndim == 2:
                 metrics[metric_key] = plot_single_heatmap(metric_value)
+
+
+def _get_tracked_streams(track_stats: TConfig, blocks: dict[str, Block]) -> dict[str, Stream]:
+    tracked_streams = {}
+    for name in track_stats:
+        block_name, stream_name = name.split('.')
+        if block_name not in blocks:
+            # skip unused blocks
+            continue
+
+        block = blocks[block_name]
+        stream = block.streams[stream_name]
+        tracked_streams[stream.fullname] = stream
+
+    return tracked_streams
+
+
+def _make_stat_trackers(
+        streams: dict[str, Stream], stats_config: StatsMetricsConfig
+) -> dict[str, StreamStats]:
+    return {
+        streams[name].fullname: streams[name].block.make_stream_stats_tracker(
+            stream=streams[name].name, stats_config=stats_config
+        )
+        for name in streams
+    }
 
 
 def compute_loss(components, layer_discount) -> float:
