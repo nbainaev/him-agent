@@ -11,7 +11,7 @@ from hima.experiments.temporal_pooling.new.blocks.graph import Stream
 TMetrics = dict[str, Any]
 
 
-class StreamStats:
+class StatsTracker:
     stream: Stream
 
     def __init__(self, stream: Stream):

@@ -13,7 +13,7 @@ from hima.common.sds import Sds
 from hima.common.utils import clip
 from hima.experiments.temporal_pooling.new.blocks.encoder_resolver import resolve_encoder
 from hima.experiments.temporal_pooling.new.blocks.graph import Block, Stream
-from hima.experiments.temporal_pooling.new.blocks.stats import StreamStats
+from hima.experiments.temporal_pooling.new.blocks.stats import StatsTracker
 from hima.experiments.temporal_pooling.new.sdr_seq_cross_stats import \
     OfflineElementwiseSimilarityMatrix
 from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfig
@@ -22,21 +22,21 @@ from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfi
 class Sequence:
     """Sequence of SDRs."""
     id: int
-    _sequence: list[SparseSdr]
+    raw_sequence: list[SparseSdr]
 
     def __init__(self, id_: int, sequence):
         self.id = id_
-        self._sequence = sequence
+        self.raw_sequence = sequence
 
     def __iter__(self) -> Iterator[dict]:
-        for sdr in self._sequence:
+        for sdr in self.raw_sequence:
             yield dict(input=sdr)
 
     def __len__(self):
-        return len(self._sequence)
+        return len(self.raw_sequence)
 
 
-class SyntheticSequencesDatasetBlockStats(StreamStats):
+class SyntheticSequencesDatasetBlockStatsTracker(StatsTracker):
     n_sequences: int
     sequences: list[list[set[int]]]
     cross_stats: OfflineElementwiseSimilarityMatrix
@@ -44,7 +44,7 @@ class SyntheticSequencesDatasetBlockStats(StreamStats):
     def __init__(
             self, sequences: list[Sequence], stream: Stream, stats_config: StatsMetricsConfig
     ):
-        super(SyntheticSequencesDatasetBlockStats, self).__init__(stream=stream)
+        super(SyntheticSequencesDatasetBlockStatsTracker, self).__init__(stream=stream)
 
         self.n_sequences = len(sequences)
         self.sequences = [
@@ -83,9 +83,10 @@ class SyntheticSequencesDatasetBlock(Block):
 
     def make_stream_stats_tracker(
             self, *, stream: str, stats_config: StatsMetricsConfig, **kwargs
-    ) -> StreamStats:
-        return SyntheticSequencesDatasetBlockStats(
-            self._sequences, self.streams[stream], stats_config
+    ) -> StatsTracker:
+        raw_sequences = [seq.raw_sequence for seq in self._sequences]
+        return SyntheticSequencesDatasetBlockStatsTracker(
+            raw_sequences, self.streams[stream], stats_config
         )
 
     def build(self):

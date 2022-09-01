@@ -15,7 +15,7 @@ from wandb.sdk.wandb_run import Run
 from hima.common.config_utils import TConfig
 from hima.common.utils import ensure_list
 from hima.experiments.temporal_pooling.new.blocks.graph import Block, Stream
-from hima.experiments.temporal_pooling.new.blocks.stats import StreamStats
+from hima.experiments.temporal_pooling.new.blocks.stats import StatsTracker
 from hima.experiments.temporal_pooling.new.metrics import (
     multiplicative_loss, DISTR_SIM_PMF
 )
@@ -55,7 +55,7 @@ class ExperimentStats:
 
     sequence_ids_order: list[TSequenceId]
     logging_temporally_disabled: int
-    stats_registry: dict[TSequenceId, dict[TStreamName, StreamStats]]
+    stats_registry: dict[TSequenceId, dict[TStreamName, StatsTracker]]
     cross_stats_registry: dict[TStreamName, dict[TMetricsName, SimilarityMatrix]]
 
     debug: bool
@@ -180,7 +180,7 @@ class ExperimentStats:
         if self.logger:
             self.logger.log(metrics, step=self.progress.step)
 
-    def summarize_input(self, stream_stats: StreamStats, metrics: dict, diff_metrics: list):
+    def summarize_input(self, stream_stats: StatsTracker, metrics: dict, diff_metrics: list):
         stream = stream_stats.stream
         stream_metrics = stream_stats.aggregate_metrics()
 
@@ -435,7 +435,7 @@ def _get_tracked_streams(track_stats: TConfig, blocks: dict[str, Block]) -> dict
 
 def _make_stat_trackers(
         streams: dict[str, Stream], stats_config: StatsMetricsConfig
-) -> dict[str, StreamStats]:
+) -> dict[str, StatsTracker]:
     return {
         streams[name].fullname: streams[name].block.make_stream_stats_tracker(
             stream=streams[name].name, stats_config=stats_config

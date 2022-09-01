@@ -12,7 +12,7 @@ from htm.bindings.sdr import SDR
 from hima.common.config_utils import resolve_init_params, extracted
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
-from hima.experiments.temporal_pooling.new.blocks.computational_graph import Block
+from hima.experiments.temporal_pooling.new.blocks.graph import Block
 from hima.experiments.temporal_pooling.new.blocks.base_block_stats import BlockStats
 from hima.experiments.temporal_pooling.new.sdr_seq_stats import SdrSequenceStats
 from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfig
