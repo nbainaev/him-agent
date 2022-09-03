@@ -35,7 +35,7 @@ class SdrTracker(Tracker):
     entropy_coverage: float
 
     # aggregate cluster/sequence/set data or metrics
-    sdr_history: SetSdrSequence
+    sequence: SetSdrSequence
     pmf_coverage_history: list[float]
     aggregate_histogram: np.ndarray
     aggregate_sparsity: float
@@ -47,13 +47,13 @@ class SdrTracker(Tracker):
         self._reset()
 
     def _reset(self):
-        self.sdr_history = []
+        self.sequence = []
         self.pmf_coverage_history = []
         self.aggregate_histogram = np.zeros(self.sds.size)
 
     def aggregate_pmf(self) -> np.ndarray:
         return safe_divide(
-            self.aggregate_histogram, len(self.sdr_history),
+            self.aggregate_histogram, len(self.sequence),
             default=self.aggregate_histogram
         )
 
@@ -62,13 +62,13 @@ class SdrTracker(Tracker):
 
     def on_step(self, sdr: SparseSdr):
         list_sdr = sdr
-        self.sdr_history.append(set(sdr))
+        self.sequence.append(set(sdr))
         self.aggregate_histogram[list_sdr] += 1
 
         # step metrics
-        sdr: set = self.sdr_history[-1]
+        sdr: set = self.sequence[-1]
         sdr_size = len(sdr)
-        prev_sdr = self.sdr_history[-2] if len(self.sdr_history) > 1 else set()
+        prev_sdr = self.sequence[-2] if len(self.sequence) > 1 else set()
 
         self.sparsity = safe_divide(sdr_size, self.sds.size)
         self.relative_sparsity = safe_divide(sdr_size, self.sds.active_size)
