@@ -42,6 +42,7 @@ class GwStriatumTest(Runner):
 
         self.episode = 0
         self.steps = 0
+        self.total_steps = 0
         self.q_map = np.ma.zeros((*self.environment.shape, self.environment.n_actions))
         self.q_map[:, :] = np.ma.masked
         self.v_map = np.ma.zeros(self.environment.shape)
@@ -62,6 +63,7 @@ class GwStriatumTest(Runner):
 
             self.environment.act(a)
             self.steps += 1
+            self.total_steps += 1
             reward, _, _ = self.environment.observe()
             self.agent.update(reward)
 
@@ -73,8 +75,11 @@ class GwStriatumTest(Runner):
                 if self.episode % self.change_step == 0:
                     self.change_task()
                 if self.logger:
-                    self.log_metrics()
-                    self.logger.log({'steps': self.steps}, step=self.episode)
+                    # self.log_metrics()
+                    self.logger.log({
+                        'steps': self.steps,
+                        'total_steps': self.total_steps 
+                    }, step=self.episode)
                 self.steps = 0
                 if self.episode == self.n_episodes:
                     break

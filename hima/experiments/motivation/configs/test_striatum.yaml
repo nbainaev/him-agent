@@ -50,12 +50,12 @@ environment:
     early_stop: true
     n_items_to_collect: 1
 
-n_episodes: 200
+n_episodes: 500
 change_step: 50
 tasks:
   - [1, 1]
   - [5, 5]
-task_queue: [0, 1, 0, 1]
+task_queue: [0, 1, 0, 1, 0, 1, 0, 1, 0, 1]
 motiv_size: 10
 motiv_dim: 50
 agent_config:
