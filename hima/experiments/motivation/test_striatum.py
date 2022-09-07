@@ -16,6 +16,43 @@ from hima.common.run_utils import Runner
 from hima.common.config_utils import TConfig
 from hima.common.plot_utils import transform_fig_to_image
 from hima.agents.motivation.agent import Agent
+from collections import Counter
+import matplotlib.colors as mcolors
+from hima.common.sdr import SparseSdr
+
+
+class VizSDR:
+    def __init__(self, num_vars: int, sdr_size: int):
+        self.data = [Counter() for _ in range(num_vars)]
+        self.total_inputs = 0
+        self.num_vars = num_vars
+        self.sdr_size = sdr_size
+
+    def update(self, sdr: SparseSdr, sdr_var: int):
+        self.data[sdr_var].update(sdr)
+        self.total_inputs += 1
+
+    def plot_hist(self):
+        fig, ax = plt.subplots()
+        fig.set_dpi(500)
+
+        columns = np.arange(self.sdr_size)
+        colors = [*mcolors.BASE_COLORS.keys()]
+        if self.num_vars > len(colors):
+            raise ValueError('Too many sdr variations')
+        y_offset = np.zeros(self.sdr_size)
+        data = np.zeros(self.sdr_size)
+        norm = self.total_inputs
+        for var in range(self.num_vars):
+            index = np.array([*self.data[var].keys()], dtype=int)
+            data[index] = [self.data[var][s] / norm for s in index]
+            ax.bar(columns, data, 1, bottom=y_offset, color=colors[var])
+            y_offset = y_offset + data
+            data.fill(0)
+
+        img = transform_fig_to_image(fig)
+        plt.close(fig)
+        return img
 
 
 class GwStriatumTest(Runner):
@@ -47,6 +84,8 @@ class GwStriatumTest(Runner):
         self.q_map[:, :] = np.ma.masked
         self.v_map = np.ma.zeros(self.environment.shape)
         self.v_map[:, :] = np.ma.masked
+        self.preactivation_stat = VizSDR(len(self.tasks), self.agent.striatum.action_size)
+        self.motiv_stat = VizSDR(len(self.tasks), self.agent.motiv_dim)
 
     def run(self):
         while True:
@@ -54,6 +93,8 @@ class GwStriatumTest(Runner):
             motiv = np.arange(t * self.motiv_size, (t + 1) * self.motiv_size)
             _, obs, _ = self.environment.observe()
             a = self.agent.act(obs, motiv)
+            self.preactivation_stat.update(self.agent.striatum.preactivation_field, t)
+            self.motiv_stat.update(motiv, t)
             self.v_map[self.environment.agent.position] = self.agent.get_value()
             self.q_map[
                 self.environment.agent.position[0],
@@ -76,6 +117,7 @@ class GwStriatumTest(Runner):
                     self.change_task()
                 if self.logger:
                     # self.log_metrics()
+                    self.log_sdr_statistics()
                     self.logger.log({
                         'steps': self.steps,
                         'total_steps': self.total_steps 
@@ -135,4 +177,20 @@ class GwStriatumTest(Runner):
                 'maps/v_map': wandb.Image(plt.imshow(self.v_map))
             }, step=self.episode
         )
+
+    def log_sdr_statistics(self):
+        img = self.preactivation_stat.plot_hist()
+        motiv_img = self.motiv_stat.plot_hist()
+        wandb.log({
+            'preactivation_hist': wandb.Image(img),
+            'motiv_hist': wandb.Image(motiv_img),
+            'motiv_weights': wandb.Image(
+                plt.imshow(
+                    self.agent.striatum.motiv_weights.dopa_weights.synapse_values.values.reshape((
+                        self.agent.striatum.motiv_weights.output_size,
+                        self.agent.striatum.motiv_weights.potential_size
+                    ))
+                )
+            )
+        }, step=self.episode)
 

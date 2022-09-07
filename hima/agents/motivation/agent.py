@@ -17,6 +17,7 @@ class Agent:
         self._rng = np.random.default_rng(self.seed)
         self.temperature = config['temperature']
         self.action_dim = action_dim
+        self.motiv_dim = motiv_dim
         self.striatum = Striatum(self.seed, obs_dim, motiv_dim, **config['striatum'])
 
         self.p = None

@@ -87,12 +87,14 @@ class Striatum:
         self.last_ma = None
         self.last_reward = None
         self.is_first = True
+        self.preactivation_field = None
 
     def compute(self, state: SparseSdr, motiv: SparseSdr) -> SparseSdr:
         # p is top under motiv
         bwm = self.boost_factors * (self.motiv_weights * motiv)
         k = self.motiv_no_active_size
         p = np.argpartition(bwm, k)[k:]
+        self.preactivation_field = np.copy(p)
 
         # a is top under p conditioned by state
         ws = self.state_weights.selective_mult(state, p)
