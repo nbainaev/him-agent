@@ -536,7 +536,7 @@ class GeneralFeedbackTM:
         )
 
         #
-        one_per_column_filter = argmaxMulti(
+        one_per_column_filter_basal = argmaxMulti(
             self.num_potential_basal[
                 candidate_basal_segments
             ] + tiebreaker / (tiebreaker + 1) - 0.5,
@@ -545,12 +545,14 @@ class GeneralFeedbackTM:
             )
         )
 
-        learning_basal_segments = candidate_basal_segments[one_per_column_filter]
+        learning_basal_segments = candidate_basal_segments[one_per_column_filter_basal]
         cells_for_learning_basal_segments = self.basal_connections.mapSegmentsToCells(
             learning_basal_segments
         )
-
-        learning_apical_segments = candidate_apical_segments
+        learning_apical_segments = self.apical_connections.filterSegmentsByCell(
+            candidate_apical_segments,
+            cells_for_learning_basal_segments
+        )
         # if there is no matching apical segment on learning_basal_segment: grow one
         cells_to_grow_apical_segments = cells_for_learning_basal_segments[
             np.in1d(
@@ -559,6 +561,46 @@ class GeneralFeedbackTM:
                 invert=True
             )
         ]
+
+        # in columns that don't have basal segments
+        # choose the best apical segment per column
+
+        mask = np.in1d(
+            self._columns_for_cells(cells_for_apical_segments),
+            self._columns_for_cells(cells_for_learning_basal_segments),
+            invert=True
+        )
+        cells_with_apical_segments_in_columns_without_basal_segments = cells_for_apical_segments[
+            mask
+        ]
+
+        candidate_apical_segments = self.apical_connections.filterSegmentsByCell(
+            candidate_apical_segments,
+            cells_with_apical_segments_in_columns_without_basal_segments
+        )
+
+        if len(candidate_apical_segments) > 0:
+            segment_potentials = self.num_potential_apical[
+                candidate_apical_segments
+            ]
+            tiebreaker = np.empty_like(segment_potentials, dtype=REAL64_DTYPE)
+            self.rng.initializeReal64Array(tiebreaker)
+            segment_potentials = segment_potentials + tiebreaker * 0.1
+
+            one_per_column_filter_apical = argmaxMulti(
+                segment_potentials,
+                groupKeys=self._columns_for_cells(
+                    self.apical_connections.mapSegmentsToCells(candidate_apical_segments)
+                )
+            )
+
+            learning_apical_segments2 = candidate_apical_segments[one_per_column_filter_apical]
+        else:
+            learning_apical_segments2 = np.empty(0)
+
+        learning_apical_segments = np.concatenate(
+            [learning_apical_segments, learning_apical_segments2]
+        )
 
         return (learning_basal_segments.astype(UINT_DTYPE),
                 learning_apical_segments.astype(UINT_DTYPE),
