@@ -223,7 +223,7 @@ def sequence_similarity_by_prefixes(
 
 
 # ==================== Distributions or cluster distribution similarity ====================
-def aggregate_pmf(seq: list, sds: Sds) -> np.ndarray:
+def aggregate_pmf(seq: list, sds: Sds, decay: float = 1.0) -> np.ndarray:
     """Return empirical probability-mass-like function for a sequence."""
     is_tuple = isinstance(seq[0], tuple)
     histogram = np.zeros(sds.size)
@@ -233,8 +233,12 @@ def aggregate_pmf(seq: list, sds: Sds) -> np.ndarray:
             s = s[0]
         if isinstance(s, set):
             s = list(s)
-        histogram[s] += 1
-        cnt += 1
+        if decay < 1.:
+            histogram *= decay
+            cnt *= decay
+
+        histogram[s] += 1.
+        cnt += 1.
     return histogram / cnt
 
 

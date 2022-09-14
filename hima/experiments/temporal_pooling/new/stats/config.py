@@ -6,20 +6,26 @@
 
 
 class StatsMetricsConfig:
-    normalization: str
-
-    prefix_similarity_discount: float
-    loss_on_mae: bool
-    loss_layer_discount: float
-
+    mae_normalization: str
     symmetrical_similarity: bool
 
+    distribution_metrics: str
+    online_similarity_decay: float
+    pmf_decay: float
+
+    loss_normalization: bool
+    loss_layer_discount: float
+
     def __init__(
-            self, normalization: str, prefix_similarity_discount: float,
-            loss_layer_discount: float, loss_on_mae: bool, symmetrical_similarity: bool
+            self, mae_normalization: str, symmetrical_similarity: bool,
+            distribution_metrics: str,
+            online_similarity_decay: float, pmf_decay: float,
+            loss_normalization: bool, loss_layer_discount: float,
     ):
-        self.normalization = normalization
-        self.prefix_similarity_discount = prefix_similarity_discount
-        self.loss_layer_discount = loss_layer_discount
-        self.loss_on_mae = loss_on_mae
+        self.mae_normalization = mae_normalization
         self.symmetrical_similarity = symmetrical_similarity
+        self.distribution_metrics = distribution_metrics
+        self.online_similarity_decay = online_similarity_decay
+        self.pmf_decay = pmf_decay
+        self.loss_normalization = loss_normalization
+        self.loss_layer_discount = loss_layer_discount

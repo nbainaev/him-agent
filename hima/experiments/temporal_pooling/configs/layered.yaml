@@ -9,11 +9,13 @@ seed: 42
 debug: False
 
 stats_and_metrics:
-  normalization: mean
-  prefix_similarity_discount: 1.
-  loss_on_mae: True
-  loss_layer_discount: 0.75
+  mae_normalization: mean
   symmetrical_similarity: False
+  distribution_metrics: pmf
+  online_similarity_decay: 1.
+  pmf_decay: 1.
+  loss_normalization: False
+  loss_layer_discount: 0.75
 
 pipeline:
   - ___.input -> gen.output
@@ -21,6 +23,12 @@ pipeline:
 #  - ???.output -> sp2.feedforward
 #  - sp.output -> ___.output
   - gen.output -> ___.output
+
+track_streams:
+  gen.output:
+    - sdr
+    - cross.offline.el
+    - cross.online.el
 
 blocks:
   gen:
@@ -31,12 +39,10 @@ blocks:
   sp1:
     _type_family_: spatial_pooler
     _base_config_: wide
-    track_stats: []
     output_sds: [400, 0.1]
   sp2:
     _type_family_: spatial_pooler
     _base_config_: wide
-    track_stats: []
     output_sds: [500, 0.1]
 
 generator:
@@ -64,10 +70,10 @@ generator:
 
 run_setups:
   simple:
-    n_sequences: 3
+    n_sequences: 5
     steps_per_sequence: 10
     sequence_repeats: 3
-    epochs: 2
+    epochs: 4
     # FIXME: to ???
     total_repeats: ...
     sp_output_sds: [400, 10]
