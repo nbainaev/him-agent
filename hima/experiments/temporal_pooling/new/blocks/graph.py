@@ -62,9 +62,9 @@ class Block(ABC):
             self.streams[name] = Stream(name=name, block=self)
         return self.streams[name]
 
-    @abstractmethod
-    def make_stream_stats_tracker(self, *, stream: str, stats_config, **kwargs):
-        raise NotImplementedError()
+    def reset(self, **kwargs):
+        for name in self.streams:
+            self.streams[name].sdr = []
 
     @abstractmethod
     def build(self, **kwargs):

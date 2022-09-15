@@ -30,6 +30,10 @@ track_streams:
     - cross.offline.el
     - cross.online.el
 
+diff_stats:
+  offline_el:
+    - gen.output
+
 blocks:
   gen:
     _type_family_: generator

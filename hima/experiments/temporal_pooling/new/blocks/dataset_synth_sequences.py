@@ -36,32 +36,6 @@ class Sequence:
         return len(self.raw_sequence)
 
 
-class SyntheticSequencesDatasetBlockStatsTracker(StatsTracker):
-    n_sequences: int
-    sequences: list[list[set[int]]]
-    cross_stats: OfflineElementwiseSimilarityMatrix
-
-    def __init__(
-            self, sequences: list[Sequence], stream: Stream, stats_config: StatsMetricsConfig
-    ):
-        super(SyntheticSequencesDatasetBlockStatsTracker, self).__init__(stream=stream)
-
-        self.n_sequences = len(sequences)
-        self.sequences = [
-            [set(sdr) for sdr in seq]
-            for seq in sequences
-        ]
-        self.cross_stats = OfflineElementwiseSimilarityMatrix(
-            sequences=self.sequences,
-            normalization=stats_config.normalization,
-            discount=stats_config.prefix_similarity_discount,
-            symmetrical=False
-        )
-
-    def aggregate_metrics(self) -> dict[str, Any]:
-        return self.cross_stats.aggregate_metrics()
-
-
 class SyntheticSequencesDatasetBlock(Block):
     OUTPUT = 'output'
 
@@ -81,16 +55,11 @@ class SyntheticSequencesDatasetBlock(Block):
         self._sequences = sequences
         self.register_stream(self.OUTPUT).resolve_sds(values_sds)
 
-    def make_stream_stats_tracker(
-            self, *, stream: str, stats_config: StatsMetricsConfig, **kwargs
-    ) -> StatsTracker:
-        raw_sequences = [seq.raw_sequence for seq in self._sequences]
-        return SyntheticSequencesDatasetBlockStatsTracker(
-            raw_sequences, self.streams[stream], stats_config
-        )
+    def reset(self, **kwargs):
+        super(SyntheticSequencesDatasetBlock, self).reset(**kwargs)
 
     def build(self):
-        ...
+        pass
 
     def __iter__(self) -> Iterator[Sequence]:
         return iter(self._sequences)

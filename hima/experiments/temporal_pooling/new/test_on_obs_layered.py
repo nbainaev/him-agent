@@ -135,8 +135,7 @@ class ObservationsLayeredExperiment(Runner):
         self.stats.on_epoch_finished(epoch_final_log_scheduled)
 
     def run_sequence(self, sequence: Sequence, i_repeat: int = 0, learn=True):
-        # self.reset_blocks(block_type='temporal_memory')
-        # self.reset_blocks(block_type='temporal_pooler')
+        self.reset_blocks('temporal_memory', 'temporal_pooler')
 
         log_scheduled = scheduled(
             i=i_repeat, schedule=self.run_setup.log_repeat_schedule,
@@ -149,11 +148,12 @@ class ObservationsLayeredExperiment(Runner):
             self.pipeline.step(input_data, learn=learn)
             self.stats.on_step()
 
-    def reset_blocks(self, block_type):
-        for name in self.blocks:
-            block = self.blocks[name]
-            if block.family == block_type:
-                self.blocks[name].reset()
+    def reset_blocks(self, *blocks_family):
+        blocks_family = set(blocks_family)
+        for name in self.pipeline.blocks:
+            block = self.pipeline.blocks[name]
+            if block.family in blocks_family:
+                block.reset()
 
 
 def resolve_random_seed(seed: Optional[int]) -> int:
