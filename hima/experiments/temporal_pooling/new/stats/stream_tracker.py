@@ -3,6 +3,8 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from typing import Iterable, TypeVar
+
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.new.blocks.graph import Stream
@@ -13,6 +15,8 @@ from hima.experiments.temporal_pooling.new.stats.tracker import Tracker, TMetric
 class StreamTracker(Tracker):
     stream: Stream
     trackers: list[Tracker]
+
+    # TODO: history of trackers?
 
     def __init__(
             self, stream: Stream, trackers: list[str], config: StatsMetricsConfig,
@@ -28,29 +32,44 @@ class StreamTracker(Tracker):
         ]
 
     @property
+    def name(self):
+        return self.stream.fullname
+
+    @property
     def sds(self):
         return self.stream.sds
 
     def on_sequence_started(self, sequence_id: int):
-        pass
+        for tracker in self.trackers:
+            tracker.on_sequence_started(sequence_id)
 
     def on_epoch_started(self):
-        pass
+        for tracker in self.trackers:
+            tracker.on_epoch_started()
 
     def on_step(self, sdr: SparseSdr):
-        pass
+        for tracker in self.trackers:
+            tracker.on_step(sdr)
 
     def on_sequence_finished(self):
-        pass
+        for tracker in self.trackers:
+            tracker.on_sequence_finished()
 
     def on_epoch_finished(self):
-        pass
+        for tracker in self.trackers:
+            tracker.on_epoch_finished()
 
     def step_metrics(self) -> TMetrics:
-        pass
+        result = {}
+        for tracker in self.trackers:
+            result.update(tracker.step_metrics())
+        return result
 
     def aggregate_metrics(self) -> TMetrics:
-        pass
+        result = {}
+        for tracker in self.trackers:
+            result.update(tracker.aggregate_metrics())
+        return result
 
 
 def resolve_tracker(
@@ -97,5 +116,3 @@ def resolve_tracker(
             online_similarity_decay=stats_config.online_similarity_decay,
             pmf_decay=stats_config.pmf_decay
         )
-
-

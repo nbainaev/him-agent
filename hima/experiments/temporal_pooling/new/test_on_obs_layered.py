@@ -13,7 +13,7 @@ from hima.common.config_utils import TConfig, resolve_value
 from hima.common.run_utils import Runner
 from hima.common.sds import Sds
 from hima.common.utils import timed
-from hima.experiments.temporal_pooling.config_resolvers import (
+from hima.experiments.temporal_pooling.new.config_resolvers import (
     resolve_run_setup
 )
 from hima.experiments.temporal_pooling.new.blocks.dataset_synth_sequences import Sequence
@@ -24,8 +24,8 @@ from hima.experiments.temporal_pooling.new.blocks.graph_resolver import (
     PipelineResolver,
     BlockRegistryResolver
 )
-from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfig
-from hima.experiments.temporal_pooling.new.test_stats import (
+from hima.experiments.temporal_pooling.new.stats.config import StatsMetricsConfig
+from hima.experiments.temporal_pooling.new.experiment_stats import (
     ExperimentStats,
     RunProgress
 )
@@ -78,7 +78,7 @@ class ObservationsLayeredExperiment(Runner):
             self, config: TConfig, seed: int, debug: bool,
             blocks: dict[str, TConfig], pipeline: list,
             run_setup: TConfig, stats_and_metrics: TConfig,
-            track_stats: TConfig,
+            track_streams: TConfig,
             **_
     ):
         super().__init__(config, **config)
@@ -103,7 +103,7 @@ class ObservationsLayeredExperiment(Runner):
         self.stats = ExperimentStats(
             n_sequences=self.run_setup.n_sequences,
             progress=self.progress, logger=self.logger,
-            blocks=self.pipeline.blocks, track_stats=track_stats,
+            blocks=self.pipeline.blocks, track_streams=track_streams,
             stats_config=self.stats_config,
             debug=debug
         )
@@ -120,18 +120,19 @@ class ObservationsLayeredExperiment(Runner):
     @timed
     def train_epoch(self):
         self.progress.next_epoch()
-        self.stats.on_new_epoch()
+        self.stats.on_epoch_started()
 
         # noinspection PyTypeChecker
         for sequence in self.generator:
             for i_repeat in range(self.run_setup.sequence_repeats):
                 self.run_sequence(sequence, i_repeat, learn=True)
+            self.stats.on_sequence_finished()
 
         epoch_final_log_scheduled = scheduled(
             i=self.progress.epoch, schedule=self.run_setup.log_epoch_schedule,
             always_report_first=True, always_report_last=True, i_max=self.run_setup.epochs
         )
-        self.stats.on_finish(epoch_final_log_scheduled)
+        self.stats.on_epoch_finished(epoch_final_log_scheduled)
 
     def run_sequence(self, sequence: Sequence, i_repeat: int = 0, learn=True):
         # self.reset_blocks(block_type='temporal_memory')
@@ -141,7 +142,7 @@ class ObservationsLayeredExperiment(Runner):
             i=i_repeat, schedule=self.run_setup.log_repeat_schedule,
             always_report_first=True, always_report_last=True, i_max=self.run_setup.sequence_repeats
         )
-        self.stats.on_new_sequence(sequence.id, log_scheduled)
+        self.stats.on_sequence_started(sequence.id, log_scheduled)
 
         for input_data in sequence:
             self.progress.next_step()

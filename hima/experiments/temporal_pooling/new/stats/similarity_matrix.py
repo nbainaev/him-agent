@@ -82,11 +82,11 @@ class SimilarityMatrix(Tracker):
     def aggregate_metrics(self) -> TMetrics:
         tag = self.tag
         agg_metrics = {
-            f'raw_sim_mx_{tag}': self.mx,
+            f'sim_mx_{tag}': self.mx,
         }
 
         if self.normalization != NO_NORMALIZATION:
-            agg_metrics[f'sim_mx_{tag}'] = standardize_sample_distribution(
+            agg_metrics[f'norm_sim_mx_{tag}'] = standardize_sample_distribution(
                 self.mx, normalization=self.normalization
             )
 

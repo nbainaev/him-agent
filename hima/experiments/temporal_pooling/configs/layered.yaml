@@ -9,7 +9,7 @@ seed: 42
 debug: False
 
 stats_and_metrics:
-  mae_normalization: mean
+  mae_normalization: no
   symmetrical_similarity: False
   distribution_metrics: pmf
   online_similarity_decay: 1.

@@ -6,7 +6,7 @@
 
 
 class StatsMetricsConfig:
-    normalization: str
+    mae_normalization: str
 
     prefix_similarity_discount: float
     loss_on_mae: bool
@@ -15,10 +15,10 @@ class StatsMetricsConfig:
     symmetrical_similarity: bool
 
     def __init__(
-            self, normalization: str, prefix_similarity_discount: float,
+            self, mae_normalization: str, prefix_similarity_discount: float,
             loss_layer_discount: float, loss_on_mae: bool, symmetrical_similarity: bool
     ):
-        self.normalization = normalization
+        self.mae_normalization = mae_normalization
         self.prefix_similarity_discount = prefix_similarity_discount
         self.loss_layer_discount = loss_layer_discount
         self.loss_on_mae = loss_on_mae
