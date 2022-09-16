@@ -17,7 +17,7 @@ DISTR_SIM_KL = 'kl-divergence'
 
 MEAN_STD_NORMALIZATION = 'mean-std'
 MIN_MINMAX_NORMALIZATION = 'min-minmax'
-NO_NORMALIZATION = 'NO'
+NO_NORMALIZATION = 'no'
 
 
 # ==================== Sdr [sequence] similarity ====================
@@ -31,6 +31,7 @@ def dense_similarity(x1: DenseSdr, x2: DenseSdr, symmetrical: bool = False) -> f
 
 
 def sdr_similarity(x1: set, x2: set, symmetrical: bool = False) -> float:
+    assert isinstance(x1, set) and isinstance(x2, set)
     overlap = len(x1 & x2)
     if symmetrical:
         return safe_divide(overlap, len(x1 | x2))

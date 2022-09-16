@@ -19,20 +19,27 @@ stats_and_metrics:
 
 pipeline:
   - ___.input -> gen.output
-#  - gen.output -> sp1.feedforward
+  - gen.output -> sp1.feedforward
 #  - ???.output -> sp2.feedforward
-#  - sp.output -> ___.output
-  - gen.output -> ___.output
+  - ???.output -> ___.output
 
 track_streams:
   gen.output:
     - sdr
     - cross.offline.el
     - cross.online.el
+  sp1.output:
+    - sdr
+    - cross.offline.el
+    - cross.online.el
 
 diff_stats:
   offline_el:
-    - gen.output
+    - gen.output/epoch/sim_mx_on_el
+    - sp1.output/epoch/sim_mx_on_el
+  online_el:
+    - gen.output/epoch/sim_mx_off_el
+    - sp1.output/epoch/sim_mx_off_el
 
 blocks:
   gen:

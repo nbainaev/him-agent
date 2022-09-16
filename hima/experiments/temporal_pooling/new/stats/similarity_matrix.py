@@ -39,10 +39,12 @@ class SimilarityMatrix(Tracker):
 
     current_seq_id: Optional[int]
     current_seq: SdrSequence
+    _transform_sdr_to_set: bool
 
     def __init__(
             self, tag: str, n_sequences: int, sds: Sds, *,
-            normalization: str = None, symmetrical: bool = False
+            normalization: str = None, symmetrical: bool = False,
+            transform_sdr_to_set: bool = False
     ):
         self.tag = tag
         self.n_sequences = n_sequences
@@ -52,6 +54,7 @@ class SimilarityMatrix(Tracker):
 
         self.current_seq_id = None
         self.current_seq = []
+        self._transform_sdr_to_set = transform_sdr_to_set
 
         # FIXME: do we need diag?
         raw_mx = np.empty((n_sequences, n_sequences))
@@ -70,6 +73,8 @@ class SimilarityMatrix(Tracker):
     def on_step(self, sdr: SparseSdr):
         # NB: both online and offline similarity calculation goes on seq finish
         # because similarity matrix isn't published at each time step
+        if self._transform_sdr_to_set:
+            sdr = set(sdr)
         self.current_seq.append(sdr)
 
     def on_sequence_finished(self):
@@ -82,11 +87,11 @@ class SimilarityMatrix(Tracker):
     def aggregate_metrics(self) -> TMetrics:
         tag = self.tag
         agg_metrics = {
-            f'sim_mx_{tag}': self.mx,
+            f'epoch/sim_mx_{tag}': self.mx,
         }
 
         if self.normalization != NO_NORMALIZATION:
-            agg_metrics[f'norm_sim_mx_{tag}'] = standardize_sample_distribution(
+            agg_metrics[f'epoch/norm_sim_mx_{tag}'] = standardize_sample_distribution(
                 self.mx, normalization=self.normalization
             )
 
@@ -100,7 +105,8 @@ class OfflineElementwiseSimilarityMatrix(SimilarityMatrix):
         self.sequences = [None] * n_sequences
         super(OfflineElementwiseSimilarityMatrix, self).__init__(
             tag='off_el', n_sequences=n_sequences, sds=sds,
-            normalization=normalization, symmetrical=symmetrical
+            normalization=normalization, symmetrical=symmetrical,
+            transform_sdr_to_set=True
         )
 
     def on_sequence_finished(self):
@@ -173,15 +179,14 @@ class OnlineElementwiseSimilarityMatrix(SimilarityMatrix):
         self.online_similarity_decay = online_similarity_decay
         super(OnlineElementwiseSimilarityMatrix, self).__init__(
             tag='on_el', n_sequences=n_sequences, sds=sds,
-            normalization=normalization, symmetrical=symmetrical
+            normalization=normalization, symmetrical=symmetrical,
+            transform_sdr_to_set=True
         )
 
     def on_sequence_finished(self):
         n_seq_elements = len(self.current_seq)
 
-        self.current_seq = [set(sdr) for sdr in self.current_seq]
         similarity_sum = np.zeros(self.n_sequences)
-
         for step in range(n_seq_elements):
             prefix_size = step + 1
             for j in range(self.n_sequences):

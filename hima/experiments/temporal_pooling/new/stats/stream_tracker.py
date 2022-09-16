@@ -3,13 +3,12 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from typing import Iterable, TypeVar
-
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.new.blocks.graph import Stream
 from hima.experiments.temporal_pooling.new.stats.config import StatsMetricsConfig
 from hima.experiments.temporal_pooling.new.stats.tracker import Tracker, TMetrics
+from hima.experiments.temporal_pooling.new.utils import rename_dict_keys
 
 
 class StreamTracker(Tracker):
@@ -63,12 +62,14 @@ class StreamTracker(Tracker):
         result = {}
         for tracker in self.trackers:
             result.update(tracker.step_metrics())
+        result = rename_dict_keys(result, add_prefix=f'{self.name}/')
         return result
 
     def aggregate_metrics(self) -> TMetrics:
         result = {}
         for tracker in self.trackers:
             result.update(tracker.aggregate_metrics())
+        result = rename_dict_keys(result, add_prefix=f'{self.name}/')
         return result
 
 
