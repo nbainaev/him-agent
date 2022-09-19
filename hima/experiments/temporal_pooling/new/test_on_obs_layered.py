@@ -20,7 +20,7 @@ from hima.experiments.temporal_pooling.new.blocks.dataset_synth_sequences import
 from hima.experiments.temporal_pooling.new.blocks.graph import (
     Block, Pipeline
 )
-from hima.experiments.temporal_pooling.new.resolvers.graph_resolver import (
+from hima.experiments.temporal_pooling.new.resolvers.graph import (
     PipelineResolver,
     BlockRegistryResolver
 )

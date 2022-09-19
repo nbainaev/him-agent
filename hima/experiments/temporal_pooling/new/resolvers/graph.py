@@ -51,10 +51,10 @@ class BlockRegistryResolver:
     @staticmethod
     def _get_block_resolvers():
         # to prevent circular imports resolvers should be imported locally
-        from hima.experiments.temporal_pooling.new.resolvers.dataset_resolver import (
+        from hima.experiments.temporal_pooling.new.resolvers.dataset import (
             DataGeneratorResolver
         )
-        from hima.experiments.temporal_pooling.new.resolvers.sp_resolver import SpatialPoolerResolver
+        from hima.experiments.temporal_pooling.new.resolvers.sp import SpatialPoolerResolver
 
         return {
             DataGeneratorResolver.family: DataGeneratorResolver(),

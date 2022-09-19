@@ -11,7 +11,7 @@ from numpy.random import Generator
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import clip
-from hima.experiments.temporal_pooling.new.resolvers.encoder_resolver import resolve_encoder
+from hima.experiments.temporal_pooling.new.resolvers.encoder import resolve_encoder
 from hima.experiments.temporal_pooling.new.blocks.graph import Block
 
 
