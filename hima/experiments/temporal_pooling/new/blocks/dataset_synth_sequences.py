@@ -3,7 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from typing import Iterator, Any
+from typing import Iterator
 
 import numpy as np
 from numpy.random import Generator
@@ -11,12 +11,8 @@ from numpy.random import Generator
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import clip
-from hima.experiments.temporal_pooling.new.blocks.encoder_resolver import resolve_encoder
-from hima.experiments.temporal_pooling.new.blocks.graph import Block, Stream
-from hima.experiments.temporal_pooling.new.blocks.stats import StatsTracker
-from hima.experiments.temporal_pooling.new.sdr_seq_cross_stats import \
-    OfflineElementwiseSimilarityMatrix
-from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfig
+from hima.experiments.temporal_pooling.new.resolvers.encoder_resolver import resolve_encoder
+from hima.experiments.temporal_pooling.new.blocks.graph import Block
 
 
 class Sequence:

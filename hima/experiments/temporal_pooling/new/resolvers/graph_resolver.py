@@ -3,6 +3,7 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+
 from abc import ABC
 from typing import Optional, Any
 
@@ -50,10 +51,10 @@ class BlockRegistryResolver:
     @staticmethod
     def _get_block_resolvers():
         # to prevent circular imports resolvers should be imported locally
-        from hima.experiments.temporal_pooling.new.blocks.dataset_resolver import (
+        from hima.experiments.temporal_pooling.new.resolvers.dataset_resolver import (
             DataGeneratorResolver
         )
-        from hima.experiments.temporal_pooling.new.blocks.sp_resolver import SpatialPoolerResolver
+        from hima.experiments.temporal_pooling.new.resolvers.sp_resolver import SpatialPoolerResolver
 
         return {
             DataGeneratorResolver.family: DataGeneratorResolver(),

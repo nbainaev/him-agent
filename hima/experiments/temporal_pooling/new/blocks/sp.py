@@ -58,7 +58,3 @@ class SpatialPoolerBlock(Block):
         self._active_input.sparse = feedforward.copy()
         self.sp.compute(self._active_input, learn=learn, output=self._active_output)
         self.streams[self.OUTPUT].sdr = np.array(self._active_output.sparse, copy=True)
-
-def resolve_sp(sp_config, block_id: int, block_name: str, **induction_registry):
-    sp_config = resolve_init_params(sp_config, raise_if_not_resolved=False, **induction_registry)
-    return SpatialPoolerBlock(block_id, block_name, **sp_config)
