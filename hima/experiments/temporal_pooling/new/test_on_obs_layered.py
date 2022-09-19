@@ -13,7 +13,7 @@ from hima.common.config_utils import TConfig, resolve_value
 from hima.common.run_utils import Runner
 from hima.common.sds import Sds
 from hima.common.utils import timed
-from hima.experiments.temporal_pooling.new.config_resolvers import (
+from hima.experiments.temporal_pooling.new.run_setup_resolver import (
     resolve_run_setup
 )
 from hima.experiments.temporal_pooling.new.blocks.dataset_synth_sequences import Sequence

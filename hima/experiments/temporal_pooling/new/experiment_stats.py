@@ -14,7 +14,7 @@ from wandb.sdk.wandb_run import Run
 
 from hima.common.config_utils import TConfig
 from hima.experiments.temporal_pooling.new.blocks.graph import Block, Stream
-from hima.experiments.temporal_pooling.new.metrics import (
+from hima.experiments.temporal_pooling.new.stats.metrics import (
     multiplicative_loss
 )
 from hima.experiments.temporal_pooling.new.stats.config import StatsMetricsConfig

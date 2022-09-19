@@ -10,7 +10,7 @@ import numpy as np
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.common.utils import isnone
-from hima.experiments.temporal_pooling.new.metrics import (
+from hima.experiments.temporal_pooling.new.stats.metrics import (
     standardize_sample_distribution,
     sequence_similarity_elementwise, distribution_similarity, DISTR_SIM_PMF,
     DISTR_SIM_KL, NO_NORMALIZATION, aggregate_pmf

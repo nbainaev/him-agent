@@ -3,12 +3,13 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from typing import Any
+
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
 from hima.experiments.temporal_pooling.new.blocks.graph import Stream
 from hima.experiments.temporal_pooling.new.stats.config import StatsMetricsConfig
 from hima.experiments.temporal_pooling.new.stats.tracker import Tracker, TMetrics
-from hima.experiments.temporal_pooling.new.utils import rename_dict_keys
 
 
 class StreamTracker(Tracker):
@@ -117,3 +118,10 @@ def resolve_tracker(
             online_similarity_decay=stats_config.online_similarity_decay,
             pmf_decay=stats_config.pmf_decay
         )
+
+
+def rename_dict_keys(d: dict[str, Any], add_prefix):
+    return {
+        f'{add_prefix}{k}': d[k]
+        for k in d
+    }

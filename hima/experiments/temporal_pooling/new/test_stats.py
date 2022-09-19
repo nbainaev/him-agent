@@ -16,14 +16,14 @@ from hima.common.config_utils import TConfig
 from hima.common.utils import ensure_list
 from hima.experiments.temporal_pooling.new.blocks.graph import Block, Stream
 from hima.experiments.temporal_pooling.new.blocks.stats import StatsTracker
-from hima.experiments.temporal_pooling.new.metrics import (
+from hima.experiments.temporal_pooling.new.stats.metrics import (
     multiplicative_loss, DISTR_SIM_PMF
 )
 from hima.experiments.temporal_pooling.new.sdr_seq_cross_stats import (
     OnlinePmfSimilarityMatrix, OfflinePmfSimilarityMatrix, SimilarityMatrix
 )
 from hima.experiments.temporal_pooling.new.stats_config import StatsMetricsConfig
-from hima.experiments.temporal_pooling.new.utils import rename_dict_keys
+from hima.experiments.temporal_pooling.new.stats.stream_tracker import rename_dict_keys
 
 
 class RunProgress:

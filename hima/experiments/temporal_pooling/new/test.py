@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import wandb
 
-from data_generation import generate_random_positions_observations_v1_output
+from hima.experiments.temporal_pooling.new.data.data_generation import generate_random_positions_observations_v1_output
 from hima.experiments.temporal_pooling.data_generation import generate_data
 
 
