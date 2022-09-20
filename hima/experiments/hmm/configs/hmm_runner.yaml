@@ -1,0 +1,10 @@
+log: True
+project_name: 'mpg_hmm_test'
+n_episodes: 1001
+update_rate: 100
+smf_dist: 0.02
+
+hmm_conf: 'configs/hmm/hmm_default.yaml'
+mpg_conf: 'configs/mpg/mpg_default.yaml'
+
+seed: 54389
