@@ -18,6 +18,7 @@ class CHMMBasic:
             cells_per_column: int,
             lr_inc: float = 0.1,
             lr_dec: float = 0.01,
+            temp: float = 1.0,
             learning_mode: L_MODE = 'mc',
             initialization: INI_MODE = 'uniform',
             seed: Optional[int] = None
@@ -28,6 +29,7 @@ class CHMMBasic:
         self.states = np.arange(self.n_states)
         self.lr_inc = lr_inc
         self.lr_dec = lr_dec
+        self.temp = temp
         self.learning_mode = learning_mode
         self.initialization = initialization
         self.seed = seed
@@ -39,7 +41,9 @@ class CHMMBasic:
         elif self.initialization == 'uniform':
             self.log_transition_factors = np.zeros((self.n_states, self.n_states))
 
-        self.transition_probs = np.vstack([softmax(x) for x in self.log_transition_factors])
+        self.transition_probs = np.vstack(
+            [softmax(x, self.temp) for x in self.log_transition_factors]
+        )
 
         self.forward_message = np.ones(self.n_states) / self.n_states
         self.backward_message = np.ones(self.n_states) / self.n_states
@@ -72,7 +76,9 @@ class CHMMBasic:
             if not np.in1d(predicted_state, states_for_obs):
                 self.log_transition_factors[prev_state, predicted_state] -= self.lr_dec
 
-            self.transition_probs = np.vstack([softmax(x) for x in self.log_transition_factors])
+            self.transition_probs = np.vstack(
+                [softmax(x, self.temp) for x in self.log_transition_factors]
+            )
 
             self.active_state = next_state
 
