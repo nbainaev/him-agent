@@ -1,4 +1,5 @@
 cells_per_column: 10
-lr: 1
+lr_inc: 0.5
+lr_dec: 0.01
 learning_mode: mc
 initialization: uniform

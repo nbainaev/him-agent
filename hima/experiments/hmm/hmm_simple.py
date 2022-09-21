@@ -43,6 +43,8 @@ class HMMRunner:
             surprises = []
 
             while True:
+                prev_state = self.mpg.current_state
+
                 letter = self.mpg.next_state()
 
                 if letter is None:
@@ -62,14 +64,14 @@ class HMMRunner:
                 surprises.append(surprise)
 
                 # 2. distribution
-                dist[self.mpg.current_state] += self.smf_dist * (
-                        column_probs - dist[self.mpg.current_state]
+                dist[prev_state] += self.smf_dist * (
+                        column_probs - dist[prev_state]
                 )
 
                 # 3. Kl distance
                 dkls.append(
                     min(
-                        rel_entr(true_dist[self.mpg.current_state], column_probs).sum(),
+                        rel_entr(true_dist[prev_state], column_probs).sum(),
                         200.0
                     )
                 )
@@ -115,7 +117,7 @@ class HMMRunner:
                             label='True'
                         )
 
-                        fig.legend(['TM', 'True'], loc=7)
+                        fig.legend(['Predicted', 'True'], loc=8)
 
                         self.logger.log(
                             {f'density/letter_predictions': wandb.Image(fig)}, step=i

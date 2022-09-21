@@ -16,7 +16,8 @@ class CHMMBasic:
             self,
             n_columns: int,
             cells_per_column: int,
-            lr: float = 0.1,
+            lr_inc: float = 0.1,
+            lr_dec: float = 0.01,
             learning_mode: L_MODE = 'mc',
             initialization: INI_MODE = 'uniform',
             seed: Optional[int] = None
@@ -24,7 +25,9 @@ class CHMMBasic:
         self.n_columns = n_columns
         self.cells_per_column = cells_per_column
         self.n_states = cells_per_column * n_columns
-        self.lr = lr
+        self.states = np.arange(self.n_states)
+        self.lr_inc = lr_inc
+        self.lr_dec = lr_dec
         self.learning_mode = learning_mode
         self.initialization = initialization
         self.seed = seed
@@ -40,6 +43,7 @@ class CHMMBasic:
 
         self.forward_message = np.ones(self.n_states) / self.n_states
         self.backward_message = np.ones(self.n_states) / self.n_states
+        self.active_state = self._rng.choice(self.states, p=self.forward_message)
         self.prediction = None
 
     def observe(self, observation_state: int, learn: bool = True) -> None:
@@ -58,27 +62,30 @@ class CHMMBasic:
         new_forward_message /= np.sum(new_forward_message)
 
         if learn:
-            states = np.arange(self.n_states)
-            predicted_state = self._rng.choice(states, p=self.prediction)
-            prev_state = self._rng.choice(states, p=self.forward_message)
-            next_state = self._rng.choice(states, p=new_forward_message)
+            prev_state = self.active_state
 
-            self.log_transition_factors[prev_state, next_state] += self.lr
+            predicted_state = self._rng.choice(self.states, p=self.prediction)
+            next_state = self._rng.choice(self.states, p=new_forward_message)
+
+            self.log_transition_factors[prev_state, next_state] += self.lr_inc
 
             if not np.in1d(predicted_state, states_for_obs):
-                self.log_transition_factors[prev_state, predicted_state] -= self.lr
+                self.log_transition_factors[prev_state, predicted_state] -= self.lr_dec
 
             self.transition_probs = np.vstack([softmax(x) for x in self.log_transition_factors])
+
+            self.active_state = next_state
 
         self.forward_message = new_forward_message
 
     def predict_columns(self):
         self.prediction = np.dot(self.forward_message, self.transition_probs)
-        prediction = np.reshape(self.prediction, (self.cells_per_column, self.n_columns))
-        prediction = prediction.sum(axis=0)
+        prediction = np.reshape(self.prediction, (self.n_columns, self.cells_per_column))
+        prediction = prediction.sum(axis=-1)
         return prediction
 
     def reset(self):
         self.forward_message = np.ones(self.n_states) / self.n_states
         self.backward_message = np.ones(self.n_states) / self.n_states
+        self.active_state = self._rng.choice(self.states, p=self.forward_message)
         self.prediction = None
