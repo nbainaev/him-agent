@@ -1,0 +1,71 @@
+program: run.py
+#entity: TBI   # default: $WANDB_ENTITY
+
+project: sp_layered
+method: grid
+#method: bayes
+#metric:
+#  name: loss
+#  goal: minimize
+parameters:
+  temporal_pooler.:
+    value: sandwich_tp
+  seed.:
+    values: [40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
+
+  # for hyperparameter search we don't need too much logging and too much learning
+  run_setups..full.policy_repeats:
+    value: 8
+  run_setups..full.epochs:
+    value: 8
+  run_setups..full.log_epoch_schedule:
+    value: 4
+  run_setups..full.log_repeat_schedule:
+    value: 4
+  pipeline.:
+    value:
+      - ___.input -> gen.output
+      - gen.output -> sp1.feedforward
+      - ???.output -> ___.output
+
+  blocks..gen.n_values:
+    values:
+      - 4
+      - 8
+      - 12
+  blocks..gen.value_encoder:
+    values:
+      - bucket
+      - random
+
+  blocks..sp1.output_sds:
+    values:
+      - [200, 16]
+      - [400, 16]
+      - [800, 16]
+  blocks..sp1.boostStrength:
+    values:
+      - 0.0
+      - 0.3
+      - 0.6
+      - 1.2
+  blocks..sp1.potentialPct:
+    values:
+      - 0.08
+      - 0.15
+      - 0.25
+      - 0.5
+  blocks..sp1.dutyCyclePeriod:
+    values:
+      - 5000
+      - 20000
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+    # REQUIRED. Config path convention is {path_to_sweep_config}/../configs/{config}
+  - --config
+  - ./configs/layered.yaml
