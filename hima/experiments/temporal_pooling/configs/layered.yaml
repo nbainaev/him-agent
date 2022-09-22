@@ -34,23 +34,35 @@ track_streams:
     - cross.online.el
 
 diff_stats:
-  offline_el:
+  off_on_el:
+    - gen.output/epoch/sim_mx_off_el
     - gen.output/epoch/sim_mx_on_el
-    - sp1.output/epoch/sim_mx_on_el
-  online_el:
+  offline_el:
     - gen.output/epoch/sim_mx_off_el
     - sp1.output/epoch/sim_mx_off_el
+  online_el:
+    - gen.output/epoch/sim_mx_on_el
+    - sp1.output/epoch/sim_mx_on_el
+
+loss:
+  - sp1.output/epoch/sim_mx_on_el_mae
+  - sp1.output/epoch/mean_pmf_coverage
+
+charts:
+  - sp1.output/epoch/sim_mx_on_el_mae
+  - sp1.output/epoch/mean_pmf_coverage
+  - sp1.output/epoch/sim_mx_off_el_mae
 
 blocks:
   gen:
     _type_family_: generator
     _base_config_: synthetic_sequences
-    sequence_length: 10
+    sequence_length: 30
     n_values: 4
   sp1:
     _type_family_: spatial_pooler
     _base_config_: wide
-    output_sds: [400, 0.1]
+    output_sds: [500, 16]
   sp2:
     _type_family_: spatial_pooler
     _base_config_: wide
