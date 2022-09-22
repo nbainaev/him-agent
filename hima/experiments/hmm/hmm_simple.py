@@ -9,6 +9,7 @@ from hima.envs.mpg import MarkovProcessGrammar
 import numpy as np
 from scipy.special import rel_entr
 import matplotlib.pyplot as plt
+import seaborn as sns
 import wandb
 import yaml
 import os
@@ -120,10 +121,31 @@ class HMMRunner:
                         fig.legend(['Predicted', 'True'], loc=8)
 
                         self.logger.log(
-                            {f'density/letter_predictions': wandb.Image(fig)}, step=i
+                            {'density/letter_predictions': wandb.Image(fig)}, step=i
                         )
 
                         plt.close(fig)
+
+                    self.logger.log(
+                        {
+                            'weights/priors': wandb.Image(
+                                sns.heatmap(
+                                    self.hmm.log_state_prior.reshape((1, -1))
+                                )
+                            )
+                        },
+                        step=i
+                    )
+                    plt.close('all')
+                    self.logger.log(
+                        {
+                            'weights/transitions': wandb.Image(
+                                sns.heatmap(self.hmm.log_transition_factors)
+                            )
+                        },
+                        step=i
+                    )
+                    plt.close('all')
 
 
 def main(config_path):
