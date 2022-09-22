@@ -57,12 +57,14 @@ blocks:
   gen:
     _type_family_: generator
     _base_config_: synthetic_sequences
-    sequence_length: 30
     n_values: 4
+    value_encoder: bucket
   sp1:
     _type_family_: spatial_pooler
-    _base_config_: wide
-    output_sds: [500, 16]
+    _base_config_: default
+    output_sds: [400, 16]
+    boostStrength: 0.
+    potentialPct: 0.6
   sp2:
     _type_family_: spatial_pooler
     _base_config_: wide

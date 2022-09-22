@@ -99,6 +99,7 @@ class ExperimentStats:
             return
 
         self.logger.define_metric('epoch')
+        self.logger.define_metric('loss', step_metric='epoch')
         for name in self.stream_trackers:
             tracker = self.stream_trackers[name]
             self.logger.define_metric(f'{tracker.name}/epoch/*', step_metric='epoch')
