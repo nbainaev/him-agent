@@ -32,6 +32,7 @@ class CHMMBasic:
         self.temp = temp
         self.learning_mode = learning_mode
         self.initialization = initialization
+        self.is_first = True
         self.seed = seed
 
         self._rng = np.random.default_rng(self.seed)
@@ -45,9 +46,11 @@ class CHMMBasic:
             [softmax(x, self.temp) for x in self.log_transition_factors]
         )
 
-        self.forward_message = np.ones(self.n_states) / self.n_states
+        self.log_state_prior = np.zeros(self.n_states)
+        self.state_prior = softmax(self.log_state_prior, self.temp)
+        self.forward_message = self.state_prior
         self.backward_message = np.ones(self.n_states) / self.n_states
-        self.active_state = self._rng.choice(self.states, p=self.forward_message)
+        self.active_state = None
         self.prediction = None
 
     def observe(self, observation_state: int, learn: bool = True) -> None:
@@ -71,10 +74,21 @@ class CHMMBasic:
             predicted_state = self._rng.choice(self.states, p=self.prediction)
             next_state = self._rng.choice(self.states, p=new_forward_message)
 
-            self.log_transition_factors[prev_state, next_state] += self.lr_inc
+            wrong_prediction = not np.in1d(predicted_state, states_for_obs)
 
-            if not np.in1d(predicted_state, states_for_obs):
-                self.log_transition_factors[prev_state, predicted_state] -= self.lr_dec
+            if self.is_first:
+                self.log_state_prior[next_state] += self.lr_inc
+                self.state_prior = softmax(self.log_state_prior, self.temp)
+
+                if wrong_prediction:
+                    self.log_state_prior[prev_state] -= self.lr_dec
+
+                self.is_first = False
+            else:
+                self.log_transition_factors[prev_state, next_state] += self.lr_inc
+
+                if wrong_prediction:
+                    self.log_transition_factors[prev_state, predicted_state] -= self.lr_dec
 
             self.transition_probs = np.vstack(
                 [softmax(x, self.temp) for x in self.log_transition_factors]
@@ -85,13 +99,17 @@ class CHMMBasic:
         self.forward_message = new_forward_message
 
     def predict_columns(self):
-        self.prediction = np.dot(self.forward_message, self.transition_probs)
+        if self.is_first:
+            self.prediction = self.state_prior
+        else:
+            self.prediction = np.dot(self.forward_message, self.transition_probs)
         prediction = np.reshape(self.prediction, (self.n_columns, self.cells_per_column))
         prediction = prediction.sum(axis=-1)
         return prediction
 
     def reset(self):
-        self.forward_message = np.ones(self.n_states) / self.n_states
+        self.forward_message = self.state_prior
         self.backward_message = np.ones(self.n_states) / self.n_states
-        self.active_state = self._rng.choice(self.states, p=self.forward_message)
+        self.active_state = None
         self.prediction = None
+        self.is_first = True
