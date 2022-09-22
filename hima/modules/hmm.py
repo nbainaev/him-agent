@@ -16,9 +16,9 @@ class CHMMBasic:
             self,
             n_columns: int,
             cells_per_column: int,
-            lr_inc: float = 0.1,
-            lr_dec: float = 0.01,
+            lr: float = 0.1,
             temp: float = 1.0,
+            regularization: float = 0.1,
             learning_mode: L_MODE = 'mc',
             initialization: INI_MODE = 'uniform',
             seed: Optional[int] = None
@@ -27,9 +27,9 @@ class CHMMBasic:
         self.cells_per_column = cells_per_column
         self.n_states = cells_per_column * n_columns
         self.states = np.arange(self.n_states)
-        self.lr_inc = lr_inc
-        self.lr_dec = lr_dec
+        self.lr = lr
         self.temp = temp
+        self.alpha = regularization
         self.learning_mode = learning_mode
         self.initialization = initialization
         self.is_first = True
@@ -77,18 +77,20 @@ class CHMMBasic:
             wrong_prediction = not np.in1d(predicted_state, states_for_obs)
 
             if self.is_first:
-                self.log_state_prior[next_state] += self.lr_inc
+                w = self.log_state_prior[next_state]
+                self.log_state_prior[next_state] += self.lr * (1 - self.alpha * w)
                 self.state_prior = softmax(self.log_state_prior, self.temp)
 
                 if wrong_prediction:
-                    self.log_state_prior[prev_state] -= self.lr_dec
+                    self.log_state_prior[prev_state] -= self.lr * self.alpha * w
 
                 self.is_first = False
             else:
-                self.log_transition_factors[prev_state, next_state] += self.lr_inc
+                w = self.log_transition_factors[prev_state, next_state]
+                self.log_transition_factors[prev_state, next_state] += self.lr * (1 - self.alpha * w)
 
                 if wrong_prediction:
-                    self.log_transition_factors[prev_state, predicted_state] -= self.lr_dec
+                    self.log_transition_factors[prev_state, predicted_state] -= self.lr * self.alpha * w
 
             self.transition_probs = np.vstack(
                 [softmax(x, self.temp) for x in self.log_transition_factors]
