@@ -79,6 +79,7 @@ class ObservationsLayeredExperiment(Runner):
             blocks: dict[str, TConfig], pipeline: list,
             run_setup: TConfig, stats_and_metrics: TConfig,
             track_streams: TConfig, diff_stats: TConfig,
+            loss: list[str], charts: list[str],
             **_
     ):
         super().__init__(config, **config)
@@ -105,7 +106,8 @@ class ObservationsLayeredExperiment(Runner):
             progress=self.progress, logger=self.logger,
             blocks=self.pipeline.blocks, track_streams=track_streams,
             stats_config=self.stats_config,
-            debug=debug, diff_stats=diff_stats
+            debug=debug, diff_stats=diff_stats,
+            loss=loss, charts=charts
         )
 
     def run(self):

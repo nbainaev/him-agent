@@ -45,7 +45,10 @@ class ExperimentStats:
     progress: RunProgress
     logger: Optional[Run]
     stats_config: StatsMetricsConfig
+
     diff_stats: TConfig
+    loss_items: tuple[str, str]
+    charts: list[str]
 
     stream_trackers: dict[TStreamName, StreamTracker]
     current_sequence_id: int
@@ -57,7 +60,7 @@ class ExperimentStats:
             self, *, n_sequences: int, progress: RunProgress, logger: Optional[Run],
             blocks: dict[str, Block], track_streams: TConfig,
             stats_config: StatsMetricsConfig, debug: bool,
-            diff_stats: TConfig,
+            diff_stats: TConfig, loss: list[str], charts: list[str],
     ):
         self.n_sequences = n_sequences
         self.progress = progress
@@ -67,6 +70,8 @@ class ExperimentStats:
         self.logging_temporally_disabled = True
         self.current_sequence_id = -1
         self.diff_stats = diff_stats
+        self.loss_items = (loss[0], loss[1])
+        self.charts = charts
 
         self.stream_trackers = self._make_stream_trackers(
             track_streams=track_streams, blocks=blocks,
@@ -151,6 +156,10 @@ class ExperimentStats:
             self.append_sim_mae(diff_tag=name, tags=self.diff_stats[name], metrics=metrics)
 
         self.transform_sim_mx_to_plots(metrics)
+
+        loss_components = [(metrics[self.loss_items[0]], metrics[self.loss_items[1]])]
+        metrics['loss'] = compute_loss(loss_components, self.stats_config.loss_layer_discount)
+
         if self.logger:
             self.logger.log(metrics, step=self.progress.step)
 
