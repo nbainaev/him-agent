@@ -130,17 +130,44 @@ class HMMRunner:
                         {
                             'weights/priors': wandb.Image(
                                 sns.heatmap(
-                                    self.hmm.log_state_prior.reshape((1, -1))
+                                    self.hmm.log_state_prior.reshape((1, -1)),
+                                    cmap='coolwarm'
                                 )
                             )
                         },
                         step=i
                     )
                     plt.close('all')
+
+                    self.logger.log(
+                        {
+                            'weights/prior_probs': wandb.Image(
+                                sns.heatmap(
+                                    self.hmm.state_prior.reshape((1, -1)),
+                                    cmap='coolwarm'
+                                )
+                            )
+                        },
+                        step=i
+                    )
+                    plt.close('all')
+
                     self.logger.log(
                         {
                             'weights/transitions': wandb.Image(
-                                sns.heatmap(self.hmm.log_transition_factors)
+                                sns.heatmap(self.hmm.log_transition_factors,
+                                    cmap='coolwarm')
+                            )
+                        },
+                        step=i
+                    )
+                    plt.close('all')
+
+                    self.logger.log(
+                        {
+                            'weights/transition_probs': wandb.Image(
+                                sns.heatmap(self.hmm.transition_probs,
+                                    cmap='coolwarm')
                             )
                         },
                         step=i
