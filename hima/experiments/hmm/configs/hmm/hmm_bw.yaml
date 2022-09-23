@@ -1,0 +1,4 @@
+cells_per_column: 10
+lr: 0.01
+learning_mode: bw
+initialization: normal

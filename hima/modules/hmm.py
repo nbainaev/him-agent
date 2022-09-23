@@ -10,6 +10,8 @@ from hima.common.utils import softmax
 L_MODE = Literal['bw', 'mc', 'delta']
 INI_MODE = Literal['normal', 'uniform']
 
+EPS = 1e-15
+
 
 class CHMMBasic:
     def __init__(
@@ -39,66 +41,47 @@ class CHMMBasic:
 
         if self.initialization == 'normal':
             self.log_transition_factors = self._rng.normal(size=(self.n_states, self.n_states))
+            self.log_state_prior = self._rng.normal(size=self.n_states)
         elif self.initialization == 'uniform':
             self.log_transition_factors = np.zeros((self.n_states, self.n_states))
+            self.log_state_prior = np.zeros(self.n_states)
 
         self.transition_probs = np.vstack(
             [softmax(x, self.temp) for x in self.log_transition_factors]
         )
 
-        self.log_state_prior = np.zeros(self.n_states)
         self.state_prior = softmax(self.log_state_prior, self.temp)
         self.forward_message = self.state_prior
-        self.backward_message = np.ones(self.n_states) / self.n_states
         self.active_state = None
         self.prediction = None
+        self.observations = list()
+        self.forward_messages = list()
 
     def observe(self, observation_state: int, learn: bool = True) -> None:
         assert 0 <= observation_state < self.n_columns, "Invalid observation state."
         assert self.prediction is not None, "Run predict_columns() first."
 
-        obs_factor = np.zeros(self.n_states)
+        states_for_obs = self._obs_state_to_hidden(observation_state)
 
-        states_for_obs = np.arange(
-            self.cells_per_column * observation_state,
-            self.cells_per_column * (observation_state + 1),
-        )
+        obs_factor = np.zeros(self.n_states)
         obs_factor[states_for_obs] = 1
 
         new_forward_message = self.prediction * obs_factor
         new_forward_message /= np.sum(new_forward_message)
 
         if learn:
-            prev_state = self.active_state
+            if self.learning_mode == 'mc':
+                self._monte_carlo_learning(new_forward_message, states_for_obs)
+            elif self.learning_mode == 'bw':
+                if self.is_first and (len(self.forward_messages) > 0):
+                    self._baum_welch_learning()
 
-            predicted_state = self._rng.choice(self.states, p=self.prediction)
-            next_state = self._rng.choice(self.states, p=new_forward_message)
-
-            wrong_prediction = not np.in1d(predicted_state, states_for_obs)
-
-            if self.is_first:
-                w = self.log_state_prior[next_state]
-                self.log_state_prior[next_state] += self.lr * (1 - self.alpha * w)
-                self.state_prior = softmax(self.log_state_prior, self.temp)
-
-                if wrong_prediction:
-                    self.log_state_prior[prev_state] -= self.lr * self.alpha * w
-
-                self.is_first = False
-            else:
-                w = self.log_transition_factors[prev_state, next_state]
-                self.log_transition_factors[prev_state, next_state] += self.lr * (1 - self.alpha * w)
-
-                if wrong_prediction:
-                    self.log_transition_factors[prev_state, predicted_state] -= self.lr * self.alpha * w
-
-            self.transition_probs = np.vstack(
-                [softmax(x, self.temp) for x in self.log_transition_factors]
-            )
-
-            self.active_state = next_state
+        if self.is_first:
+            self.is_first = False
 
         self.forward_message = new_forward_message
+        self.forward_messages.append(new_forward_message)
+        self.observations.append(observation_state)
 
     def predict_columns(self):
         if self.is_first:
@@ -111,7 +94,86 @@ class CHMMBasic:
 
     def reset(self):
         self.forward_message = self.state_prior
-        self.backward_message = np.ones(self.n_states) / self.n_states
         self.active_state = None
         self.prediction = None
         self.is_first = True
+
+    def _obs_state_to_hidden(self, obs_state):
+        return np.arange(
+            self.cells_per_column * obs_state,
+            self.cells_per_column * (obs_state + 1),
+        )
+
+    def _baum_welch_learning(self):
+        states_for_obs = self._obs_state_to_hidden(self.observations[-1])
+        obs_factor = np.zeros(self.n_states)
+        obs_factor[states_for_obs] = 1
+        backward_message = obs_factor / len(states_for_obs)
+
+        backward_messages = [backward_message]
+
+        for observation in self.observations[::-1][1:]:
+            states_for_obs = self._obs_state_to_hidden(observation)
+            obs_factor = np.zeros(self.n_states)
+            obs_factor[states_for_obs] = 1
+
+            backward_message = np.dot(backward_message, self.transition_probs.T) * obs_factor
+            backward_message /= np.sum(backward_message)
+            backward_messages.append(backward_message)
+
+        # priors
+        states_for_obs = self._obs_state_to_hidden(self.observations[0])
+        obs_factor = np.zeros(self.n_states)
+        obs_factor[states_for_obs] = 1
+
+        new_priors = self.state_prior * obs_factor * backward_messages[-1]
+        new_priors /= new_priors.sum()
+        self.state_prior += self.lr * (new_priors - self.state_prior)
+
+        # transitions
+        forward_messages = self.forward_messages
+        backward_messages = backward_messages[::-1]
+
+        new_transition_matrix = np.zeros_like(self.transition_probs)
+        for i, forward_message in enumerate(forward_messages[:-1]):
+            forward_message = forward_message.reshape((-1, 1))
+            backward_message = backward_messages[i+1].reshape((1, -1))
+            new_transition_matrix += forward_message * self.transition_probs * backward_message
+
+        norm = new_transition_matrix.sum(axis=-1).reshape((-1, 1))
+        new_transition_matrix = np.divide(
+            new_transition_matrix, norm, where=(norm > 0)
+        )
+
+        self.transition_probs += self.lr * (new_transition_matrix - self.transition_probs)
+
+        self.observations.clear()
+        self.forward_messages.clear()
+
+    def _monte_carlo_learning(self, new_forward_message, states_for_obs):
+        prev_state = self.active_state
+
+        predicted_state = self._rng.choice(self.states, p=self.prediction)
+        next_state = self._rng.choice(self.states, p=new_forward_message)
+
+        wrong_prediction = not np.in1d(predicted_state, states_for_obs)
+
+        if self.is_first:
+            w = self.log_state_prior[next_state]
+            self.log_state_prior[next_state] += self.lr * (1 - self.alpha * w)
+            self.state_prior = softmax(self.log_state_prior, self.temp)
+
+            if wrong_prediction:
+                self.log_state_prior[prev_state] -= self.lr * self.alpha * w
+        else:
+            w = self.log_transition_factors[prev_state, next_state]
+            self.log_transition_factors[prev_state, next_state] += self.lr * (1 - self.alpha * w)
+
+            if wrong_prediction:
+                self.log_transition_factors[prev_state, predicted_state] -= self.lr * self.alpha * w
+
+        self.transition_probs = np.vstack(
+            [softmax(x, self.temp) for x in self.log_transition_factors]
+        )
+
+        self.active_state = next_state
