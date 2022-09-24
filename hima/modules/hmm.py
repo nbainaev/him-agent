@@ -6,8 +6,10 @@
 import numpy as np
 from typing import Literal, Optional
 from hima.common.utils import softmax
+from hmmlearn.hmm import MultinomialHMM
 
-L_MODE = Literal['bw', 'mc', 'delta']
+
+L_MODE = Literal['bw', 'mc', 'bw_base']
 INI_MODE = Literal['normal', 'uniform']
 
 EPS = 1e-15
@@ -21,6 +23,7 @@ class CHMMBasic:
             lr: float = 0.1,
             temp: float = 1.0,
             regularization: float = 0.1,
+            batch_size: int = 1,
             learning_mode: L_MODE = 'mc',
             initialization: INI_MODE = 'uniform',
             seed: Optional[int] = None
@@ -32,6 +35,7 @@ class CHMMBasic:
         self.lr = lr
         self.temp = temp
         self.alpha = regularization
+        self.batch_size = batch_size
         self.learning_mode = learning_mode
         self.initialization = initialization
         self.is_first = True
@@ -52,10 +56,36 @@ class CHMMBasic:
 
         self.state_prior = softmax(self.log_state_prior, self.temp)
         self.forward_message = self.state_prior
+
+        self.stats_trans_mat = self.transition_probs
+        self.stats_state_prior = self.state_prior
+
         self.active_state = None
         self.prediction = None
         self.observations = list()
+        self.obs_sequences = list()
+        self.fm_sequences = list()
         self.forward_messages = list()
+
+        if self.learning_mode == 'bw_base':
+            self.model = MultinomialHMM(
+                n_components=self.n_states,
+                params='st',
+                init_params='',
+                random_state=self.seed,
+            )
+
+            emission_probs = list()
+            for i in range(self.n_columns):
+                p = np.zeros(self.n_states)
+                p[i*self.cells_per_column: (i+1)*self.cells_per_column] = 1
+                emission_probs.append(p)
+
+            self.model.startprob_ = self.state_prior
+            self.model.transmat_ = self.transition_probs
+            self.model.emissionprob_ = np.vstack(emission_probs).T
+        else:
+            self.model = None
 
     def observe(self, observation_state: int, learn: bool = True) -> None:
         assert 0 <= observation_state < self.n_columns, "Invalid observation state."
@@ -72,9 +102,22 @@ class CHMMBasic:
         if learn:
             if self.learning_mode == 'mc':
                 self._monte_carlo_learning(new_forward_message, states_for_obs)
-            elif self.learning_mode == 'bw':
-                if self.is_first and (len(self.forward_messages) > 0):
-                    self._baum_welch_learning()
+            elif (self.learning_mode == 'bw') or (self.learning_mode == 'bw_base'):
+                if self.is_first and (len(self.observations) > 0):
+                    self.obs_sequences.append(self.observations)
+                    self.fm_sequences.append(self.forward_messages)
+
+                    if len(self.obs_sequences) == self.batch_size:
+                        if self.learning_mode == 'bw':
+                            self._baum_welch_learning()
+                        else:
+                            self._baum_welch_base_learning()
+
+                        self.obs_sequences.clear()
+                        self.fm_sequences.clear()
+
+                    self.observations.clear()
+                    self.forward_messages.clear()
 
         if self.is_first:
             self.is_first = False
@@ -105,50 +148,68 @@ class CHMMBasic:
         )
 
     def _baum_welch_learning(self):
-        states_for_obs = self._obs_state_to_hidden(self.observations[-1])
-        obs_factor = np.zeros(self.n_states)
-        obs_factor[states_for_obs] = 1
-        backward_message = obs_factor / len(states_for_obs)
+        new_priors = np.zeros_like(self.state_prior)
+        new_transition_matrix = np.zeros_like(self.transition_probs)
 
-        backward_messages = [backward_message]
+        for observations, forward_messages in zip(self.obs_sequences, self.fm_sequences):
+            states_for_obs = self._obs_state_to_hidden(observations[-1])
+            obs_factor = np.zeros(self.n_states)
+            obs_factor[states_for_obs] = 1
+            backward_message = obs_factor / len(states_for_obs)
 
-        for observation in self.observations[::-1][1:]:
-            states_for_obs = self._obs_state_to_hidden(observation)
+            backward_messages = [backward_message]
+
+            for observation in observations[::-1][1:]:
+                states_for_obs = self._obs_state_to_hidden(observation)
+                obs_factor = np.zeros(self.n_states)
+                obs_factor[states_for_obs] = 1
+
+                backward_message = np.dot(backward_message, self.transition_probs.T) * obs_factor
+                backward_message /= np.sum(backward_message)
+                backward_messages.append(backward_message)
+
+            # priors
+            states_for_obs = self._obs_state_to_hidden(observations[0])
             obs_factor = np.zeros(self.n_states)
             obs_factor[states_for_obs] = 1
 
-            backward_message = np.dot(backward_message, self.transition_probs.T) * obs_factor
-            backward_message /= np.sum(backward_message)
-            backward_messages.append(backward_message)
+            new_priors += self.state_prior * obs_factor * backward_messages[-1]
 
-        # priors
-        states_for_obs = self._obs_state_to_hidden(self.observations[0])
-        obs_factor = np.zeros(self.n_states)
-        obs_factor[states_for_obs] = 1
+            # transitions
+            backward_messages = backward_messages[::-1]
 
-        new_priors = self.state_prior * obs_factor * backward_messages[-1]
-        new_priors /= new_priors.sum()
-        self.state_prior += self.lr * (new_priors - self.state_prior)
+            for i, forward_message in enumerate(forward_messages[:-1]):
+                forward_message = forward_message.reshape((-1, 1))
+                backward_message = backward_messages[i+1].reshape((1, -1))
+                new_transition_matrix += forward_message * self.transition_probs * backward_message
 
-        # transitions
-        forward_messages = self.forward_messages
-        backward_messages = backward_messages[::-1]
+        # update
+        self.stats_trans_mat += self.lr * (new_transition_matrix - self.stats_trans_mat)
 
-        new_transition_matrix = np.zeros_like(self.transition_probs)
-        for i, forward_message in enumerate(forward_messages[:-1]):
-            forward_message = forward_message.reshape((-1, 1))
-            backward_message = backward_messages[i+1].reshape((1, -1))
-            new_transition_matrix += forward_message * self.transition_probs * backward_message
+        self.stats_state_prior += self.lr * (new_priors - self.stats_state_prior)
 
-        norm = new_transition_matrix.sum(axis=-1).reshape((-1, 1))
-        new_transition_matrix = np.divide(
-            new_transition_matrix, norm, where=(norm > 0)
+        self.transition_probs = self.stats_trans_mat / self.stats_trans_mat.sum(axis=1).reshape((-1, 1))
+        self.state_prior = self.stats_state_prior / self.stats_state_prior.sum()
+
+    def _baum_welch_base_learning(self):
+        self.model.fit(
+            np.array(self.obs_sequences).reshape((-1, 1)),
+            [len(x) for x in self.obs_sequences]
         )
 
-        self.transition_probs += self.lr * (new_transition_matrix - self.transition_probs)
+        new_transition_matrix = self.model.transmat_
+        new_priors = self.model.startprob_
 
-        self.observations.clear()
-        self.forward_messages.clear()
+        # update
+        self.stats_trans_mat += self.lr * (new_transition_matrix - self.stats_trans_mat)
+
+        self.stats_state_prior += self.lr * (new_priors - self.stats_state_prior)
+
+        self.transition_probs = self.stats_trans_mat / self.stats_trans_mat.sum(axis=1).reshape((-1, 1))
+        self.state_prior = self.stats_state_prior / self.stats_state_prior.sum()
+
+        self.model.transmat_ = self.transition_probs
+        self.model.startprob_ = self.state_prior
 
     def _monte_carlo_learning(self, new_forward_message, states_for_obs):
         prev_state = self.active_state
