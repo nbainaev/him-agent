@@ -92,7 +92,7 @@ class HMMRunner:
                     }, step=i
                 )
 
-                if i % self.log_update_rate == 0:
+                if (self.log_update_rate is not None) and (i % self.log_update_rate == 0):
                     kl_divs = rel_entr(true_dist, dist).sum(axis=-1)
 
                     n_states = len(self.mpg.states)

@@ -7,6 +7,7 @@ import numpy as np
 from typing import Literal, Optional
 from hima.common.utils import softmax
 from hmmlearn.hmm import MultinomialHMM
+from copy import copy
 
 
 L_MODE = Literal['bw', 'mc', 'bw_base']
@@ -120,8 +121,8 @@ class CHMMBasic:
                 self._monte_carlo_learning(new_forward_message, states_for_obs)
             elif (self.learning_mode == 'bw') or (self.learning_mode == 'bw_base'):
                 if self.is_first and (len(self.observations) > 0):
-                    self.obs_sequences.append(self.observations)
-                    self.fm_sequences.append(self.forward_messages)
+                    self.obs_sequences.append(copy(self.observations))
+                    self.fm_sequences.append(copy(self.forward_messages))
 
                     if len(self.obs_sequences) == self.batch_size:
                         if self.learning_mode == 'bw':
@@ -164,6 +165,8 @@ class CHMMBasic:
         )
 
     def _baum_welch_learning(self):
+        # TODO carefully check details
+        # TODO it doesn't match baseline!
         new_priors = np.zeros_like(self.state_prior)
         new_transition_matrix = np.zeros_like(self.transition_probs)
 
@@ -208,7 +211,7 @@ class CHMMBasic:
 
     def _baum_welch_base_learning(self):
         self.model.fit(
-            np.array(self.obs_sequences).reshape((-1, 1)),
+            np.array([x for y in self.obs_sequences for x in y]).reshape((-1, 1)),
             [len(x) for x in self.obs_sequences]
         )
 
