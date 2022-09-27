@@ -1,11 +1,11 @@
 log: True
 project_name: 'mpg_hmm_test'
-run_tag: 'prior_and_regularization'
-n_episodes: 2500
+run_tag: 'baum_welch'
+n_episodes: 5000
 update_rate: 100
 smf_dist: 0.02
 
-hmm_conf: 'configs/hmm/hmm_default.yaml'
+hmm_conf: 'configs/hmm/hmm_bw.yaml'
 mpg_conf: 'configs/mpg/mpg_default.yaml'
 
-seed: 1123
+seed: 8937

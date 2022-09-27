@@ -13,6 +13,8 @@ import seaborn as sns
 import wandb
 import yaml
 import os
+import sys
+import ast
 
 
 class HMMRunner:
@@ -36,6 +38,8 @@ class HMMRunner:
         dist = np.zeros((len(self.mpg.states), len(self.mpg.alphabet)))
         true_dist = np.array([self.mpg.predict_letters(from_state=i) for i in self.mpg.states])
 
+        total_surprise = 0
+        total_dkl = 0
         for i in range(self.n_episodes):
             self.mpg.reset()
             self.hmm.reset()
@@ -63,6 +67,7 @@ class HMMRunner:
                 surprise += - np.sum(np.log(1 - column_probs[~active_columns]))
 
                 surprises.append(surprise)
+                total_surprise += surprise
 
                 # 2. distribution
                 dist[prev_state] += self.smf_dist * (
@@ -70,18 +75,20 @@ class HMMRunner:
                 )
 
                 # 3. Kl distance
-                dkls.append(
-                    min(
+                dkl = min(
                         rel_entr(true_dist[prev_state], column_probs).sum(),
                         200.0
                     )
-                )
+                dkls.append(dkl)
+                total_dkl += dkl
 
             if self.logger is not None:
                 self.logger.log(
                     {
                         'main_metrics/surprise': np.array(surprises).mean(),
                         'main_metrics/dkl': np.array(np.abs(dkls)).mean(),
+                        'main_metrics/total_surprise': total_surprise,
+                        'main_metrics/total_dkl': total_dkl,
                     }, step=i
                 )
 
@@ -176,6 +183,9 @@ class HMMRunner:
 
 
 def main(config_path):
+    if len(sys.argv) > 1:
+        config_path = sys.argv[1]
+
     config = dict()
 
     with open(config_path, 'r') as file:
@@ -186,6 +196,31 @@ def main(config_path):
 
     with open(config['run']['mpg_conf'], 'r') as file:
         config['mpg'] = yaml.load(file, Loader=yaml.Loader)
+
+    for arg in sys.argv[2:]:
+        key, value = arg.split('=')
+
+        try:
+            value = ast.literal_eval(value)
+        except ValueError:
+            ...
+
+        key = key.lstrip('-')
+        if key.endswith('.'):
+            # a trick that allow distinguishing sweep params from config params
+            # by adding a suffix `.` to sweep param - now we should ignore it
+            key = key[:-1]
+        tokens = key.split('.')
+        c = config
+        for k in tokens[:-1]:
+            if not k:
+                # a trick that allow distinguishing sweep params from config params
+                # by inserting additional dots `.` to sweep param - we just ignore it
+                continue
+            if 0 in c:
+                k = int(k)
+            c = c[k]
+        c[tokens[-1]] = value
 
     if config['run']['log']:
         logger = wandb.init(

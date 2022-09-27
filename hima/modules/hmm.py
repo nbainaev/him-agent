@@ -10,7 +10,7 @@ from hmmlearn.hmm import MultinomialHMM
 
 
 L_MODE = Literal['bw', 'mc', 'bw_base']
-INI_MODE = Literal['normal', 'uniform']
+INI_MODE = Literal['dirichlet', 'normal', 'uniform']
 
 EPS = 1e-15
 
@@ -26,6 +26,8 @@ class CHMMBasic:
             batch_size: int = 1,
             learning_mode: L_MODE = 'mc',
             initialization: INI_MODE = 'uniform',
+            sigma: float = 1.0,
+            alpha: float = 1.0,
             seed: Optional[int] = None
     ):
         self.n_columns = n_columns
@@ -43,18 +45,32 @@ class CHMMBasic:
 
         self._rng = np.random.default_rng(self.seed)
 
-        if self.initialization == 'normal':
-            self.log_transition_factors = self._rng.normal(size=(self.n_states, self.n_states))
-            self.log_state_prior = self._rng.normal(size=self.n_states)
+        if self.initialization == 'dirichlet':
+            self.transition_probs = self._rng.dirichlet(
+                alpha=[alpha]*self.n_states,
+                size=self.n_states
+            )
+            self.state_prior = self._rng.dirichlet(alpha=[alpha]*self.n_states)
+        elif self.initialization == 'normal':
+            self.log_transition_factors = self._rng.normal(
+                scale=sigma,
+                size=(self.n_states, self.n_states)
+            )
+            self.log_state_prior = self._rng.normal(scale=sigma, size=self.n_states)
         elif self.initialization == 'uniform':
             self.log_transition_factors = np.zeros((self.n_states, self.n_states))
             self.log_state_prior = np.zeros(self.n_states)
 
-        self.transition_probs = np.vstack(
-            [softmax(x, self.temp) for x in self.log_transition_factors]
-        )
+        if self.initialization != 'dirichlet':
+            self.transition_probs = np.vstack(
+                [softmax(x, self.temp) for x in self.log_transition_factors]
+            )
 
-        self.state_prior = softmax(self.log_state_prior, self.temp)
+            self.state_prior = softmax(self.log_state_prior, self.temp)
+        else:
+            self.log_transition_factors = np.log(self.transition_probs)
+            self.log_state_prior = np.log(self.state_prior)
+
         self.forward_message = self.state_prior
 
         self.stats_trans_mat = self.transition_probs
@@ -172,7 +188,6 @@ class CHMMBasic:
             states_for_obs = self._obs_state_to_hidden(observations[0])
             obs_factor = np.zeros(self.n_states)
             obs_factor[states_for_obs] = 1
-
             new_priors += self.state_prior * obs_factor * backward_messages[-1]
 
             # transitions
