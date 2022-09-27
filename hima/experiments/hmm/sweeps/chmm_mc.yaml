@@ -9,18 +9,14 @@ parameters:
   run.seed:
     values: [43228, 78273, 83207]
   hmm.learning_mode:
-    values: ['bw_base']
-  hmm.batch_size:
-    values: [1, 100, 500]
+    values: ['mc']
   hmm.lr:
-    values: [0.01, 0.1, 0.5]
-  hmm.initialization:
-    values: [ 'dirichlet' ]
-  hmm.alpha:
-    values: [0.5, 1.0, 1.5]
+    values: [0.1, 0.5, 1.0]
+  hmm.regularization:
+    values: [0.05, 0.1, 0.5]
 command:
   - ${env}
   - python
   - ${program}
-  - configs/hmm_runner.yaml
+  - configs/runner_mc.yaml
   - ${args}
