@@ -11,7 +11,7 @@ parameters:
   temporal_pooler.:
     value: sandwich_tp
   seed.:
-    values: [40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50] #, 51, 52, 53, 54, 55, 56, 57, 58, 59]
+    values: [40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
 
   # for hyperparameter search we don't need too much logging and too much learning
   run_setups..full.sequence_repeats:
@@ -28,21 +28,14 @@ parameters:
       - gen.output -> sp1.feedforward
       - ???.output -> ___.output
 
+  # guarantee enough size of the input sds
   blocks..gen.n_values:
-    values:
-      - 4
-      - 8
-#      - 12
+    value: 30
   blocks..gen.value_encoder:
-    values:
-      - bucket
-      - random
+    value: random
 
   blocks..sp1.output_sds:
-    values:
-#      - [200, 16]
-      - [400, 16]
-      - [800, 16]
+    value: [800, 16]
   blocks..sp1.boostStrength:
     values:
       - 0.0
@@ -51,12 +44,12 @@ parameters:
   blocks..sp1.potentialPct:
     values:
       - 0.08
-      - 0.2
+      - 0.12
       - 0.55
-#  blocks..sp1.dutyCyclePeriod:
-#    values:
-#      - 5000
-#      - 20000
+  blocks..sp1.dutyCyclePeriod:
+    values:
+      - 2000
+      - 20000
 
 command:
   - ${env}
