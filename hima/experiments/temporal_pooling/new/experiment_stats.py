@@ -86,6 +86,8 @@ class ExperimentStats:
         trackers = {}
         for stream_name in track_streams:
             stream = parse_stream_name(stream_name, blocks)
+            if not stream:
+                continue
             stream_trackers_list = track_streams[stream_name]
             tracker = StreamTracker(
                 stream=stream, trackers=stream_trackers_list,

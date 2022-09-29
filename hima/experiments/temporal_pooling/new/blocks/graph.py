@@ -30,6 +30,8 @@ class Stream:
     def resolve_sds(self, sds: Sds) -> Sds:
         self.sds = resolve_value(self.sds, substitute_with=sds)
         self.sds = Sds.as_sds(self.sds)
+        if is_resolved_value(self.sds):
+            self.block.on_stream_sds_resolved(self)
         return self.sds
 
     @property
@@ -61,6 +63,9 @@ class Block(ABC):
         if name not in self.streams:
             self.streams[name] = Stream(name=name, block=self)
         return self.streams[name]
+
+    def on_stream_sds_resolved(self, stream: Stream):
+        pass
 
     def reset(self, **kwargs):
         for name in self.streams:

@@ -23,6 +23,7 @@ class StreamTracker(Tracker):
             n_sequences: int
     ):
         self.stream = stream
+        print(stream, trackers)
         self.trackers = [
             resolve_tracker(
                 tracker_name=tracker_name, sds=stream.sds, n_sequences=n_sequences,

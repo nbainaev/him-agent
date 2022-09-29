@@ -55,10 +55,12 @@ class BlockRegistryResolver:
             DataGeneratorResolver
         )
         from hima.experiments.temporal_pooling.new.resolvers.sp import SpatialPoolerResolver
+        from hima.experiments.temporal_pooling.new.resolvers.tp import TemporalPoolerResolver
 
         return {
             DataGeneratorResolver.family: DataGeneratorResolver(),
             SpatialPoolerResolver.family: SpatialPoolerResolver(),
+            TemporalPoolerResolver.family: TemporalPoolerResolver()
         }
 
     def __getitem__(self, item: str) -> Block:

@@ -4,7 +4,6 @@ log: True    # wandb logging
 
 run_setup: full
 #policy_selection_rule: ordered
-temporal_pooler: ablation_utp
 seed: 42
 debug: False
 
@@ -19,7 +18,8 @@ stats_and_metrics:
 
 pipeline:
   - ___.input -> gen.output
-  - gen.output -> sp1.feedforward
+#  - gen.output -> sp1.feedforward
+  - gen.output -> tp1.feedforward
 #  - ???.output -> sp2.feedforward
   - ???.output -> ___.output
 
@@ -32,6 +32,10 @@ track_streams:
     - sdr
     - cross.offline.el
     - cross.online.el
+  tp1.output:
+    - sdr
+    - cross.offline.el
+    - cross.online.el
 
 diff_stats:
   off_on_el:
@@ -40,18 +44,25 @@ diff_stats:
   offline_el:
     - gen.output/epoch/sim_mx_off_el
     - sp1.output/epoch/sim_mx_off_el
+    - tp1.output/epoch/sim_mx_off_el
   online_el:
     - gen.output/epoch/sim_mx_on_el
     - sp1.output/epoch/sim_mx_on_el
+    - tp1.output/epoch/sim_mx_on_el
 
 loss:
-  - sp1.output/epoch/sim_mx_on_el_mae
-  - sp1.output/epoch/mean_pmf_coverage
+#  - sp1.output/epoch/sim_mx_on_el_mae
+#  - sp1.output/epoch/mean_pmf_coverage
+  - tp1.output/epoch/sim_mx_on_el_mae
+  - tp1.output/epoch/mean_pmf_coverage
 
 charts:
-  - sp1.output/epoch/sim_mx_on_el_mae
-  - sp1.output/epoch/mean_pmf_coverage
-  - sp1.output/epoch/sim_mx_off_el_mae
+#  - sp1.output/epoch/sim_mx_on_el_mae
+#  - sp1.output/epoch/mean_pmf_coverage
+#  - sp1.output/epoch/sim_mx_off_el_mae
+  - tp1.output/epoch/sim_mx_on_el_mae
+  - tp1.output/epoch/mean_pmf_coverage
+  - tp1.output/epoch/sim_mx_off_el_mae
 
 blocks:
   gen:
@@ -65,6 +76,15 @@ blocks:
     output_sds: [400, 16]
     boostStrength: 0.
     potentialPct: 0.6
+  tp1:
+    _type_family_: temporal_pooler
+    _base_config_: default
+    reset_on_activation: False
+    pooling_window: 10
+    decay: ...
+    activation_threshold: 0.01
+    rand_decay_max_ratio: 1.0
+    not_predicted_weight: 0.7
   sp2:
     _type_family_: spatial_pooler
     _base_config_: wide
@@ -127,6 +147,17 @@ encoder:
     space_compression: .5
     active_size: ???
     sds: ...
+    seed: ???
+
+temporal_pooler:
+  default:
+    sds: ???
+    reset_on_activation: False
+    pooling_window: ???
+    decay: ???
+    activation_threshold: ???
+    rand_decay_max_ratio: 1.0
+    not_predicted_weight: 0.7
     seed: ???
 
 spatial_pooler:
