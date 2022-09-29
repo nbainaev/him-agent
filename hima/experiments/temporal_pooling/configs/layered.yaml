@@ -57,8 +57,8 @@ blocks:
   gen:
     _type_family_: generator
     _base_config_: synthetic_sequences
-    n_values: 4
-    value_encoder: bucket
+    n_values: 30
+    value_encoder: random
   sp1:
     _type_family_: spatial_pooler
     _base_config_: default
@@ -83,7 +83,6 @@ generator:
 
   synthetic_policies:
     _type_: synthetic_policies
-    _base_config_: base_generator
     n_states: 40
     n_actions: 8
     active_size: 10
@@ -125,7 +124,7 @@ encoder:
   random:
     _type_: int_random
     n_values: ???
-    space_compression: .75
+    space_compression: .5
     active_size: ???
     sds: ...
     seed: ???
