@@ -233,26 +233,36 @@ class CHMMBasic:
         prev_state = self.active_state
 
         predicted_state = self._rng.choice(self.states, p=self.prediction)
-        next_state = self._rng.choice(self.states, p=new_forward_message)
 
         wrong_prediction = not np.in1d(predicted_state, states_for_obs)
+
+        if wrong_prediction:
+            next_state = self._rng.choice(self.states, p=new_forward_message)
+        else:
+            next_state = predicted_state
 
         if self.is_first:
             w = self.log_state_prior[next_state]
             self.log_state_prior[next_state] += self.lr * (1 - self.alpha * w)
-            self.state_prior = softmax(self.log_state_prior, self.temp)
 
             if wrong_prediction:
-                self.log_state_prior[prev_state] -= self.lr * self.alpha * w
+                w = self.log_state_prior[predicted_state]
+                self.log_state_prior[predicted_state] -= self.lr * self.alpha * w
+
+            self.state_prior = softmax(self.log_state_prior, self.temp)
         else:
             w = self.log_transition_factors[prev_state, next_state]
-            self.log_transition_factors[prev_state, next_state] += self.lr * (1 - self.alpha * w)
+
+            self.log_transition_factors[prev_state, next_state] += self.lr * (
+                    1 - self.alpha * w)
 
             if wrong_prediction:
+                w = self.log_transition_factors[prev_state, predicted_state]
+
                 self.log_transition_factors[prev_state, predicted_state] -= self.lr * self.alpha * w
 
-        self.transition_probs = np.vstack(
-            [softmax(x, self.temp) for x in self.log_transition_factors]
-        )
+            self.transition_probs = np.vstack(
+                [softmax(x, self.temp) for x in self.log_transition_factors]
+            )
 
         self.active_state = next_state
