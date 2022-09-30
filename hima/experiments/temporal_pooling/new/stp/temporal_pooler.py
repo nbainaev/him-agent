@@ -3,9 +3,10 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
+from numpy.random import Generator
 
 from hima.common.sdr import SparseSdr
 from hima.common.sds import Sds
@@ -23,15 +24,18 @@ class TemporalPooler:
     not_predicted_weight: float
 
     traces: np.ndarray
+    rng: Generator
 
     def __init__(
-            self, sds: Sds, seed: int,
+            self, sds: Sds, sparsity: Union[int, float], seed: int,
             reset_on_activation: bool,
             pooling_window: float = None, decay: float = None, activation_threshold: float = None,
             rand_decay_max_ratio: float = 1.,
             not_predicted_weight: float = .7,
     ):
-        self.sds = sds
+        # apply configured output sparsity to the input size to get sds of an output
+        self.sds = Sds.as_sds([sds.size, sparsity])
+        self.rng = np.random.default_rng(seed)
 
         # no reset:
         #   a) all: threshold, window
@@ -53,7 +57,7 @@ class TemporalPooler:
         assert rand_decay_max_ratio >= 1., 'decay_mx_randomization_scale must be >= 1.0'
         if rand_decay_max_ratio > 1.:
             self.decay_mx = _make_decay_matrix(
-                rng=np.random.default_rng(seed), size=sds.size,
+                rng=self.rng, size=sds.size,
                 decay_mean=self.decay, decay_max_ratio=rand_decay_max_ratio
             )
 
@@ -61,7 +65,7 @@ class TemporalPooler:
         self.traces = np.zeros(self.sds.size)
 
     def _apply_decay(self):
-        if self.decay_mx:
+        if self.decay_mx is not None:
             decay_mx = self.decay_mx
             self.traces *= decay_mx
         else:
@@ -94,6 +98,12 @@ class TemporalPooler:
             threshold = max(threshold, self.activation_threshold)
 
         result = np.flatnonzero(self.traces >= threshold)
+        if len(result) > self.sds.active_size:
+            result = self.rng.choice(result, size=self.sds.active_size, replace=False)
+            result.sort()
+
+        if self.reset_on_activation:
+            self.traces[result] = .0
         return result
 
     def reset(self):
