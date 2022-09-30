@@ -29,14 +29,21 @@ class TemporalPoolerBlock(Block):
 
     def on_stream_sds_resolved(self, stream: Stream):
         # make sure that all streams have the same sds
+        # DO NOT resolve if another stream is already resolved, cause finally their sds could
+        #   be different (because of sparsity property of TP, defining output sparsity)
         propagate_to = self.FEEDFORWARD if stream.name == self.OUTPUT else self.OUTPUT
         if not is_resolved_value(self.streams[propagate_to].sds):
-            # print('FIXED')
             self.streams[propagate_to].resolve_sds(stream.sds)
 
     def build(self):
         sds = self.streams[self.FEEDFORWARD].sds
         self.tp = TemporalPooler(sds=sds, **self._tp_config)
+
+        # correct output sds sparsity after TP initialization
+        self.streams[self.OUTPUT].resolve_sds(self.tp.sds)
+
+    def reset(self, **kwargs):
+        self.tp.reset()
 
     def compute(self, data: dict[str, SparseSdr], **kwargs):
         self._compute(**data)
