@@ -36,6 +36,7 @@ class HMMRunner:
 
     def run(self):
         dist = np.zeros((len(self.mpg.states), len(self.mpg.alphabet)))
+        dist_disp = np.zeros((len(self.mpg.states), len(self.mpg.alphabet)))
         true_dist = np.array([self.mpg.predict_letters(from_state=i) for i in self.mpg.states])
 
         total_surprise = 0
@@ -70,9 +71,10 @@ class HMMRunner:
                 total_surprise += surprise
 
                 # 2. distribution
-                dist[prev_state] += self.smf_dist * (
-                        column_probs - dist[prev_state]
-                )
+                delta = column_probs - dist[prev_state]
+                dist_disp[prev_state] += self.smf_dist * (
+                        np.power(delta, 2) - dist_disp[prev_state])
+                dist[prev_state] += self.smf_dist * delta
 
                 # 3. Kl distance
                 dkl = min(
@@ -114,7 +116,8 @@ class HMMRunner:
                             label='TM',
                             color=(0.7, 1.0, 0.3),
                             capsize=4,
-                            ecolor='#2b4162'
+                            ecolor='#2b4162',
+                            yerr=np.sqrt(dist_disp[n])
                         )
                         ax.bar(
                             np.arange(dist[n].shape[0]),
