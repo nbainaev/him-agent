@@ -1,5 +1,7 @@
 # Hierarchical Intrinsically Motivated Agent - HIMA
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7133430.svg)](https://doi.org/10.5281/zenodo.7133430)
+
 - [Hierarchical Intrinsically Motivated Agent - HIMA](#hierarchical-intrinsically-motivated-agent---hima)
   - [The Repository](#the-repository)
   - [Hierarchical Intrinsically Motivated Agent](#hierarchical-intrinsically-motivated-agent)
@@ -8,8 +10,9 @@
   - [Repository structure](#repository-structure)
   - [Run examples](#run-examples)
     - [How to run HIMA agent](#how-to-run-hima-agent)
-      - [Run one experiment](#run-one-experiment)
-      - [Run Sweep](#run-sweep)
+    - [Run one experiment](#run-one-experiment)
+    - [Run Sweep](#run-sweep)
+  - [Cite us](#cite-us)
   - [License](#license)
 
 ## The Repository
@@ -66,7 +69,7 @@ pip install -e .
 
 ## Repository structure
 
-- `hima/` - HIMA package `hima` sources
+- `hima/` - HIMA package sources
 
 ## Run examples
 
@@ -74,7 +77,7 @@ pip install -e .
 
 Sign up to [wandb](https://wandb.ai/) and get access token in your profile settings to authorize locally further on.
 
-#### Run one experiment
+### Run one experiment
 
 ``` bash
 # cd to the package sources root
@@ -89,7 +92,7 @@ python run_agent.py <environment>/<config_name>
 
 Do not forget to change `entity` parameter in the corresponding config file to match your [wandb](https://wandb.ai/) login. When wandb asks you to login for the first time, use your access token obtained earlier.
 
-#### Run Sweep
+### Run Sweep
 
 Wandb [sweep](https://docs.wandb.ai/guides/sweeps) runs series of experiments with different seeds and parameters.
 
@@ -105,6 +108,45 @@ wandb sweep sweep/<sweep config name>
 
 # replace <sweep id> with the returned id
 python scripts/run_agents.py -n n_processes -c "wandb agent <sweep id>"
+```
+
+## Cite us
+
+If you use this repository in your research or wish to cite it, please make a reference to this piece of software:
+
+```latex
+@software{petr_kuderov_2022_7133430,
+  author       = {Petr Kuderov and
+                  Evgenij Dzhivelikyan and
+                  Artem Latyshev and
+                  Aleksandr I. Panov},
+  title        = {{AIRI-Institute/him-agent: Hierarchical 
+                   Intrinsically Motivated Agent Planning Behavior
+                   with Dreaming in Grid Environments}},
+  month        = mar,
+  year         = 2022,
+  publisher    = {Zenodo},
+  version      = {v3.2-hima-airi},
+  doi          = {10.5281/zenodo.7133430},
+  url          = {https://doi.org/10.5281/zenodo.7133430}
+}
+```
+
+or to the supporting paper:
+
+```latex
+@article{Dzhivelikian_Latyshev_Kuderov_Panov_2022,
+  title        = {Hierarchical intrinsically motivated agent planning behavior with dreaming in grid environments},
+  volume       = {9},
+  rights       = {All rights reserved},
+  issn         = {2198-4026},
+  doi          = {10.1186/s40708-022-00156-6},
+  number       = {1},
+  journal      = {Brain Informatics},
+  author       = {Dzhivelikian, Evgenii and Latyshev, Artem and Kuderov, Petr and Panov, Aleksandr I.},
+  year         = {2022},
+  month        = {Apr},
+  pages        = {8},
 ```
 
 ## License
