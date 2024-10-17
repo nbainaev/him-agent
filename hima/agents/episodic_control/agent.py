@@ -3,6 +3,8 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
+from typing import Iterable
+
 import numpy as np
 from enum import Enum, auto
 
@@ -23,6 +25,7 @@ class ECAgent:
             n_obs_states,
             n_actions,
             plan_steps,
+            cluster_test_steps,
             gamma,
             reward_lr,
             inverse_temp,
@@ -32,7 +35,14 @@ class ECAgent:
         self.n_obs_states = n_obs_states
         self.n_actions = n_actions
         self.plan_steps = plan_steps
-        self.dictionaries = [dict() for _ in range(n_actions)]
+        self.cluster_test_steps = cluster_test_steps
+
+        self.first_level_transitions = [dict() for _ in range(n_actions)]
+        self.second_level_transitions = [dict() for _ in range(n_actions)]
+        self.cluster_to_states = dict()
+        self.state_to_cluster = dict()
+        self.obs_to_free_states = {obs: set() for obs in range(self.n_obs_states)}
+
         self.state = (0, 0)
         self.gamma = gamma
         self.reward_lr = reward_lr
@@ -41,6 +51,7 @@ class ECAgent:
         self.action_values = np.zeros(self.n_actions)
         self.surprise = 0
         self.sf_steps = 0
+        self.test_steps = 0
         self.goal_found = False
         self.seed = seed
         self._rng = np.random.default_rng(self.seed)
@@ -58,6 +69,7 @@ class ECAgent:
         self.goal_found = False
         self.surprise = 0
         self.sf_steps = 0
+        self.test_steps = 0
         self.action_values = np.zeros(self.n_actions)
 
     def observe(self, observation, _reward, learn=True):
@@ -65,14 +77,15 @@ class ECAgent:
         obs_state, action = observation
         obs_state = int(obs_state[0])
 
-        predicted_state = self.dictionaries[action].get(self.state)
+        predicted_state = self.first_level_transitions[action].get(self.state)
         if (predicted_state is None) or (predicted_state[0] != obs_state):
             current_state = self._new_state(obs_state)
         else:
             current_state = predicted_state
 
         if learn:
-            self.dictionaries[action][self.state] = current_state
+            self.first_level_transitions[action][self.state] = current_state
+            self.obs_to_free_states[self.state[0]].add(self.state)
 
         self.state = current_state
 
@@ -96,7 +109,7 @@ class ECAgent:
         planning_steps = 0
         self.goal_found = False
         for action in range(self.n_actions):
-            predicted_state = self.dictionaries[action].get(self.state)
+            predicted_state = self.first_level_transitions[action].get(self.state)
             sf, steps, gf = self.generate_sf(predicted_state)
             self.goal_found = gf or self.goal_found
             planning_steps += steps
@@ -122,10 +135,10 @@ class ECAgent:
         for i in range(self.plan_steps):
             # uniform strategy
             predicted_states = set().union(
-                *[{d.get(state) for d in self.dictionaries} for state in predicted_states]
+                *[self._predict(predicted_states, a) for a in range(self.n_actions)]
             )
             obs_states = np.array(
-                [s[0] for s in predicted_states if s is not None],
+                self._convert_to_obs_states(predicted_states),
                 dtype=np.uint32
             )
             obs_states, counts = np.unique(obs_states, return_counts=True)
@@ -147,10 +160,120 @@ class ECAgent:
 
         return sf, i+1, goal_found
 
+    def sleep_phase(self, sleep_iterations):
+        for _ in range(sleep_iterations):
+            n_free_states = [len(self.obs_to_free_states[obs]) for obs in range(self.n_obs_states)]
+            n_free_states = np.array(n_free_states, dtype=np.float32)
+            if n_free_states.max() < 2:
+                Warning('Skip sleep phase. Not enough data.')
+                return
+
+            candidates = list(self.cluster_to_states.keys())
+            candidates.append(-1)
+            # sample cluster and states
+            cluster_id = self._rng.choice(candidates)
+            if cluster_id == -1:
+                obs_state = self._rng.choice(self.n_obs_states, p=softmax(n_free_states))
+                cluster_states = {
+                    (obs_state, clone) for clone in
+                    self._rng.choice(
+                        list(self.obs_to_free_states[obs_state]),
+                        2,
+                        replace=False
+                    )
+                }
+                cluster_id = len(candidates) - 1
+            else:
+                cluster_states = self.cluster_to_states[cluster_id]
+                obs_state = next(iter(cluster_states))[0]
+                cluster_states.add(
+                    (obs_state, self._rng.choice(list(self.obs_to_free_states[obs_state])))
+                )
+            cluster_states = np.array(list(cluster_states))
+            mask, self.test_steps = self._test_cluster(cluster_states)
+            freed_states = cluster_states[~mask]
+            cluster_states = cluster_states[mask]
+            # update cluster
+            self.cluster_to_states[cluster_id] = set(cluster_states)
+            # update free states
+            self.obs_to_free_states[obs_state] = self.obs_to_free_states[obs_state].difference(
+                self.cluster_to_states[cluster_id]
+            )
+            self.obs_to_free_states[obs_state].add(set(freed_states))
+
+    def _test_cluster(self, cluster: Iterable) -> (np.ndarray, int):
+        """
+            Returns boolean array of size len(cluster)
+            True/False means that the cluster's element is
+                consistent/inconsistent with the majority of elements
+        """
+        ps_per_i = [{s} for s in cluster]
+        t = -1
+        for t in range(self.cluster_test_steps):
+            score_a = np.zeros(self.n_actions)
+            # predict states for each action and initial state
+            ps_per_a = [[] for _ in range(len(self.n_actions))]
+            obs_per_a = [[] for _ in range(len(self.n_actions))]
+            for a, d_a in enumerate(self.first_level_transitions):
+                for ps_i in ps_per_i:
+                    ps_a = self._predict(ps_i, a)
+                    if len(ps_a) > 0:
+                        score_a[a] += 1
+                        obs_a = self._convert_to_obs_states(ps_a)
+                        obs_a = set(obs_a)
+                        if len(obs_a) > 1:
+                            obs_a = -1
+                        else:
+                            obs_a = obs_a.pop()
+                    else:
+                        obs_a = np.nan
+
+                    ps_per_a[a].append(ps_a)
+                    obs_per_a[a].append(obs_a)
+
+                # detect contradiction
+                obs = np.array(obs_per_a[a])
+                empty = np.isnan(obs)
+                states, counts = np.unique(obs[~empty], return_counts=True)
+                if len(states) > 1:
+                    test = (obs == states[np.argmax(counts)]) | empty
+                    return test, t+1
+            # choose next action
+            action = np.argmax(score_a)
+            ps_per_i = ps_per_a[action]
+            obs = obs_per_a[action]
+
+            if score_a[action] <= 1:
+                # no predictions
+                break
+
+            if np.any(
+                    self.rewards[obs] > 0
+            ):
+                # found rewarding state
+                break
+
+        return np.ones(len(ps_per_i)).astype(np.bool8), t+1
+
+    def _predict(self, state: set, action: int) -> set:
+        state_expanded = set().union(
+            *[self.cluster_to_states[self.state_to_cluster[s]] for s in state]
+        )
+        d_a = self.first_level_transitions[action]
+        predicted_state = set()
+        for s in state_expanded:
+            if s in d_a:
+                predicted_state.add(d_a[s])
+        return predicted_state
+
+    def _convert_to_obs_states(self, states):
+        return (
+            [s[0] for s in states if s is not None],
+        )
+
     def _new_state(self, obs_state):
         h = int(self.num_clones[obs_state])
         self.num_clones[obs_state] += 1
-
         return obs_state, h
 
     def _get_action_selection_distribution(
