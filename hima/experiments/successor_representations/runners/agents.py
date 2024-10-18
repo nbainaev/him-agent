@@ -304,7 +304,9 @@ class ECAgentWrapper(BaseAgent):
         self.agent = ECAgent(**conf['agent'])
 
     def observe(self, events, action, reward=0):
-        events = self.encoder.encode(events, learn=True)
+        if self.encoder is not None:
+            events = self.encoder.encode(events, learn=True)
+
         self.agent.observe((events, action), reward)
 
     def sample_action(self):

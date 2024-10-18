@@ -1,0 +1,18 @@
+- condition: ['episodes', 'equal', 1000, 'norepeat']
+  check_every: 'episodes'
+  action: stop_runner
+  params: {}
+- condition: ['steps', 'equal', 50, 'repeat']
+  check_every: 'steps'
+  action: stop_episode
+  params: {}
+- condition: ['episodes', 'equal', 0, 'norepeat']
+  check_every: 'episodes'
+  action: switch_logging
+  params: {}
+
+- condition: ['steps', 'mod', 10, 'repeat']
+  check_every: 'steps'
+  action: agent.agent.sleep_phase
+  params:
+    sleep_iterations: 10

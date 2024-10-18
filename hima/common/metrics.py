@@ -951,3 +951,37 @@ class ArrayMetrics(BaseMetric):
 
     def _reset(self):
         self.metrics = {metric: [] for metric in self.metrics.keys()}
+
+
+class EClusterPurity(BaseMetric):
+    def __init__(
+            self, name, state_att,
+            logger, runner,
+            update_step, log_step, update_period, log_period,
+    ):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+        self.name = name
+        self.state_att = state_att
+        self.state_labels = dict()
+        self.logger.define_metric(f'{self.name}', step_metric=self.log_step)
+
+    def update(self):
+        state = self.get_attr(self.state_att)
+        estimated_state = self.runner.agent.agent.state
+        self.state_labels[estimated_state] = state
+
+    def log(self, step):
+        log_dict = {
+            self.log_step: step
+        }
+
+        cluster_error = list()
+        clusters = self.runner.agent.agent.cluster_to_states
+        for cluster_id in clusters:
+            cluster = clusters[cluster_id]
+            cluster_labels = {self.state_labels[s] for s in cluster}
+            cluster_error.append((len(cluster_labels) - 1) / len(cluster))
+
+        log_dict[self.name] = np.array(cluster_error).mean()
+        self.logger.log(log_dict)
+
