@@ -18,6 +18,7 @@ test:
 classifier:
   classification: ???
   layers: ???
+  n_extra_layers: 0
 #  learning_rate: 0.0003
   learning_rate: 0.003
   collect_losses: 1
@@ -209,7 +210,7 @@ setups:
   rate_ann:
     input_mode: rate
     # classifier_symexp_logits: True
-    encoding_sds: [125, 1]
+    encoding_sds: [128, 1]
   rate_ann_2k:
     input_mode: rate
     encoding_sds: [2000, 1]

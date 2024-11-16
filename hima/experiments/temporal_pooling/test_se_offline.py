@@ -388,10 +388,11 @@ class SpatialEncoderOfflineExperiment:
         return np.mean((predictions - targets) ** 2, axis=-1).sum()
 
     def make_ann_classifier(self) -> MlpClassifier:
-        if self.encoder is not None:
-            layers = [self.encoding_sds.size, self.n_classes]
-        else:
-            layers = [self.dataset_sds.size, self.encoding_sds.size, self.n_classes]
+        in_size, out_size = self.dataset_sds.size, self.n_classes
+        enc_size = self.encoding_sds.size
+
+        layers = [in_size] if self.encoder is None else []
+        layers += [enc_size, out_size]
 
         return self.config.resolve_object(
             self.classifier, object_type_or_factory=MlpClassifier,

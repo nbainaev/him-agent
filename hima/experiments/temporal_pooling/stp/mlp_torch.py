@@ -37,10 +37,18 @@ class MlpClassifier:
             learning_rate: float,
             seed: int = None,
             collect_losses: int = 0,
+            n_extra_layers: int = 0,
             symexp_logits: bool = False,
     ):
         self.rng = np.random.default_rng(seed)
         self.lr = learning_rate
+
+        if n_extra_layers > 0:
+            out_size = layers.pop()
+            for _ in range(n_extra_layers):
+                layers.append(layers[-1] // 2)
+            layers.append(out_size)
+            print(f'MLP classifier layers: {layers}')
 
         self.layer_dims = layers
 
