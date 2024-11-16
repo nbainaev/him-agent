@@ -20,7 +20,10 @@ from hima.experiments.temporal_pooling.stp.pruning_controller_dense import Pruni
 from hima.experiments.temporal_pooling.stp.se import (
     LearningPolicy
 )
-from hima.experiments.temporal_pooling.stp.se_utils import sample_weights, WeightsDistribution
+from hima.experiments.temporal_pooling.stp.se_utils import (
+    sample_weights, WeightsDistribution,
+    pow_x, dot_match, norm_p, min_match
+)
 
 
 class SpatialEncoderDenseBackend:
@@ -63,7 +66,7 @@ class SpatialEncoderDenseBackend:
             weights_distribution: WeightsDistribution = WeightsDistribution.NORMAL,
             inhibitory_ratio: float = 0.0,
 
-            match_p: float = 1.0,
+            match_p: float = 1.0, match_op: str = 'mul',
 
             learning_policy: LearningPolicy = LearningPolicy.LINEAR, persistent_signs: bool = True,
             normalize_dw: bool = False,
@@ -85,18 +88,28 @@ class SpatialEncoderDenseBackend:
             self.rng, w_shape, weights_distribution, init_radius, self.lebesgue_p,
             inhibitory_ratio=inhibitory_ratio
         )
+        self.has_inhibitory = inhibitory_ratio > 0.0
 
         self.radius = self.get_radius()
         self.pos_log_radius = self.get_pos_log_radius()
 
         # ==> Pattern matching
         self.match_p = match_p
+        if self.match_p != 1.0:
+            self.weights_pow_p = self.get_weight_pow_p()
+
+        can_use_min_operator = (
+            self.match_p == 1.0 and not self.has_inhibitory
+            and learning_policy == LearningPolicy.LINEAR
+        )
+        if match_op == 'min' and can_use_min_operator:
+            self.match_op = min_match
+        else:
+            match_op = 'mul'
+            self.match_op = dot_match
 
         # ==> Learning
         self.learning_policy = learning_policy
-        # global learn flag that is switched each compute, to avoid passing it through
-        # the whole chain on demand. After compute it's set to False automatically
-        self.learn = False
         self.normalize_dw = normalize_dw
         self.persistent_signs = persistent_signs
 
@@ -108,14 +121,14 @@ class SpatialEncoderDenseBackend:
 
         print(
             f'Init SE backend: {self.lebesgue_p}-norm | {self.avg_radius:.3f}'
-            f' | {self.learning_policy} | match W^{self.match_p}'
+            f' | {self.learning_policy} | match W^{self.match_p} op: {match_op}'
+            f' | Inh: {inhibitory_ratio}'
         )
 
     def match_input(self, x):
-        w, p = self.weights, self.match_p
-        if p != 1.0:
-            w = np.sign(w) * (np.abs(w) ** p)
-        return np.dot(w, x)
+        # w = pow_x(self.weights, self.match_p, self.has_inhibitory)
+        w = self.weights if self.match_p == 1.0 else self.weights_pow_p
+        return self.match_op(x, w)
 
     def update_dense_weights(self, x, sdr, y, u, lr):
         if sdr.size == 0:
@@ -132,6 +145,9 @@ class SpatialEncoderDenseBackend:
                 willshaw_kuderov_update(self.weights, sdr, x, y, lr)
             else:
                 willshaw_update(self.weights, sdr, x, y, lr)
+
+        if self.match_p != 1.0:
+            self.weights_pow_p[sdr] = self.get_weight_pow_p(sdr)
 
         self.radius[sdr] = self.get_radius(sdr)
         self.pos_log_radius[sdr] = self.get_pos_log_radius(sdr)
@@ -157,10 +173,12 @@ class SpatialEncoderDenseBackend:
     def get_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         p = self.lebesgue_p
         w = self.weights if ixs is None else self.weights[ixs]
-        if p == 1:
-            # shortcut to remove unnecessary calculations
-            return np.sum(np.abs(w), axis=-1)
-        return np.sum(np.abs(w) ** p, axis=-1) ** (1 / p)
+        return norm_p(w, p, self.has_inhibitory)
+
+    def get_weight_pow_p(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
+        p = self.match_p
+        w = self.weights if ixs is None else self.weights[ixs]
+        return pow_x(w, p, self.has_inhibitory)
 
     def get_pos_log_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         r = self.radius if ixs is None else self.radius[ixs]
@@ -171,6 +189,8 @@ class SpatialEncoderDenseBackend:
         from matplotlib import pyplot as plt
         w, r = self.weights, self.radius
         w = w / np.expand_dims(r, -1)
+        p = self.match_p
+        w = pow_x(w, p, self.has_inhibitory)
         sns.histplot(w.flatten())
         plt.show()
 

@@ -70,7 +70,8 @@ def boosting(
     #   1 -> 0 -> K^tanh(0) = 1
     #   +inf -> -inf -> K^tanh(-inf) = 1 / K
     # higher softness just makes the sigmoid curve smoother; default value is empirically optimized
-    return np.power(k + 1, np.tanh(x / softness))
+    # TODO: check addition, it could be too high -> 1.05
+    return np.power(k + 1.1, np.tanh(x / softness))
 
 
 @jit
@@ -119,3 +120,62 @@ def nb_choice_k(
         raise ValueError('Infinite loop in nb_choice_k')
 
     return result
+
+
+def pow_x(x, p, has_negative):
+    if p == 1.0:
+        return x
+
+    if has_negative:
+        return np.sign(x) * (np.abs(x) ** p)
+    return x ** p
+
+
+def abs_pow_x(x, p, has_negative):
+    if has_negative:
+        x = np.abs(x)
+    if p == 1.0:
+        return x
+    return x ** p
+
+
+def dot_match(x, w):
+    return np.dot(w, x.T).T
+
+
+def min_match(x, w):
+    inter = np.empty_like(w)
+    return np.vstack([
+        np.sum(np.fmin(w, xx, out=inter), -1)
+        for xx in x
+    ])
+
+
+@jit()
+def min_match_j(x, w):
+    n_batch = x.shape[0]
+    n_out, n_in = w.shape
+    res = np.zeros((n_batch, n_out))
+    for k in range(n_batch):
+        for i in range(n_out):
+            t = 0
+            for xx, ww in zip(x[k], w[i]):
+                t += min(xx, ww)
+            res[k, i] = t
+    return res
+
+
+def norm_p(x, p, has_negative):
+    return np.sum(abs_pow_x(x, p, has_negative), -1) ** (1 / p)
+
+
+def normalize(x, p=1.0, has_negative=False):
+    r = norm_p(x, p, has_negative)
+    eps = 1e-30
+    if x.ndim > 1:
+        mask = r > eps
+        res = x.copy()
+        res[mask] /= np.expand_dims(r[mask], -1)
+        return res
+
+    return x / r if r > eps else x

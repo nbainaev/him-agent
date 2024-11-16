@@ -98,8 +98,9 @@ sp:
     # no | subtract_avg | subtract_avg_and_clip
     filter_input_policy: no
     # weights norm [should be compatible with learning policy, i.e.
-    #   p = 1 for linear and p >= 2 for krotov]
+    #   p = 1 for linear and p > 1 for krotov]
     lebesgue_p: 1.0
+#    lebesgue_p: 2.0
     init_radius: 20.0
     weights_distribution: normal
     inhibitory_ratio: 0.0
@@ -109,6 +110,9 @@ sp:
     #   we allow any p for linear policy (however, only p = 1 is the most natural)]
     # ... | <power>
     match_p: ...
+    # For match_p != 1.0 it's always mul ==> u = Ax
+    #   match_p == 1.0: mul or min, which is u = {sum(pairwise_min(a_i, x))}_i
+    match_op: mul
     # no | additive | multiplicative
     boosting_policy: multiplicative
     # powerlaw | exponential
@@ -125,20 +129,23 @@ sp:
 
     # linear | krotov
     learning_policy: linear
+#    learning_policy: krotov
     learning_rate: 0.01
     adaptive_lr: True
+    lr_range: [0.01, 0.1]
     # M | [M, Q]: M - hebb, Q - anti-hebb; ints or floats — absolute or relative to K
     learning_set: [0.75, 0.75]
     anti_hebb_scale: 0.8
     persistent_signs: False
     normalize_dw: False
+    print_stats_schedule: 25_000
 
 #    pruning:
 #      n_stages: 20
-#      cycle: 250.0
+#      cycle: 1000.0
 #      # linear | powerlaw
 #      mode: powerlaw
-#      target_rf_sparsity: 0.2
+#      target_rf_sparsity: 0.5
 
   float_sp:
     _base_: _common_base
@@ -234,8 +241,8 @@ setups:
     input_mode: rate
     ds_norm: lp
 #    encoding_sds: [4000, 40]
-    encoding_sds: [2000, 20]
-#    encoding_sds: [800, 10]
+#    encoding_sds: [2000, 20]
+    encoding_sds: [600, 7]
   binary_htm_sparse:
     encoder:
       _base_: sp.htm_sp

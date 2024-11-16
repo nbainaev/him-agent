@@ -24,7 +24,10 @@ from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
-from hima.experiments.temporal_pooling.stp.se_utils import boosting, arg_top_k, WeightsDistribution
+from hima.experiments.temporal_pooling.stp.se_utils import (
+    boosting, arg_top_k, WeightsDistribution,
+    normalize
+)
 from hima.modules.htm.utils import abs_or_relative
 
 if TYPE_CHECKING:
@@ -99,7 +102,8 @@ class SpatialEncoderLayer:
             weights_distribution: str = 'normal',
             inhibitory_ratio: float = 0.0,
 
-            match_p: float | None = None, boosting_policy: str = 'no',
+            match_p: float | None = None, match_op: str | None = None,
+            boosting_policy: str = 'no',
             activation_policy: str = 'powerlaw', beta: float = 1.0, beta_lr: float = 0.01,
             # K-based extra for soft partitioning
             soft_extra: float = 1.0,
@@ -151,7 +155,7 @@ class SpatialEncoderLayer:
             feedforward_sds=self.feedforward_sds, output_sds=self.output_sds,
             lebesgue_p=lebesgue_p, init_radius=init_radius,
             weights_distribution=weights_distribution, inhibitory_ratio=inhibitory_ratio,
-            match_p=match_p,
+            match_p=match_p, match_op=match_op,
             learning_policy=learning_policy, persistent_signs=persistent_signs,
             normalize_dw=normalize_dw, pruning=pruning
         )
@@ -334,7 +338,7 @@ class SpatialEncoderLayer:
             xs = prepr_input_sdrs.get_batch_dense(np.arange(batch_size))
 
         # ==> Match input
-        us_raw = self.match_input(xs.T).T
+        us_raw = self.match_input(xs)
         us = self.apply_boosting(us_raw)
 
         for i in range(batch_size):
@@ -368,8 +372,8 @@ class SpatialEncoderLayer:
             # ==> Learn
             self.update_dense_weights(x, sdr_learn, y_learn, u_raw)
             self.cnt += 1
-            # if self.cnt % 50000 == 0:
-            #     self.plot_weights_distr()
+            # if self.cnt == 1 or self.cnt % 250_000 == 0:
+            #     self.weights_backend.plot_weights_distr()
             # if self.cnt % 10000 == 0:
             #     self.plot_activation_distr(sdr, u, y)
 
@@ -438,7 +442,7 @@ class SpatialEncoderLayer:
         else:
             raise ValueError(f'Unsupported activation function: {self.activation_policy}')
 
-        y = normalize(y, all_positive=True)
+        y = normalize(y, has_negative=False)
         return y
 
     def match_input(self, x):
@@ -471,7 +475,7 @@ class SpatialEncoderLayer:
         sdr = hard_sdr[:k_output].copy()
         y = hard_y[:k_output].copy()
         if self.normalize_output:
-            y = normalize(y, all_positive=True)
+            y = normalize(y, has_negative=False)
 
         if k_output > 0:
             eps = 0.05 / act_support
@@ -535,8 +539,6 @@ class SpatialEncoderLayer:
 
         # ==> normalize input
         if self.input_normalization:
-            p = self.normalize_input_p
-            rates = normalize(rates, p)
             raise NotImplementedError('Normalize by avg RF norm')
 
         if self.learn:
@@ -600,8 +602,9 @@ class SpatialEncoderLayer:
 
     def periodic_check(self):
         # turn off boosting when its effect become negligible
-        if self.boosting_policy != BoostingPolicy.NO and self.pos_log_radius.mean() < 0.1:
-            self.boosting_policy = BoostingPolicy.NO
+        # if self.boosting_policy != BoostingPolicy.NO and self.pos_log_radius.mean() < 0.1:
+        #     self.boosting_policy = BoostingPolicy.NO
+        pass
 
     def print_stats(self, u, output_sdr):
         sdr, y = unwrap_as_rate_sdr(output_sdr)
@@ -691,7 +694,7 @@ def align_matching_learning_params(
     # check learning rule with p-norm compatibility
     assert (
             (learning_policy == LearningPolicy.LINEAR and lebesgue_p == 1.0) or
-            (learning_policy == LearningPolicy.KROTOV and lebesgue_p >= 2.0)
+            (learning_policy == LearningPolicy.KROTOV and lebesgue_p > 1.0)
     ), f'{learning_policy} is incompatible with p-norm {lebesgue_p}'
 
     # check learning rule with matching power p compatibility
@@ -716,17 +719,6 @@ def adapt_beta_mass(k, soft_extra, beta_active_mass):
 
     low, high = beta_active_mass
     return adapt_relation(low), adapt_relation(high)
-
-
-def normalize(x, p=1.0, all_positive=False):
-    u = x if all_positive else np.abs(x)
-    r = np.sum(u ** p, axis=-1) ** (1 / p) if p != 1.0 else np.sum(u, axis=-1)
-    eps = 1e-30
-    if x.ndim > 1:
-        mask = r > eps
-        return x[mask] / np.expand_dims(r[mask], -1)
-
-    return x / r if r > eps else x
 
 
 def parse_learning_set(ls, k):
