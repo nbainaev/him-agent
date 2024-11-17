@@ -111,7 +111,7 @@ class SpatialEncoderLayer:
             beta_active_mass: tuple[float] = (0.7, 0.9),
 
             learning_policy: str = 'linear', learning_rate: float = 0.01,
-            adaptive_lr: bool = False, lr_range: tuple[float, float] = (0.00001, 0.1),
+            adaptive_lr: bool = False, lr_range: tuple[float, float] = (0.01, 0.1),
             # K-based learning set: K1 | (K1, K2). K1 - hebb, K2 - anti-hebb
             learning_set: int | float | tuple[int | float] = 1.0,
             anti_hebb_scale: float = 0.4,
@@ -220,6 +220,10 @@ class SpatialEncoderLayer:
         self.adaptive_lr = adaptive_lr
         if self.adaptive_lr:
             self.lr_range = lr_range
+            if self.learning_policy == LearningPolicy.KROTOV:
+                # faster LR increases accuracy and entropy on early stages.
+                # Later stages are defined by LR range
+                self.learning_rate *= 2
         self.anti_hebbian_scale = anti_hebb_scale
         self.persistent_signs = persistent_signs
         self.normalize_dw = normalize_dw
@@ -521,6 +525,8 @@ class SpatialEncoderLayer:
         lr = self.get_adaptive_lr(sdr) if self.adaptive_lr else self.learning_rate
         if self.filter_input_policy == FilterInputPolicy.SUBTRACT_AVG:
             x = np.abs(x)
+            # should think of more correct ways to support this option
+            raise NotImplementedError()
 
         self.weights_backend.update_dense_weights(x, sdr, y, u, lr=lr)
         self.pos_log_radius[sdr] = self.get_pos_log_radius(sdr)

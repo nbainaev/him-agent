@@ -84,11 +84,12 @@ class SpatialEncoderDenseBackend:
 
         self.lebesgue_p = lebesgue_p
         self.rf_sparsity = 1.0
+        self.has_inhibitory = inhibitory_ratio > 0.0
+        assert not self.has_inhibitory, 'Proper support of inhibitory connections is not done yet'
         self.weights = sample_weights(
             self.rng, w_shape, weights_distribution, init_radius, self.lebesgue_p,
             inhibitory_ratio=inhibitory_ratio
         )
-        self.has_inhibitory = inhibitory_ratio > 0.0
 
         self.radius = self.get_radius()
         self.pos_log_radius = self.get_pos_log_radius()
@@ -216,6 +217,10 @@ def willshaw_update(weights, sdr, x, y, lr):
     for ix, vi in zip(sdr, v):
         w = weights[ix]
         w += vi * (x - w)
+        if vi < 0:
+            # only anti-hebbian learning causes sign change, if input x is always positive
+            # in this case, restrict updates
+            np.fmax(w, 0.0, w)
 
 
 @jit()
@@ -234,6 +239,10 @@ def oja_krotov_update(weights, sdr, x, u, y, lr):
         ui = u[ix]
         w = weights[ix]
         w += vi * (x - ui * w)
+        if vi < 0:
+            # only anti-hebbian learning causes sign change, if input x is always positive
+            # in this case, restrict updates
+            np.fmax(w, 0.0, w)
 
 
 @jit()
