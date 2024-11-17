@@ -96,6 +96,7 @@ class SpatialEncoderDenseBackend:
 
         # ==> Pattern matching
         self.match_p = match_p
+        self.weights_pow_p = None
         if self.match_p != 1.0:
             self.weights_pow_p = self.get_weight_pow_p()
 
@@ -131,7 +132,6 @@ class SpatialEncoderDenseBackend:
         )
 
     def match_input(self, x):
-        # w = pow_x(self.weights, self.match_p, self.has_inhibitory)
         w = self.weights if self.match_p == 1.0 else self.weights_pow_p
         return self.match_op(x, w)
 

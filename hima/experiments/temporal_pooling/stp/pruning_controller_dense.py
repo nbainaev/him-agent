@@ -68,7 +68,11 @@ class PruningController:
 
         # sample what connections to keep for each neuron independently
         new_rf_size = round(new_sparsity * self.owner.ff_size)
-        prune(self.owner.rng, self.owner.weights, new_rf_size, pruned_mask)
+
+        prune(
+            self.owner.rng, self.owner.weights, self.owner.weights_pow_p,
+            new_rf_size, pruned_mask
+        )
         return new_sparsity, new_rf_size
 
     def get_target_rf_sparsity(self):
@@ -98,17 +102,22 @@ class PruningController:
 
 
 @jit()
-def prune(rng: Generator, weights: npt.NDArray[float], k: int, pruned_mask):
+def prune(
+        rng: Generator, weights: npt.NDArray[float], pow_weights: npt.NDArray[float],
+        k: int, pruned_mask
+):
     n_neurons, n_synapses = weights.shape
+    w_priority = weights if pow_weights is None else pow_weights
 
     for row in range(n_neurons):
         pm_row = pruned_mask[row]
         w_row = weights[row]
+        w_priority_row = w_priority[row]
 
         active_mask = ~pm_row
-        abs_ws = np.abs(w_row[active_mask]) + 1e-20
-        t = abs_ws.mean()
-        prune_probs = (t / abs_ws + 0.1) ** 1.4
+        priority = w_priority_row[active_mask] + 1e-20
+        t = priority.mean()
+        prune_probs = (t / priority + 0.1) ** 1.4
 
         # pruned connections are marked as already selected for "select K from N" operation
         n_active = len(prune_probs)
@@ -117,3 +126,5 @@ def prune(rng: Generator, weights: npt.NDArray[float], k: int, pruned_mask):
         new_pruned_ixs = np.flatnonzero(active_mask)[ixs]
         w_row[new_pruned_ixs] = 0.0
         pm_row[new_pruned_ixs] = True
+        if pow_weights is not None:
+            pow_weights[row][new_pruned_ixs] = 0.0
