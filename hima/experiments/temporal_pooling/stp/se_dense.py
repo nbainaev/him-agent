@@ -143,15 +143,9 @@ class SpatialEncoderDenseBackend:
 
         # TODO: negative Xs is not supported ATM
         if self.learning_policy == LearningPolicy.KROTOV:
-            if self.persistent_signs:
-                oja_krotov_kuderov_update(self.weights, sdr, x, u, y, lr)
-            else:
-                oja_krotov_update(self.weights, sdr, x, u, y, lr, alive_connections)
+            oja_krotov_update(self.weights, sdr, x, u, y, lr, alive_connections)
         else:
-            if self.persistent_signs:
-                willshaw_kuderov_update(self.weights, sdr, x, y, lr)
-            else:
-                willshaw_update(self.weights, sdr, x, y, lr, alive_connections)
+            willshaw_update(self.weights, sdr, x, y, lr, alive_connections)
 
         if self.match_p != 1.0:
             self.weights_pow_p[sdr] = self.get_weight_pow_p(sdr)
