@@ -85,9 +85,12 @@ class MnistDataset:
     sds: Sds
     binary: bool
 
-    def __init__(self, seed: int, binary: bool = True, ds: str = 'mnist', debug: bool = False):
+    def __init__(
+            self, seed: int, binary: bool = True, ds: str = 'mnist',
+            debug: bool = False, grayscale=True
+    ):
         self.binary = binary
-        threshold, train, test = _load_dataset(seed, ds, grayscale=True, debug=debug)
+        threshold, train, test = _load_dataset(seed, ds, grayscale=grayscale, debug=debug)
 
         train_images, train_targets = train
         self.train = SdrDataset(train_images, train_targets, threshold, binary)

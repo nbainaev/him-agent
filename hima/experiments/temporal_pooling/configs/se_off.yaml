@@ -241,8 +241,10 @@ setups:
       output_mode: rate
     input_mode: rate
     ds_norm: lp
+    grayscale: True
 #    encoding_sds: [4000, 40]
 #    encoding_sds: [2000, 20]
+#    encoding_sds: [1000, 10]
     encoding_sds: [600, 7]
   binary_htm_sparse:
     encoder:

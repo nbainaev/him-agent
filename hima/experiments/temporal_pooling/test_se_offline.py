@@ -97,7 +97,7 @@ class SpatialEncoderOfflineExperiment:
         setup = self.config.config_resolver.resolve(setup, config_type=dict)
         (
             encoder, encoding_sds, input_mode, req_sdr_tracker,
-            classifier_symexp_logits, ds_norm
+            classifier_symexp_logits, ds_norm, grayscale
         ) = self._get_setup(**setup)
         self.input_mode = OutputMode[input_mode.upper()]
         self.is_binary = self.input_mode == OutputMode.BINARY
@@ -105,7 +105,9 @@ class SpatialEncoderOfflineExperiment:
 
         if data in ['mnist', 'cifar']:
             from hima.experiments.temporal_pooling.data.mnist_ext import MnistDataset
-            self.data = MnistDataset(seed=seed, binary=self.is_binary, ds=data, debug=debug)
+            self.data = MnistDataset(
+                seed=seed, binary=self.is_binary, ds=data, debug=debug, grayscale=grayscale
+            )
             self.classification = True
         elif data == 'dvs':
             from hima.experiments.temporal_pooling.data.dvs_ext import DvsDataset
@@ -409,9 +411,12 @@ class SpatialEncoderOfflineExperiment:
     @staticmethod
     def _get_setup(
             input_mode: str, encoding_sds, encoder: TConfig = None, sdr_tracker: bool = True,
-            classifier_symexp_logits: bool = False, ds_norm: str = None
+            classifier_symexp_logits: bool = False, ds_norm: str = None, grayscale=True
     ):
-        return encoder, encoding_sds, input_mode, sdr_tracker, classifier_symexp_logits, ds_norm
+        return (
+            encoder, encoding_sds, input_mode, sdr_tracker,
+            classifier_symexp_logits, ds_norm, grayscale
+        )
 
     def should_test(self):
         if self.i_train_epoch <= self.training.n_epochs:
