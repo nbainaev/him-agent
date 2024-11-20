@@ -175,6 +175,7 @@ class SpatialEncoderDenseBackend:
         self.rf_sparsity = sparsity
         # rescale weights to keep the same norms
         old_radius, new_radius = self.radius, self.get_radius()
+        # I keep pow weights the same — each will be updated on its next learning step.
         self.weights *= np.expand_dims(old_radius / new_radius, -1)
 
     def get_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:

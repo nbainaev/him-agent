@@ -87,10 +87,12 @@ class MnistDataset:
 
     def __init__(
             self, seed: int, binary: bool = True, ds: str = 'mnist',
-            debug: bool = False, grayscale=True
+            debug: bool = False, grayscale=True, contrastive: bool = False
     ):
         self.binary = binary
-        threshold, train, test = _load_dataset(seed, ds, grayscale=grayscale, debug=debug)
+        threshold, train, test = _load_dataset(
+            seed, ds, grayscale=grayscale, contrastive=contrastive, debug=debug
+        )
 
         train_images, train_targets = train
         self.train = SdrDataset(train_images, train_targets, threshold, binary)
@@ -114,13 +116,13 @@ class MnistDataset:
 
 def _load_dataset(
         seed: int, ds_name: str, test_size: int | float = 10_000, grayscale: bool = True,
-        debug: bool = False
+        contrastive: bool = False, debug: bool = False
 ):
     # normalize the images [0, 255] -> [0, 1]
     normalizer = 255.0
 
     # NB: to get sdr for rate sdrs
-    threshold = 2.0 / normalizer
+    threshold = 1.0 / normalizer
 
     from pathlib import Path
     cache_path = Path(f'~/data/_cache/{ds_name}{"_gs" if grayscale else ""}.pkl')
@@ -153,6 +155,9 @@ def _load_dataset(
 
     print(f'{ds_name} LOADED images: {images.shape} | targets: {targets.shape}')
 
+    if ds_name == 'ds_name' and contrastive:
+        images = _make_contrastive_grayscale(images) if grayscale else _make_contrastive_rgb(images)
+
     from sklearn.model_selection import train_test_split
     train_images, test_images, train_targets, test_targets = train_test_split(
         images, targets, random_state=seed, test_size=test_size
@@ -165,3 +170,43 @@ def _load_dataset(
         test_images, test_targets = test_images[:n_tests], test_targets[:n_tests]
 
     return threshold, (train_images, train_targets), (test_images, test_targets)
+
+
+def _make_contrastive_grayscale(images):
+    n = 4
+    _im_sq = images.reshape(-1, 32, 32)
+    _res = np.zeros_like(_im_sq)
+    _res[:, :, :-1] += np.fmax(_im_sq[:, :, :-1] - _im_sq[:, :, 1:], 0.0)
+    _res[:, :, 1:] += np.fmax(_im_sq[:, :, 1:] - _im_sq[:, :, :-1], 0.0)
+    _res[:, :-1, :] += np.fmax(_im_sq[:, :-1, :] - _im_sq[:, 1:, :], 0.0)
+    _res[:, 1:, :] += np.fmax(_im_sq[:, 1:, :] - _im_sq[:, :-1, :], 0.0)
+
+    # import matplotlib.pyplot as plt
+    # img = _res[2000]
+    # plt.imshow(img)
+    # plt.show()
+
+    return _res.reshape(-1, 1024) / n
+
+
+def _make_contrastive_rgb(images):
+    n = 4
+    _im_sq = np.transpose(images.reshape(-1, 3, 32, 32), (0, 2, 3, 1))
+
+    # import matplotlib.pyplot as plt
+    # img = _im_sq[2000]
+    # plt.imshow(img)
+    # plt.show()
+
+    _res = np.zeros_like(_im_sq)
+    _res[:, :, :-1, :] += np.fmax(_im_sq[:, :, :-1, :] - _im_sq[:, :, 1:, :], 0.0)
+    _res[:, :, 1:, :] += np.fmax(_im_sq[:, :, 1:, :] - _im_sq[:, :, :-1, :], 0.0)
+    _res[:, :-1, :, :] += np.fmax(_im_sq[:, :-1, :, :] - _im_sq[:, 1:, :, :], 0.0)
+    _res[:, 1:, :, :] += np.fmax(_im_sq[:, 1:, :, :] - _im_sq[:, :-1, :, :], 0.0)
+
+    # import matplotlib.pyplot as plt
+    # img = _res[2000]
+    # plt.imshow(img)
+    # plt.show()
+
+    return _res.reshape(-1, 1024, 3) / n

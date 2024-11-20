@@ -13,6 +13,7 @@ test:
   eval_first: 3
   eval_schedule: 5
   n_epochs: 20
+#  n_epochs: 30
   noise: 0.0
 
 classifier:
@@ -209,6 +210,8 @@ sp:
 setups:
   rate_ann:
     input_mode: rate
+    grayscale: True
+    contrastive: False
     # classifier_symexp_logits: True
     encoding_sds: [128, 1]
   rate_ann_2k:
@@ -242,6 +245,7 @@ setups:
     input_mode: rate
     ds_norm: lp
     grayscale: True
+    contrastive: False
 #    encoding_sds: [4000, 40]
 #    encoding_sds: [2000, 20]
 #    encoding_sds: [1000, 10]
