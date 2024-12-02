@@ -160,7 +160,7 @@ class SpatialEncoderLayer:
             learning_policy=learning_policy, persistent_signs=persistent_signs,
             normalize_dw=normalize_dw, pruning=pruning
         )
-        self.pos_log_radius = self.get_pos_log_radius()
+        self.is_dense = True
 
         # ==> Pattern matching
         self.boosting_policy = BoostingPolicy[boosting_policy.upper()]
@@ -311,7 +311,7 @@ class SpatialEncoderLayer:
         # ==> Select learning set
         sdr_learn, y_learn = self.select_learning_set(hard_sdr, hard_y)
         # ==> Learn
-        self.update_dense_weights(x, sdr_learn, y_learn, u_raw)
+        self.update_weights(x, sdr_learn, y_learn, u_raw)
         self.update_beta()
         self.prune_newborns()
         self.cnt += 1
@@ -337,17 +337,22 @@ class SpatialEncoderLayer:
             self.preprocess_input(input_sdrs.sparse[i]) for i in range(batch_size)
         ], sdr_size=input_sdrs.sdr_size)
 
+        # FIXME: make it less hacky
         if self.filter_input_policy == FilterInputPolicy.NO and not self.input_normalization:
             xs = input_sdrs.get_batch_dense(np.arange(batch_size))
         else:
             xs = prepr_input_sdrs.get_batch_dense(np.arange(batch_size))
 
         # ==> Match input
-        us_raw = self.match_input(xs)
+        if self.is_dense:
+            us_raw = self.match_input(xs)
+        else:
+            us_raw = self.match_input(input_sdrs)
+
         us = self.apply_boosting(us_raw)
 
         for i in range(batch_size):
-            x = xs[i]
+            x = xs[i] if self.is_dense else input_sdrs.get_sdr(i)
             u, u_raw = us[i], us_raw[i]
 
             # ==> Soft partition
@@ -375,7 +380,7 @@ class SpatialEncoderLayer:
             # ==> Select learning set
             sdr_learn, y_learn = self.select_learning_set(hard_sdr, hard_y)
             # ==> Learn
-            self.update_dense_weights(x, sdr_learn, y_learn, u_raw)
+            self.update_weights(x, sdr_learn, y_learn, u_raw)
             self.cnt += 1
             # if self.cnt == 1 or self.cnt % 250_000 == 0:
             #     self.weights_backend.plot_weights_distr()
@@ -514,7 +519,7 @@ class SpatialEncoderLayer:
 
         return (sdr_hebb, sdr_anti_hebb), (y_hebb, y_anti_hebb)
 
-    def update_dense_weights(self, x, sdr, y, u):
+    def update_weights(self, x, sdr, y, u):
         (sdr_hebb, sdr_anti_hebb), (y_hebb, y_anti_hebb) = sdr, y
         sdr = np.concatenate([sdr_hebb, sdr_anti_hebb])
 
@@ -529,7 +534,7 @@ class SpatialEncoderLayer:
             # should think of more correct ways to support this option
             raise NotImplementedError()
 
-        self.weights_backend.update_dense_weights(x, sdr, y, u, lr=lr)
+        self.weights_backend.update_weights(x, sdr, y, u, lr=lr)
         self.pos_log_radius[sdr] = self.get_pos_log_radius(sdr)
 
     def preprocess_input(self, input_sdr: RateSdr):
@@ -665,6 +670,10 @@ class SpatialEncoderLayer:
         return self.weights_backend.radius
 
     @property
+    def pos_log_radius(self):
+        return self.weights_backend.pos_log_radius
+
+    @property
     def ff_size(self):
         return self.feedforward_sds.size
 
@@ -707,7 +716,7 @@ class SpatialEncoderLayer:
         rf_sparsity = self.rf_sparsity
         total_sparsity = ff_sparsity * rf_sparsity
         # should_be_sparse = total_sparsity <= 0.06
-        should_be_sparse = total_sparsity <= 0.25
+        should_be_sparse = total_sparsity <= 0.15
         is_current_dense = isinstance(self.weights_backend, SpatialEncoderDenseBackend)
         if should_be_sparse and is_current_dense:
             from hima.experiments.temporal_pooling.stp.se_sparse import SpatialEncoderSparseBackend
@@ -716,6 +725,7 @@ class SpatialEncoderLayer:
                 dense_backend=dense_backend
             )
             self.weights_backend = sparse_backend
+            self.is_dense = False
         elif not should_be_sparse and not is_current_dense:
             raise NotImplementedError('Sparse to dense backend transition is not implemented yet')
 

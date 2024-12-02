@@ -10,7 +10,6 @@ import numpy.typing as npt
 from numba import jit
 from numpy.random import Generator
 
-from hima.common.config.base import TConfig
 from hima.common.sdr import (
     SparseSdr, DenseSdr, OutputMode
 )
@@ -21,8 +20,7 @@ from hima.experiments.temporal_pooling.stp.se import (
     LearningPolicy
 )
 from hima.experiments.temporal_pooling.stp.se_utils import (
-    sample_weights, WeightsDistribution,
-    pow_x, dot_match, norm_p, min_match
+    pow_x, norm_p, min_match, dot_match_sparse
 )
 
 
@@ -55,6 +53,9 @@ class SpatialEncoderSparseBackend:
     #   both efficiently from the given data.
     srt_i: npt.NDArray[int]
     lebesgue_p: float
+
+    radius: npt.NDArray[float]
+    pos_log_radius: npt.NDArray[float]
 
     pruning_controller: PruningController | None
     pruned_mask: npt.NDArray[bool] | None
@@ -126,7 +127,7 @@ class SpatialEncoderSparseBackend:
             self.match_op = min_match
         else:
             match_op = 'mul'
-            self.match_op = dot_match
+            self.match_op = dot_match_sparse
 
         # ==> Learning
         self.learning_policy = dense_backend.learning_policy
@@ -150,9 +151,10 @@ class SpatialEncoderSparseBackend:
 
     def match_input(self, x):
         w = self.weights if self.match_p == 1.0 else self.weights_pow_p
-        return self.match_op(x, w)
+        return self.match_op(x, w, self.ixs_srt_j, self.shifts, self.srt_i)
 
-    def update_dense_weights(self, x, sdr, y, u, lr):
+    def update_weights(self, x, sdr, y, u, lr):
+        return
         if sdr.size == 0:
             return
 
@@ -171,6 +173,7 @@ class SpatialEncoderSparseBackend:
         self.pos_log_radius[sdr] = self.get_pos_log_radius(sdr)
 
     def prune_newborns(self, ticks_passed: int = 1):
+        return False
         pc = self.pruning_controller
         if pc is None or not pc.is_newborn_phase:
             return

@@ -13,6 +13,8 @@ from numba import jit
 from numpy import typing as npt
 from numpy.random import Generator
 
+from hima.common.sdr_array import SdrArray
+
 
 class WeightsDistribution(Enum):
     NORMAL = 1
@@ -179,6 +181,26 @@ def min_match_j(x, w):
             for xx, ww in zip(x[k], w[i]):
                 t += min(xx, ww)
             res[k, i] = t
+    return res
+
+
+def dot_match_sparse(x: SdrArray, w, ixs_srt_j, shifts, srt_i):
+    batch_size = len(x)
+    n_out = srt_i.shape[0]
+
+    res = np.zeros((batch_size, n_out))
+    for i in range(batch_size):
+        match_sparse_w_x_(
+            res[i, :], w, ixs_srt_j, shifts, x.sparse[i].sdr, x.sparse[i].values
+        )
+    return res
+
+
+@jit()
+def match_sparse_w_x_(res, wi_sp, jxs, shifts, sdr, rates):
+    for i, r in zip(sdr, rates):
+        for j in range(shifts[i], shifts[i + 1]):
+            res[jxs[j]] += r * wi_sp[j]
     return res
 
 

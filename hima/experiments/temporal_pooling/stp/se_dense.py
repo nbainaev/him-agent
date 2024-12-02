@@ -40,6 +40,9 @@ class SpatialEncoderDenseBackend:
     weights: npt.NDArray[float]
     lebesgue_p: float
 
+    radius: npt.NDArray[float]
+    pos_log_radius: npt.NDArray[float]
+
     pruning_controller: PruningController | None
     pruned_mask: npt.NDArray[bool] | None
     rf: npt.NDArray[int] | None
@@ -137,7 +140,7 @@ class SpatialEncoderDenseBackend:
         w = self.weights if self.match_p == 1.0 else self.weights_pow_p
         return self.match_op(x, w)
 
-    def update_dense_weights(self, x, sdr, y, u, lr):
+    def update_weights(self, x, sdr, y, u, lr):
         if sdr.size == 0:
             return
 
