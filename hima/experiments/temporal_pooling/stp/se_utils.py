@@ -19,7 +19,9 @@ class WeightsDistribution(Enum):
     UNIFORM = auto()
 
 
-def sample_weights(rng, w_shape, distribution, radius, lebesgue_p, inhibitory_ratio=0.5):
+def sample_weights(
+        rng, w_shape, distribution, radius, lebesgue_p, inhibitory_ratio=0.5
+):
     if distribution == WeightsDistribution.NORMAL:
         init_std = get_normal_std(w_shape[1], lebesgue_p, radius)
         weights = np.abs(rng.normal(loc=0., scale=init_std, size=w_shape))
@@ -92,7 +94,16 @@ def nb_choice_k(
         rng: Generator, k: int, weights: npt.NDArray[np.float64] = None, n: int = None,
         replace: bool = False, cache: npt.NDArray[np.bool_] = None
 ):
-    """Choose k samples from max_n values, with optional weights and replacement."""
+    """
+    Choose k samples from max_n values, with optional weights and replacement.
+
+    Be careful using this function with very skewed weights w/o replacement, as it may be slow and
+    end up with time limit exception. For such cases, consider using numpy choice with weights.
+    The reason for this is that when probability mass is concentrated in a few values,
+    the random sampling will repeatedly produce duplicates, which are then rejected
+    due to the no-replacement constraint. So, the best case scenario is when the weights are
+    close to uniform.
+    """
     acc_w = np.cumsum(weights) if weights is not None else np.arange(0, n, 1, dtype=np.float64)
     # Total of weights
     mx_w = acc_w[-1]
@@ -102,7 +113,9 @@ def nb_choice_k(
         cache = np.zeros(n, dtype=np.bool_)
 
     i, j = 0, 0
-    timelimit = 1_000_000
+    # reasonable time limit: avg 100 tries for each required sample, growing as the
+    # choice getting more dense (n / k -> 1)
+    timelimit = min(10_000_000, k * 100 ** (1.0 + k / n))
     while i < k and j < timelimit:
         j += 1
         r = mx_w * rng.random()
@@ -117,7 +130,11 @@ def nb_choice_k(
             i += 1
 
     if j >= timelimit:
-        raise ValueError('Infinite loop in nb_choice_k')
+        # print(f'{j=}: {i=} of {k=} in {n=} | {mx_w=}')
+        # with np.printoptions(precision=3):
+        #     print(f'{acc_w[:20]=}')
+        #     print(f'{acc_w[-20:]=}')
+        raise ValueError('Infinite loop in nb_choice_k. If weights are degenerate, use numpy')
 
     return result
 
@@ -166,7 +183,12 @@ def min_match_j(x, w):
 
 
 def norm_p(x, p, has_negative):
-    return np.sum(abs_pow_x(x, p, has_negative), -1) ** (1 / p)
+    return abs_pow_x(
+        np.sum(abs_pow_x(x, p, has_negative), -1),
+        (1 / p),
+        # even if they were negative, already took abs
+        False
+    )
 
 
 def normalize(x, p=1.0, has_negative=False):
