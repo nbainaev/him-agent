@@ -19,10 +19,13 @@ class PruningController:
     owner: Any
 
     mode: SpNewbornPruningMode
-    schedule: int
     n_stages: int
     stage: int
     scheduler: Scheduler
+
+    initial_rf_sparsity: float
+    target_rf_to_input_ratio: float
+    target_rf_sparsity: float
 
     def __init__(
             self, owner,
@@ -31,6 +34,7 @@ class PruningController:
     ):
         self.owner = owner
 
+        # noinspection PyTypeChecker
         self.mode = SpNewbornPruningMode[mode.upper()]
         self.n_stages = n_stages
         self.stage = 0
@@ -53,7 +57,6 @@ class PruningController:
             new_sparsity = self.newborn_linear_progress(
                 initial=self.initial_rf_sparsity, target=self.get_target_rf_sparsity()
             )
-            print(self.initial_rf_sparsity, self.get_target_rf_sparsity(), new_sparsity)
         elif self.mode == SpNewbornPruningMode.POWERLAW:
             new_sparsity = self.newborn_powerlaw_progress(
                 initial=self.owner.rf_sparsity, target=self.get_target_rf_sparsity()
@@ -91,6 +94,7 @@ class PruningController:
         # linear decay rule
         return initial + newborn_phase_progress * (target - initial)
 
+    # noinspection PyUnusedLocal
     def newborn_powerlaw_progress(self, initial, target):
         steps_left = self.n_stages - self.stage + 1
         current = self.owner.rf_sparsity
@@ -106,6 +110,7 @@ def prune(
         rng: Generator, weights: npt.NDArray[float], pow_weights: npt.NDArray[float],
         k: int, pruned_mask
 ):
+    # WARNING: works only with non-negative weights!
     n_neurons, n_synapses = weights.shape
     w_priority = weights if pow_weights is None else pow_weights
 
@@ -115,9 +120,18 @@ def prune(
         w_priority_row = w_priority[row]
 
         active_mask = ~pm_row
-        priority = w_priority_row[active_mask] + 1e-20
-        t = priority.mean()
-        prune_probs = (t / priority + 0.1) ** 1.4
+        priority = w_priority_row[active_mask]
+        # normalize relative to the mean: < 1 are weak, > 1 are strong
+        priority /= priority.mean()
+        # clip to avoid numerical issues: low values threshold is safe to keep enough information
+        #   i.e. we keep info until the synapse is 1mln times weaker than the average
+        np.clip(priority, 1e-6, 1e+6, priority)
+
+        # linearize the scales -> [-X, +Y], where X,Y are low < 100
+        priority = np.log(priority)
+        # -> shift to negative [-(X+Y), 0] -> flip to positive [0, X+Y] -> add baseline probability
+        #   the weakest synapses are now have the highest probability
+        prune_probs = -(priority - priority.max()) + 0.1
 
         # pruned connections are marked as already selected for "select K from N" operation
         n_active = len(prune_probs)
