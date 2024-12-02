@@ -36,16 +36,13 @@ class SpatialEncoderDenseBackend:
     feedforward_sds: Sds
     adapt_to_ff_sparsity: bool
 
-    # input cache
-    sparse_input: SparseSdr
-    dense_input: DenseSdr
-
     # connections
     weights: npt.NDArray[float]
     lebesgue_p: float
 
     pruning_controller: PruningController | None
     pruned_mask: npt.NDArray[bool] | None
+    rf: npt.NDArray[int] | None
     rf_sparsity: float
 
     # potentiation and learning
@@ -62,6 +59,8 @@ class SpatialEncoderDenseBackend:
     def __init__(
             self, *, seed: int, feedforward_sds: Sds, output_sds: Sds,
 
+            adapt_to_ff_sparsity,
+
             lebesgue_p: float = 1.0, init_radius: float = 10.0,
             weights_distribution: WeightsDistribution = WeightsDistribution.NORMAL,
             inhibitory_ratio: float = 0.0,
@@ -77,6 +76,8 @@ class SpatialEncoderDenseBackend:
 
         self.feedforward_sds = Sds.make(feedforward_sds)
         self.output_sds = Sds.make(output_sds)
+
+        self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
 
         # ==> Weights initialization
         n_out, n_in = self.output_sds.size, self.feedforward_sds.size
@@ -113,6 +114,7 @@ class SpatialEncoderDenseBackend:
         # ==> Learning
         self.learning_policy = learning_policy
         self.normalize_dw = normalize_dw
+        # WARNING: this feature is disabled
         self.persistent_signs = persistent_signs
 
         # ==> Output
@@ -120,13 +122,13 @@ class SpatialEncoderDenseBackend:
         if pruning is not None:
             self.pruning_controller = PruningController(self, **pruning)
         self.pruned_mask = np.zeros_like(self.weights, dtype=bool)
-        self.alive_connections = np.tile(
+        self.rf = np.tile(
             np.arange(self.ff_size, dtype=int),
             (self.output_size, 1)
         )
 
         print(
-            f'Init SE backend: {self.lebesgue_p}-norm | {self.avg_radius:.3f}'
+            f'Init SE dense backend: {self.lebesgue_p}-norm | {self.avg_radius:.3f}'
             f' | {self.learning_policy} | match W^{self.match_p} op: {match_op}'
             f' | Inh: {inhibitory_ratio}'
         )
@@ -139,13 +141,13 @@ class SpatialEncoderDenseBackend:
         if sdr.size == 0:
             return
 
-        alive_connections = None if self.rf_sparsity == 1.0 else self.alive_connections
+        rf = None if self.rf_sparsity == 1.0 else self.rf
 
         # TODO: negative Xs is not supported ATM
         if self.learning_policy == LearningPolicy.KROTOV:
-            oja_krotov_update(self.weights, sdr, x, u, y, lr, alive_connections)
+            oja_krotov_update(self.weights, sdr, x, u, y, lr, rf)
         else:
-            willshaw_update(self.weights, sdr, x, y, lr, alive_connections)
+            willshaw_update(self.weights, sdr, x, y, lr, rf)
 
         if self.match_p != 1.0:
             self.weights_pow_p[sdr] = self.get_weight_pow_p(sdr)
@@ -156,13 +158,13 @@ class SpatialEncoderDenseBackend:
     def prune_newborns(self, ticks_passed: int = 1):
         pc = self.pruning_controller
         if pc is None or not pc.is_newborn_phase:
-            return
+            return False
         if not pc.scheduler.tick(ticks_passed):
-            return
+            return False
 
         (sparsity, rf_size), t = timed(pc.shrink_receptive_field)(self.pruned_mask)
         # update alive connections
-        self.alive_connections = np.array([
+        self.rf = np.array([
             np.flatnonzero(~neuron_connections)
             for neuron_connections in self.pruned_mask
         ])
@@ -177,6 +179,7 @@ class SpatialEncoderDenseBackend:
         old_radius, new_radius = self.radius, self.get_radius()
         # I keep pow weights the same — each will be updated on its next learning step.
         self.weights *= np.expand_dims(old_radius / new_radius, -1)
+        return True
 
     def get_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         p = self.lebesgue_p
