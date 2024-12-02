@@ -155,7 +155,7 @@ def _load_dataset(
 
     print(f'{ds_name} LOADED images: {images.shape} | targets: {targets.shape}')
 
-    if ds_name == 'ds_name' and contrastive:
+    if ds_name == 'cifar' and contrastive:
         images = _make_contrastive_grayscale(images) if grayscale else _make_contrastive_rgb(images)
 
     from sklearn.model_selection import train_test_split
