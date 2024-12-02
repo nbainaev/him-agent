@@ -32,6 +32,7 @@ from hima.modules.htm.utils import abs_or_relative
 
 if TYPE_CHECKING:
     from hima.experiments.temporal_pooling.stp.se_dense import SpatialEncoderDenseBackend
+    from hima.experiments.temporal_pooling.stp.se_sparse import SpatialEncoderSparseBackend
 
 
 class FilterInputPolicy(Enum):
@@ -77,10 +78,9 @@ class SpatialEncoderLayer:
     dense_input: DenseSdr
 
     # connections
-    weights_backend: SpatialEncoderDenseBackend
+    weights_backend: SpatialEncoderDenseBackend | SpatialEncoderSparseBackend
 
     pruning_controller: PruningController | None
-    rf_sparsity: float
 
     # potentiation and learning
     learning_policy: LearningPolicy
@@ -153,6 +153,7 @@ class SpatialEncoderLayer:
         self.weights_backend = SpatialEncoderDenseBackend(
             seed=self.rng.integers(100_000_000),
             feedforward_sds=self.feedforward_sds, output_sds=self.output_sds,
+            adapt_to_ff_sparsity=adapt_to_ff_sparsity,
             lebesgue_p=lebesgue_p, init_radius=init_radius,
             weights_distribution=weights_distribution, inhibitory_ratio=inhibitory_ratio,
             match_p=match_p, match_op=match_op,
@@ -554,7 +555,9 @@ class SpatialEncoderLayer:
         return RateSdr(input_sdr.sdr, rates)
 
     def prune_newborns(self, ticks_passed: int = 1):
-        self.weights_backend.prune_newborns(ticks_passed)
+        pruned = self.weights_backend.prune_newborns(ticks_passed)
+        if pruned:
+            self.ensure_suitable_backend()
 
     def update_beta(self, mu: int = 1):
         schedule = 16
@@ -575,6 +578,7 @@ class SpatialEncoderLayer:
         if k_extra < 0.4 * k:
             return
 
+        # TODO: comment calculations
         avg_pos_log_radius = max(0.01, self.pos_log_radius.mean())
         beta_lr = mu * self.beta_lr * max(0.01, np.sqrt(avg_pos_log_radius))
 
@@ -673,6 +677,10 @@ class SpatialEncoderLayer:
         return self.ff_avg_active_size / self.ff_size
 
     @property
+    def rf_sparsity(self):
+        return self.weights_backend.rf_sparsity
+
+    @property
     def output_size(self):
         return self.output_sds.size
 
@@ -691,6 +699,28 @@ class SpatialEncoderLayer:
 
     def output_entropy(self):
         return entropy(self.output_rate)
+
+    def ensure_suitable_backend(self):
+        from hima.experiments.temporal_pooling.stp.se_dense import SpatialEncoderDenseBackend
+
+        ff_sparsity = self.ff_avg_sparsity
+        rf_sparsity = self.rf_sparsity
+        total_sparsity = ff_sparsity * rf_sparsity
+        # should_be_sparse = total_sparsity <= 0.06
+        should_be_sparse = total_sparsity <= 0.25
+        is_current_dense = isinstance(self.weights_backend, SpatialEncoderDenseBackend)
+        if should_be_sparse and is_current_dense:
+            from hima.experiments.temporal_pooling.stp.se_sparse import SpatialEncoderSparseBackend
+            dense_backend = self.weights_backend
+            sparse_backend = SpatialEncoderSparseBackend(
+                dense_backend=dense_backend
+            )
+            self.weights_backend = sparse_backend
+        elif not should_be_sparse and not is_current_dense:
+            raise NotImplementedError('Sparse to dense backend transition is not implemented yet')
+
+        # everything is in order, no need to change backend
+        ...
 
 
 def align_matching_learning_params(
@@ -717,6 +747,7 @@ def align_matching_learning_params(
 
 
 def adapt_beta_mass(k, soft_extra, beta_active_mass):
+    # TODO: comment this operation
     a = (soft_extra / k) ** 0.7
 
     def adapt_relation(x):

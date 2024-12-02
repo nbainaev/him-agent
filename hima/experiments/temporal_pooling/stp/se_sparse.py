@@ -41,7 +41,19 @@ class SpatialEncoderSparseBackend:
     dense_input: DenseSdr
 
     # connections
+    # indices convention: i - postsynaptic, j - presynaptic
+    # weights: flatten vector of synaptic weights. Connections are sorted by presynaptic neurons `j`
     weights: npt.NDArray[float]
+    # ixs_srt_j: corresponding to the synaptic weights, the indices of postsynaptic neurons `i`
+    ixs_srt_j: npt.NDArray[int]
+    # shifts: defines ranges of presynaptic neuron `j` connections' indices.
+    #   They lie in [shifts[j], shifts[j+1])
+    shifts: npt.NDArray[int]
+    # srt_i: 2D matrix, each row corresponds to postsynaptic neuron `i` and contains indices
+    #   of connections [in weights and ixs_srt_j] that define its receptive field.
+    # NB: there's neither explicit i -> j mapping, nor j -> i. But it's possible to reconstruct
+    #   both efficiently from the given data.
+    srt_i: npt.NDArray[int]
     lebesgue_p: float
 
     pruning_controller: PruningController | None
@@ -60,50 +72,56 @@ class SpatialEncoderSparseBackend:
     activation_threshold: tuple[float, float, float]
 
     def __init__(
-            self, *, seed: int, feedforward_sds: Sds, output_sds: Sds,
+            self, *, dense_backend,
+            # seed: int,
+            # feedforward_sds: Sds, output_sds: Sds,
 
-            lebesgue_p: float = 1.0, init_radius: float = 10.0,
-            weights_distribution: WeightsDistribution = WeightsDistribution.NORMAL,
-            inhibitory_ratio: float = 0.0,
+            # adapt_to_ff_sparsity,
 
-            match_p: float = 1.0, match_op: str = 'mul',
+            # lebesgue_p: float = 1.0,
+            # init_radius: float = 10.0,
+            # weights_distribution: WeightsDistribution = WeightsDistribution.NORMAL,
+            # inhibitory_ratio: float = 0.0,
 
-            learning_policy: LearningPolicy = LearningPolicy.LINEAR, persistent_signs: bool = True,
-            normalize_dw: bool = False,
+            # match_p: float = 1.0, match_op: str = 'mul',
 
-            pruning: TConfig = None,
+            # learning_policy: LearningPolicy = LearningPolicy.LINEAR,
+            # persistent_signs: bool = True,
+            # normalize_dw: bool = False,
+
+            # pruning: TConfig = None,
     ):
+        seed = dense_backend.rng.integers(1_000_000)
         self.rng = np.random.default_rng(seed)
 
-        self.feedforward_sds = Sds.make(feedforward_sds)
-        self.output_sds = Sds.make(output_sds)
+        self.feedforward_sds = Sds.make(dense_backend.feedforward_sds)
+        self.output_sds = Sds.make(dense_backend.output_sds)
+
+        self.adapt_to_ff_sparsity = dense_backend.adapt_to_ff_sparsity
 
         # ==> Weights initialization
-        n_out, n_in = self.output_sds.size, self.feedforward_sds.size
-        w_shape = (n_out, n_in)
-
-        self.lebesgue_p = lebesgue_p
-        self.rf_sparsity = 1.0
-        self.has_inhibitory = inhibitory_ratio > 0.0
-        assert not self.has_inhibitory, 'Proper support of inhibitory connections is not done yet'
-        self.weights = sample_weights(
-            self.rng, w_shape, weights_distribution, init_radius, self.lebesgue_p,
-            inhibitory_ratio=inhibitory_ratio
+        self.lebesgue_p = dense_backend.lebesgue_p
+        self.rf_sparsity = dense_backend.rf_sparsity
+        weights, ixs_srt_j, shifts, srt_i = make_sparse_weights_from_dense(
+            dense_backend.weights, dense_backend.rf
         )
+        self.weights = weights
+        self.ixs_srt_j = ixs_srt_j
+        self.shifts = shifts
+        self.srt_i = srt_i
 
         self.radius = self.get_radius()
         self.pos_log_radius = self.get_pos_log_radius()
 
         # ==> Pattern matching
-        self.match_p = match_p
+        self.match_p = dense_backend.match_p
         self.weights_pow_p = None
         if self.match_p != 1.0:
             self.weights_pow_p = self.get_weight_pow_p()
 
-        can_use_min_operator = (
-            self.match_p == 1.0 and not self.has_inhibitory
-            and learning_policy == LearningPolicy.LINEAR
-        )
+        learning_policy = dense_backend.learning_policy
+        match_op = dense_backend.match_op
+        can_use_min_operator = self.match_p == 1.0 and learning_policy == LearningPolicy.LINEAR
         if match_op == 'min' and can_use_min_operator:
             self.match_op = min_match
         else:
@@ -111,14 +129,14 @@ class SpatialEncoderSparseBackend:
             self.match_op = dot_match
 
         # ==> Learning
-        self.learning_policy = learning_policy
-        self.normalize_dw = normalize_dw
-        self.persistent_signs = persistent_signs
+        self.learning_policy = dense_backend.learning_policy
+        self.normalize_dw = dense_backend.normalize_dw
 
         # ==> Output
         self.pruning_controller = None
-        if pruning is not None:
-            self.pruning_controller = PruningController(self, **pruning)
+        # pruning = dense_backend.pruning
+        # if pruning is not None:
+        #     self.pruning_controller = PruningController(self, **pruning)
         self.pruned_mask = np.zeros_like(self.weights, dtype=bool)
         self.alive_connections = np.tile(
             np.arange(self.ff_size, dtype=int),
@@ -126,9 +144,8 @@ class SpatialEncoderSparseBackend:
         )
 
         print(
-            f'Init SE backend: {self.lebesgue_p}-norm | {self.avg_radius:.3f}'
+            f'Init SE sparse backend: {self.lebesgue_p}-norm | {self.avg_radius:.3f}'
             f' | {self.learning_policy} | match W^{self.match_p} op: {match_op}'
-            f' | Inh: {inhibitory_ratio}'
         )
 
     def match_input(self, x):
@@ -180,13 +197,19 @@ class SpatialEncoderSparseBackend:
 
     def get_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         p = self.lebesgue_p
-        w = self.weights if ixs is None else self.weights[ixs]
-        return norm_p(w, p, self.has_inhibitory)
+        if ixs is None:
+            w = self.weights[self.srt_i]
+        else:
+            w = self.weights[self.srt_i[ixs]]
+        return norm_p(w, p, False)
 
     def get_weight_pow_p(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         p = self.match_p
-        w = self.weights if ixs is None else self.weights[ixs]
-        return pow_x(w, p, self.has_inhibitory)
+        if ixs is None:
+            w = self.weights[self.srt_i]
+        else:
+            w = self.weights[self.srt_i[ixs]]
+        return pow_x(w, p, False)
 
     def get_pos_log_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         r = self.radius if ixs is None else self.radius[ixs]
@@ -198,7 +221,7 @@ class SpatialEncoderSparseBackend:
         w, r = self.weights, self.radius
         w = w / np.expand_dims(r, -1)
         p = self.match_p
-        w = pow_x(w, p, self.has_inhibitory)
+        w = pow_x(w, p, False)
         sns.histplot(w.flatten())
         plt.show()
 
@@ -213,6 +236,43 @@ class SpatialEncoderSparseBackend:
     @property
     def output_size(self):
         return self.output_sds.size
+
+
+def make_sparse_weights_from_dense(dense_weights, idxs):
+    n_out, n_in = dense_weights.shape
+    # idxs: row — postsynaptic (i), col — presynaptic (j)
+    sparse_weights = np.take_along_axis(dense_weights, idxs, -1).copy()
+    w_f = sparse_weights.flatten()
+
+    # jxs_srt_i: pre sorted by post
+    jxs_srt_i = idxs.flatten()
+
+    srt_j = np.argsort(jxs_srt_i, kind='stable')
+    # post sorted by post
+    ixs_srt_i = np.repeat(np.arange(n_out), idxs.shape[1])
+
+    # post sorted by pre
+    ixs_srt_j = ixs_srt_i[srt_j].copy()
+    # weights sorted by pre
+    w_f_srt_j = w_f[srt_j].copy()
+    # i -> shift for i-th presynaptic connections
+    shifts = np.pad(np.cumsum(np.bincount(jxs_srt_i[srt_j])), (1, 0))
+
+    srt_i = np.argsort(ixs_srt_j, kind='stable')
+
+    # print(jxs_srt_i[:15])
+    # # print(ixs_srt_i[:15])
+    # print(srt_j[:15])
+    # print(jxs_srt_i[srt_j][:50])
+    # print('---')
+    # print(ixs_srt_j[:15])
+    srt_i = srt_i.reshape(sparse_weights.shape)
+    # print(srt_i[:2])
+    # print(ixs_srt_j[srt_i][:2])
+    # print(sparse_weights[:2])
+    # print(w_f_srt_j[srt_i][:2])
+
+    return w_f_srt_j, ixs_srt_j, shifts, srt_i
 
 
 @jit()
