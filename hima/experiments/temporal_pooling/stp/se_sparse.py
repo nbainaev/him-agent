@@ -162,7 +162,6 @@ class SpatialEncoderSparseBackend:
         if y_sdr.size == 0:
             return
 
-        x_sdr, x_rates = x.sdr, x.values
         x_dense = x.to_dense(self.feedforward_sds.size)
 
         # TODO: negative Xs is not supported ATM
@@ -170,8 +169,7 @@ class SpatialEncoderSparseBackend:
             oja_krotov_update_sparse(self.weights, y_sdr, x, u, y_rates, lr, alive_connections)
         else:
             willshaw_update_sparse(
-                self.weights, self.ixs_srt_j, self.shifts_j, self.kxs_srt_ij,
-                x_dense, x_sdr, x_rates, y_sdr, y_rates, lr,
+                self.weights, self.shifts_j, self.kxs_srt_ij, x_dense, y_sdr, y_rates, lr,
             )
 
         if self.match_p != 1.0:
@@ -277,14 +275,10 @@ def make_sparse_weights_from_dense(dense_weights, idxs):
 
 
 @jit()
-def willshaw_update_sparse(
-        weights, ixs_srt_j, shifts_j, kxs_srt_ij,
-        x_dense, x_sdr, x_rates, y_sdr, y_rates, lr
-):
+def willshaw_update_sparse(weights, shifts_j, kxs_srt_ij, x, y_sdr, y_rates, lr):
     # Willshaw learning rule, L1 normalization:
     # dw = lr * y * (x - w)
     w = weights
-    sz_x_sdr = len(x_sdr)
 
     v = y_rates * lr
     for i, vi in zip(y_sdr, v):
@@ -296,21 +290,7 @@ def willshaw_update_sparse(
             while k >= shifts_j[j+1]:
                 j += 1
 
-            # # find the input value `x` for the presynaptic neuron `j` with 0.0 for inactive input
-            # x = 0.0
-            # while True:
-            #     if ix_x_sdr == sz_x_sdr:
-            #         break
-            #     t = x_sdr[ix_x_sdr]
-            #     if t >= j:
-            #         # if t == j, `j` active, take its rate, otherwise it's inactive, i.e. keep 0.0
-            #         if t == j:
-            #             x = x_rates[ix_x_sdr]
-            #         break
-            #     ix_x_sdr += 1
-            x = x_dense[j]
-
-            w[k] += vi * (x - w[k])
+            w[k] += vi * (x[j] - w[k])
             if w[k] < 0.:  # fix anti-hebbian
                 w[k] = 0.0
 
