@@ -58,7 +58,8 @@ def sparse_to_dense(
         size = isnone(size, np.prod(shape))
 
     dense_vector = np.zeros(size, dtype=dtype)
-    dense_vector[sdr] = 1
+    if len(sdr) > 0:
+        dense_vector[sdr] = 1
     return dense_vector.reshape(shape)
 
 
@@ -101,6 +102,13 @@ class RateSdr:
         """Reorder both SDR indices and their corresponding values."""
         self.sdr[:] = self.sdr[ordering]
         self.values[:] = self.values[ordering]
+
+    def to_dense(self, size: int) -> DenseSdr:
+        """Convert Rate SDR to dense form."""
+        dense_vector = np.zeros(size, dtype=float)
+        if len(self.sdr) > 0:
+            dense_vector[self.sdr] = self.values
+        return dense_vector
 
     # NB: doubtful decision to implement it as it could be misused
     # due to non-exact (=approx) equality check, or it could be

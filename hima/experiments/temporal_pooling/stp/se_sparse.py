@@ -11,7 +11,7 @@ from numba import jit
 from numpy.random import Generator
 
 from hima.common.sdr import (
-    SparseSdr, DenseSdr, OutputMode
+    SparseSdr, DenseSdr, OutputMode, sparse_to_dense, RateSdr
 )
 from hima.common.sds import Sds
 from hima.common.timer import timed
@@ -39,19 +39,24 @@ class SpatialEncoderSparseBackend:
     dense_input: DenseSdr
 
     # connections
-    # indices convention: i - postsynaptic, j - presynaptic
-    # weights: flatten vector of synaptic weights. Connections are sorted by presynaptic neurons `j`
-    weights: npt.NDArray[float]
-    # ixs_srt_j: corresponding to the synaptic weights, the indices of postsynaptic neurons `i`
+    # Indices naming convention:
+    #   i - postsynaptic neurons,
+    #   j - presynaptic neurons,
+    #   k - synaptic connections
+    # ixs_srt_j: flatten synaptic connections, `k`-th connection stores an index
+    #   of the postsynaptic neuron `i`. Connections are sorted by presynaptic neurons `j`
     ixs_srt_j: npt.NDArray[int]
-    # shifts: defines ranges of presynaptic neuron `j` connections' indices.
-    #   They lie in [shifts[j], shifts[j+1])
-    shifts: npt.NDArray[int]
+    # weights: flatten synaptic connections' corresponding weights.
+    weights: npt.NDArray[float]
+    # shifts_j: defines partition of synaptic connections by the presynaptic neurons.
+    #   `j`-th presynaptic neuron's connections are {k \in [shifts_j[j], shifts_j[j+1])}
+    shifts_j: npt.NDArray[int]
     # srt_i: 2D matrix, each row corresponds to postsynaptic neuron `i` and contains indices
     #   of connections [in weights and ixs_srt_j] that define its receptive field.
+    #   Indices are sorted ASC (i.e. by presynaptic neuron `j`)
     # NB: there's neither explicit i -> j mapping, nor j -> i. But it's possible to reconstruct
     #   both efficiently from the given data.
-    srt_i: npt.NDArray[int]
+    kxs_srt_ij: npt.NDArray[int]
     lebesgue_p: float
 
     radius: npt.NDArray[float]
@@ -103,13 +108,13 @@ class SpatialEncoderSparseBackend:
         # ==> Weights initialization
         self.lebesgue_p = dense_backend.lebesgue_p
         self.rf_sparsity = dense_backend.rf_sparsity
-        weights, ixs_srt_j, shifts, srt_i = make_sparse_weights_from_dense(
+        weights, ixs_srt_j, shifts_j, kxs_srt_ij = make_sparse_weights_from_dense(
             dense_backend.weights, dense_backend.rf
         )
         self.weights = weights
         self.ixs_srt_j = ixs_srt_j
-        self.shifts = shifts
-        self.srt_i = srt_i
+        self.shifts_j = shifts_j
+        self.kxs_srt_ij = kxs_srt_ij
 
         self.radius = self.get_radius()
         self.pos_log_radius = self.get_pos_log_radius()
@@ -151,26 +156,29 @@ class SpatialEncoderSparseBackend:
 
     def match_input(self, x):
         w = self.weights if self.match_p == 1.0 else self.weights_pow_p
-        return self.match_op(x, w, self.ixs_srt_j, self.shifts, self.srt_i)
+        return self.match_op(x, w, self.ixs_srt_j, self.shifts_j, self.kxs_srt_ij)
 
-    def update_weights(self, x, sdr, y, u, lr):
-        return
-        if sdr.size == 0:
+    def update_weights(self, x: RateSdr, y_sdr, y_rates, u, lr):
+        if y_sdr.size == 0:
             return
 
-        alive_connections = None if self.rf_sparsity == 1.0 else self.alive_connections
+        x_sdr, x_rates = x.sdr, x.values
+        x_dense = x.to_dense(self.feedforward_sds.size)
 
         # TODO: negative Xs is not supported ATM
         if self.learning_policy == LearningPolicy.KROTOV:
-            oja_krotov_update(self.weights, sdr, x, u, y, lr, alive_connections)
+            oja_krotov_update_sparse(self.weights, y_sdr, x, u, y_rates, lr, alive_connections)
         else:
-            willshaw_update(self.weights, sdr, x, y, lr, alive_connections)
+            willshaw_update_sparse(
+                self.weights, self.ixs_srt_j, self.shifts_j, self.kxs_srt_ij,
+                x_dense, x_sdr, x_rates, y_sdr, y_rates, lr,
+            )
 
         if self.match_p != 1.0:
-            self.weights_pow_p[sdr] = self.get_weight_pow_p(sdr)
+            self.weights_pow_p[y_sdr] = self.get_weight_pow_p(y_sdr)
 
-        self.radius[sdr] = self.get_radius(sdr)
-        self.pos_log_radius[sdr] = self.get_pos_log_radius(sdr)
+        self.radius[y_sdr] = self.get_radius(y_sdr)
+        self.pos_log_radius[y_sdr] = self.get_pos_log_radius(y_sdr)
 
     def prune_newborns(self, ticks_passed: int = 1):
         return False
@@ -201,17 +209,17 @@ class SpatialEncoderSparseBackend:
     def get_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         p = self.lebesgue_p
         if ixs is None:
-            w = self.weights[self.srt_i]
+            w = self.weights[self.kxs_srt_ij]
         else:
-            w = self.weights[self.srt_i[ixs]]
+            w = self.weights[self.kxs_srt_ij[ixs]]
         return norm_p(w, p, False)
 
     def get_weight_pow_p(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         p = self.match_p
         if ixs is None:
-            w = self.weights[self.srt_i]
+            w = self.weights[self.kxs_srt_ij]
         else:
-            w = self.weights[self.srt_i[ixs]]
+            w = self.weights[self.kxs_srt_ij[ixs]]
         return pow_x(w, p, False)
 
     def get_pos_log_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
@@ -248,56 +256,67 @@ def make_sparse_weights_from_dense(dense_weights, idxs):
     w_f = sparse_weights.flatten()
 
     # jxs_srt_i: pre sorted by post
+    # defines synaptic connections (k)
     jxs_srt_i = idxs.flatten()
 
-    srt_j = np.argsort(jxs_srt_i, kind='stable')
+    kxs_srt_j = np.argsort(jxs_srt_i, kind='stable')
     # post sorted by post
     ixs_srt_i = np.repeat(np.arange(n_out), idxs.shape[1])
 
     # post sorted by pre
-    ixs_srt_j = ixs_srt_i[srt_j].copy()
+    ixs_srt_j = ixs_srt_i[kxs_srt_j].copy()
     # weights sorted by pre
-    w_f_srt_j = w_f[srt_j].copy()
+    w_f_srt_j = w_f[kxs_srt_j].copy()
     # i -> shift for i-th presynaptic connections
-    shifts = np.pad(np.cumsum(np.bincount(jxs_srt_i[srt_j])), (1, 0))
+    shifts_j = np.pad(np.cumsum(np.bincount(jxs_srt_i[kxs_srt_j])), (1, 0))
 
-    srt_i = np.argsort(ixs_srt_j, kind='stable')
+    kxs_srt_ij = np.argsort(ixs_srt_j, kind='stable')
+    kxs_srt_ij = kxs_srt_ij.reshape(sparse_weights.shape)
 
-    # print(jxs_srt_i[:15])
-    # # print(ixs_srt_i[:15])
-    # print(srt_j[:15])
-    # print(jxs_srt_i[srt_j][:50])
-    # print('---')
-    # print(ixs_srt_j[:15])
-    srt_i = srt_i.reshape(sparse_weights.shape)
-    # print(srt_i[:2])
-    # print(ixs_srt_j[srt_i][:2])
-    # print(sparse_weights[:2])
-    # print(w_f_srt_j[srt_i][:2])
-
-    return w_f_srt_j, ixs_srt_j, shifts, srt_i
+    return w_f_srt_j, ixs_srt_j, shifts_j, kxs_srt_ij
 
 
 @jit()
-def willshaw_update(weights, sdr, x, y, lr, alive_connections):
+def willshaw_update_sparse(
+        weights, ixs_srt_j, shifts_j, kxs_srt_ij,
+        x_dense, x_sdr, x_rates, y_sdr, y_rates, lr
+):
     # Willshaw learning rule, L1 normalization:
     # dw = lr * y * (x - w)
+    w = weights
+    sz_x_sdr = len(x_sdr)
 
-    v = y * lr
-    for ix, vi in zip(sdr, v):
-        w = weights[ix]
+    v = y_rates * lr
+    for i, vi in zip(y_sdr, v):
+        j, ix_x_sdr = 0, 0
 
-        if alive_connections is None:
-            w += vi * (x - w)
-            fix_anti_hebbian_negatives(vi, w, None)
-        else:
-            m = alive_connections[ix]
-            w[m] += vi * (x[m] - w[m])
-            fix_anti_hebbian_negatives(vi, w, m)
+        # traverse synaptic connections `k` of the postsynaptic neuron `i`
+        for k in kxs_srt_ij[i]:
+            # for each connection, find the corresponding presynaptic neuron `j`
+            while k >= shifts_j[j+1]:
+                j += 1
+
+            # # find the input value `x` for the presynaptic neuron `j` with 0.0 for inactive input
+            # x = 0.0
+            # while True:
+            #     if ix_x_sdr == sz_x_sdr:
+            #         break
+            #     t = x_sdr[ix_x_sdr]
+            #     if t >= j:
+            #         # if t == j, `j` active, take its rate, otherwise it's inactive, i.e. keep 0.0
+            #         if t == j:
+            #             x = x_rates[ix_x_sdr]
+            #         break
+            #     ix_x_sdr += 1
+            x = x_dense[j]
+
+            w[k] += vi * (x - w[k])
+            if w[k] < 0.:  # fix anti-hebbian
+                w[k] = 0.0
 
 
 @jit()
-def oja_krotov_update(weights, sdr, x, u, y, lr, alive_connections):
+def oja_krotov_update_sparse(weights, sdr, x, u, y, lr, alive_connections):
     # Oja-Krotov learning rule, L^p normalization, p >= 2:
     # dw = lr * y * (x - u * w)
 

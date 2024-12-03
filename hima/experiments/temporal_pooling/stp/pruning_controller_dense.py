@@ -120,18 +120,7 @@ def prune(
         w_priority_row = w_priority[row]
 
         active_mask = ~pm_row
-        priority = w_priority_row[active_mask]
-        # normalize relative to the mean: < 1 are weak, > 1 are strong
-        priority /= priority.mean()
-        # clip to avoid numerical issues: low values threshold is safe to keep enough information
-        #   i.e. we keep info until the synapse is 1mln times weaker than the average
-        np.clip(priority, 1e-6, 1e+6, priority)
-
-        # linearize the scales -> [-X, +Y], where X,Y are low < 100
-        priority = np.log(priority)
-        # -> shift to negative [-(X+Y), 0] -> flip to positive [0, X+Y] -> add baseline probability
-        #   the weakest synapses are now have the highest probability
-        prune_probs = -(priority - priority.max()) + 0.1
+        prune_probs = pruning_probs_from_synaptic_weights(w_priority_row[active_mask])
 
         # pruned connections are marked as already selected for "select K from N" operation
         n_active = len(prune_probs)
@@ -142,3 +131,19 @@ def prune(
         pm_row[new_pruned_ixs] = True
         if pow_weights is not None:
             pow_weights[row][new_pruned_ixs] = 0.0
+
+
+@jit()
+def pruning_probs_from_synaptic_weights(weights):
+    priority = weights.copy()
+    # normalize relative to the mean: < 1 are weak, > 1 are strong
+    priority /= priority.mean()
+    # clip to avoid numerical issues: low values threshold is safe to keep enough information
+    #   i.e. we keep info until the synapse is 1mln times weaker than the average
+    np.clip(priority, 1e-6, 1e+6, priority)
+    # linearize the scales -> [-X, +Y], where X,Y are low < 100
+    priority = np.log(priority)
+    # -> shift to negative [-(X+Y), 0] -> flip to positive [0, X+Y] -> add baseline probability
+    #   the weakest synapses are now have the highest probability
+    prune_probs = -(priority - priority.max()) + 0.1
+    return prune_probs

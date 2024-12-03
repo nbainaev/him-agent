@@ -140,23 +140,23 @@ class SpatialEncoderDenseBackend:
         w = self.weights if self.match_p == 1.0 else self.weights_pow_p
         return self.match_op(x, w)
 
-    def update_weights(self, x, sdr, y, u, lr):
-        if sdr.size == 0:
+    def update_weights(self, x, y_sdr, y_rates, u, lr):
+        if y_sdr.size == 0:
             return
 
         rf = None if self.rf_sparsity == 1.0 else self.rf
 
         # TODO: negative Xs is not supported ATM
         if self.learning_policy == LearningPolicy.KROTOV:
-            oja_krotov_update(self.weights, sdr, x, u, y, lr, rf)
+            oja_krotov_update(self.weights, x, u, y_sdr, y_rates, lr, rf)
         else:
-            willshaw_update(self.weights, sdr, x, y, lr, rf)
+            willshaw_update(self.weights, x, y_sdr, y_rates, lr, rf)
 
         if self.match_p != 1.0:
-            self.weights_pow_p[sdr] = self.get_weight_pow_p(sdr)
+            self.weights_pow_p[y_sdr] = self.get_weight_pow_p(y_sdr)
 
-        self.radius[sdr] = self.get_radius(sdr)
-        self.pos_log_radius[sdr] = self.get_pos_log_radius(sdr)
+        self.radius[y_sdr] = self.get_radius(y_sdr)
+        self.pos_log_radius[y_sdr] = self.get_pos_log_radius(y_sdr)
 
     def prune_newborns(self, ticks_passed: int = 1):
         pc = self.pruning_controller
@@ -222,12 +222,12 @@ class SpatialEncoderDenseBackend:
 
 
 @jit()
-def willshaw_update(weights, sdr, x, y, lr, alive_connections):
+def willshaw_update(weights, x, y_sdr, y_rates, lr, alive_connections):
     # Willshaw learning rule, L1 normalization:
     # dw = lr * y * (x - w)
 
-    v = y * lr
-    for ix, vi in zip(sdr, v):
+    v = y_rates * lr
+    for ix, vi in zip(y_sdr, v):
         w = weights[ix]
 
         if alive_connections is None:
@@ -240,18 +240,18 @@ def willshaw_update(weights, sdr, x, y, lr, alive_connections):
 
 
 @jit()
-def oja_krotov_update(weights, sdr, x, u, y, lr, alive_connections):
+def oja_krotov_update(weights, x, u, y_sdr, y_rates, lr, alive_connections):
     # Oja-Krotov learning rule, L^p normalization, p >= 2:
     # dw = lr * y * (x - u * w)
 
     # NB: u sign persistence is not supported ATM
     # NB2: it also replaces dw normalization
-    v = y * lr
+    v = y_rates * lr
     alpha = _get_scale(u)
     if alpha > 1.0:
         v /= alpha
 
-    for ix, vi in zip(sdr, v):
+    for ix, vi in zip(y_sdr, v):
         ui = u[ix]
         w = weights[ix]
 

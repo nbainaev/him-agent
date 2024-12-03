@@ -152,7 +152,7 @@ class KrotovLayer:
         if self.persistent_signs:
             oja_krotov_kuderov_update(self.weights, ixs, x, u, hb_delta, lr)
         else:
-            oja_krotov_update(self.weights, ixs, x, u, hb_delta, lr)
+            oja_krotov_update(self.weights, x, u, ixs, hb_delta, lr, )
 
         self.weights_pow_p[ixs, :] = self.get_weight_pow_p(ixs)
         self.radius[ixs] = self.get_radius(ixs)
@@ -218,7 +218,7 @@ class KrotovLayer:
             if self.persistent_signs:
                 oja_krotov_kuderov_update(self.weights, ixs, x, u, hb_delta, lr)
             else:
-                oja_krotov_update(self.weights, ixs, x, u, hb_delta, lr)
+                oja_krotov_update(self.weights, x, u, ixs, hb_delta, lr, )
 
             self.weights_pow_p[ixs, :] = self.get_weight_pow_p(ixs)
             self.radius[ixs] = self.get_radius(ixs)
