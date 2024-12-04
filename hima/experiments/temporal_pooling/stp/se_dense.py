@@ -11,9 +11,6 @@ from numba import jit
 from numpy.random import Generator
 
 from hima.common.config.base import TConfig
-from hima.common.sdr import (
-    SparseSdr, DenseSdr, OutputMode
-)
 from hima.common.sds import Sds
 from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
@@ -50,14 +47,10 @@ class SpatialEncoderDenseBackend:
 
     # potentiation and learning
     learning_policy: LearningPolicy
-    # [M, Q]: the number of neurons affected by hebb and anti-hebb
-    learning_set: tuple[int, int]
     learning_rate: float
 
     # output
     output_sds: Sds
-    output_mode: OutputMode
-    activation_threshold: tuple[float, float, float]
 
     def __init__(
             self, *, seed: int, feedforward_sds: Sds, output_sds: Sds,
@@ -262,36 +255,6 @@ def oja_krotov_update(weights, x, u, y_sdr, y_rates, lr, alive_connections):
             m = alive_connections[ix]
             w[m] += vi * (x[m] - ui * w[m])
             fix_anti_hebbian_negatives(vi, w, m)
-
-
-
-@jit()
-def willshaw_kuderov_update(weights, sdr, x, y, lr):
-    # Willshaw-Kuderov learning rule, sign persistence, L1 normalization:
-    # dw = lr * y * [sign(w) * x - w] = lr * y * sign(w) * (x - |w|)
-
-    v = y * lr
-    for ix, vi in zip(sdr, v):
-        w = weights[ix]
-        w += vi * (np.sign(w) * x - w)
-
-
-@jit()
-def oja_krotov_kuderov_update(weights, sdr, x, u, y, lr):
-    # Oja-Krotov-Kuderov learning rule, L^p normalization, p >= 2, sign persistence:
-    # dw = lr * y * (sign(w) * x - w * u)
-
-    # NB: u sign persistence is not supported ATM
-    # NB2: it also replaces dw normalization
-    v = y * lr
-    alpha = _get_scale(u)
-    if alpha > 1.0:
-        v /= alpha
-
-    for ix, vi in zip(sdr, v):
-        ui = u[ix]
-        w = weights[ix]
-        w += vi * (np.sign(w) * x - ui * w)
 
 
 @jit()

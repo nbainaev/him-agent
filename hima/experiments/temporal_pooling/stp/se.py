@@ -716,7 +716,7 @@ class SpatialEncoderLayer:
         rf_sparsity = self.rf_sparsity
         total_sparsity = ff_sparsity * rf_sparsity
         # should_be_sparse = total_sparsity <= 0.06
-        should_be_sparse = total_sparsity <= 0.15
+        should_be_sparse = total_sparsity <= 0.06
         is_current_dense = isinstance(self.weights_backend, SpatialEncoderDenseBackend)
         if should_be_sparse and is_current_dense:
             from hima.experiments.temporal_pooling.stp.se_sparse import SpatialEncoderSparseBackend

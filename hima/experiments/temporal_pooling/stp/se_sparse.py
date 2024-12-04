@@ -11,7 +11,7 @@ from numba import jit
 from numpy.random import Generator
 
 from hima.common.sdr import (
-    SparseSdr, DenseSdr, OutputMode, sparse_to_dense, RateSdr
+    RateSdr
 )
 from hima.common.sds import Sds
 from hima.common.timer import timed
@@ -33,10 +33,6 @@ class SpatialEncoderSparseBackend:
     # input
     feedforward_sds: Sds
     adapt_to_ff_sparsity: bool
-
-    # input cache
-    sparse_input: SparseSdr
-    dense_input: DenseSdr
 
     # connections
     # Indices naming convention:
@@ -68,14 +64,10 @@ class SpatialEncoderSparseBackend:
 
     # potentiation and learning
     learning_policy: LearningPolicy
-    # [M, Q]: the number of neurons affected by hebb and anti-hebb
-    learning_set: tuple[int, int]
     learning_rate: float
 
     # output
     output_sds: Sds
-    output_mode: OutputMode
-    activation_threshold: tuple[float, float, float]
 
     def __init__(
             self, *, dense_backend,
@@ -166,10 +158,12 @@ class SpatialEncoderSparseBackend:
 
         # TODO: negative Xs is not supported ATM
         if self.learning_policy == LearningPolicy.KROTOV:
-            oja_krotov_update_sparse(self.weights, y_sdr, x, u, y_rates, lr, alive_connections)
+            oja_krotov_update_sparse(
+                self.weights, self.shifts_j, self.kxs_srt_ij, x_dense, u, y_sdr, y_rates, lr
+            )
         else:
             willshaw_update_sparse(
-                self.weights, self.shifts_j, self.kxs_srt_ij, x_dense, y_sdr, y_rates, lr,
+                self.weights, self.shifts_j, self.kxs_srt_ij, x_dense, y_sdr, y_rates, lr
             )
 
         if self.match_p != 1.0:
@@ -296,72 +290,30 @@ def willshaw_update_sparse(weights, shifts_j, kxs_srt_ij, x, y_sdr, y_rates, lr)
 
 
 @jit()
-def oja_krotov_update_sparse(weights, sdr, x, u, y, lr, alive_connections):
+def oja_krotov_update_sparse(weights, shifts_j, kxs_srt_ij, x, u, y_sdr, y_rates, lr):
     # Oja-Krotov learning rule, L^p normalization, p >= 2:
     # dw = lr * y * (x - u * w)
+    w = weights
 
-    # NB: u sign persistence is not supported ATM
-    # NB2: it also replaces dw normalization
-    v = y * lr
+    # NB: dw normalization is replaced with soft rescaling
+    v = y_rates * lr
     alpha = _get_scale(u)
     if alpha > 1.0:
         v /= alpha
 
-    for ix, vi in zip(sdr, v):
-        ui = u[ix]
-        w = weights[ix]
+    for i, vi in zip(y_sdr, v):
+        ui = u[i]
+        j, ix_x_sdr = 0, 0
 
-        if alive_connections is None:
-            w += vi * (x - ui * w)
-            fix_anti_hebbian_negatives(vi, w, None)
-        else:
-            m = alive_connections[ix]
-            w[m] += vi * (x[m] - ui * w[m])
-            fix_anti_hebbian_negatives(vi, w, m)
+        # traverse synaptic connections `k` of the postsynaptic neuron `i`
+        for k in kxs_srt_ij[i]:
+            # for each connection, find the corresponding presynaptic neuron `j`
+            while k >= shifts_j[j+1]:
+                j += 1
 
-
-
-@jit()
-def willshaw_kuderov_update(weights, sdr, x, y, lr):
-    # Willshaw-Kuderov learning rule, sign persistence, L1 normalization:
-    # dw = lr * y * [sign(w) * x - w] = lr * y * sign(w) * (x - |w|)
-
-    v = y * lr
-    for ix, vi in zip(sdr, v):
-        w = weights[ix]
-        w += vi * (np.sign(w) * x - w)
-
-
-@jit()
-def oja_krotov_kuderov_update(weights, sdr, x, u, y, lr):
-    # Oja-Krotov-Kuderov learning rule, L^p normalization, p >= 2, sign persistence:
-    # dw = lr * y * (sign(w) * x - w * u)
-
-    # NB: u sign persistence is not supported ATM
-    # NB2: it also replaces dw normalization
-    v = y * lr
-    alpha = _get_scale(u)
-    if alpha > 1.0:
-        v /= alpha
-
-    for ix, vi in zip(sdr, v):
-        ui = u[ix]
-        w = weights[ix]
-        w += vi * (np.sign(w) * x - ui * w)
-
-
-@jit()
-def fix_anti_hebbian_negatives(vi, w, mask):
-    # `vi` here is a value indicating hebbian (>0) or anti-hebbian (<0)
-    if vi >= 0:
-        return
-
-    # only anti-hebbian learning causes sign change, if input x is always positive
-    # in this case, restrict updates
-    if mask is None:
-        np.fmax(w, 0.0, w)
-    else:
-        w[mask] = np.fmax(w[mask], 0.0)
+            w[k] += vi * (x[j] - ui * w[k])
+            if w[k] < 0.:  # fix anti-hebbian
+                w[k] = 0.0
 
 @jit()
 def _get_scale(u):
