@@ -5,7 +5,6 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
-from enum import Enum, auto
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -15,48 +14,23 @@ from numpy.random import Generator
 from hima.common.config.base import TConfig
 from hima.common.scheduler import Scheduler
 from hima.common.sdr import (
-    SparseSdr, DenseSdr, RateSdr, AnySparseSdr, OutputMode, unwrap_as_rate_sdr
+    RateSdr, AnySparseSdr, OutputMode, unwrap_as_rate_sdr
 )
 from hima.common.sdr_array import SdrArray
 from hima.common.sds import Sds
 from hima.common.timer import timed
-from hima.common.utils import isnone
 from hima.experiments.temporal_pooling.stats.mean_value import MeanValue, LearningRateParam
 from hima.experiments.temporal_pooling.stats.metrics import entropy
 from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
 from hima.experiments.temporal_pooling.stp.se_utils import (
-    boosting, arg_top_k, WeightsDistribution,
-    normalize
+    boosting, arg_top_k, normalize, FilterInputPolicy, BoostingPolicy, LearningPolicy,
+    ActivationPolicy, BackendType
 )
 from hima.modules.htm.utils import abs_or_relative
 
 if TYPE_CHECKING:
     from hima.experiments.temporal_pooling.stp.se_dense import SpatialEncoderDenseBackend
     from hima.experiments.temporal_pooling.stp.se_sparse import SpatialEncoderSparseBackend
-
-
-class FilterInputPolicy(Enum):
-    NO = 0
-    SUBTRACT_AVG = auto()
-    SUBTRACT_AVG_AND_CLIP = auto()
-
-
-class BoostingPolicy(Enum):
-    NO = 0
-    ADDITIVE = auto()
-    MULTIPLICATIVE = auto()
-
-
-class LearningPolicy(Enum):
-    # W \cdot x
-    LINEAR = 1
-    # W^{p-1} \cdot x
-    KROTOV = auto()
-
-
-class ActivationPolicy(Enum):
-    POWERLAW = 1
-    EXPONENTIAL = auto()
 
 
 class SpatialEncoderLayer:
@@ -73,24 +47,18 @@ class SpatialEncoderLayer:
     feedforward_sds: Sds
     adapt_to_ff_sparsity: bool
 
-    # input cache
-    sparse_input: SparseSdr
-    dense_input: DenseSdr
-
     # connections
     weights_backend: SpatialEncoderDenseBackend | SpatialEncoderSparseBackend
-
     pruning_controller: PruningController | None
 
     # potentiation and learning
-    learning_policy: LearningPolicy
-    # [M, Q]: the number of neurons affected by hebb and anti-hebb
+    # [K1, K2]: the number of neurons affected by hebb and anti-hebb
     learning_set: tuple[int, int]
     learning_rate: float
 
     # output
     output_sds: Sds
-    output_mode: OutputMode
+    output_mode: OutputMode = OutputMode.RATE
     activation_threshold: tuple[float, float, float]
 
     def __init__(
@@ -98,12 +66,16 @@ class SpatialEncoderLayer:
             adapt_to_ff_sparsity: bool,
 
             normalize_input_p: float = 0.0, filter_input_policy: str = 'no',
+
             lebesgue_p: float = 1.0, init_radius: float = 10.0,
             weights_distribution: str = 'normal',
             inhibitory_ratio: float = 0.0,
 
+            initial_rf_to_input_ratio: float = None, initial_max_rf_sparsity: float = 1.0,
+            pruning: TConfig = None,
+
             match_p: float | None = None, match_op: str | None = None,
-            boosting_policy: str = 'no',
+            boosting_policy: str = 'no', min_boosting_k: float = 0.0,
             activation_policy: str = 'powerlaw', beta: float = 1.0, beta_lr: float = 0.01,
             # K-based extra for soft partitioning
             soft_extra: float = 1.0,
@@ -122,8 +94,6 @@ class SpatialEncoderLayer:
             # K-based extra for output
             output_extra: int | float = 0.0,
 
-            pruning: TConfig = None,
-
             print_stats_schedule: int = 10_000,
             **kwargs
     ):
@@ -134,7 +104,6 @@ class SpatialEncoderLayer:
         self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
 
         self.output_sds = Sds.make(output_sds)
-        self.output_mode = OutputMode.RATE
         k = self.output_sds.active_size
 
         # ==> Input preprocessing
@@ -143,27 +112,32 @@ class SpatialEncoderLayer:
         self.filter_input_policy = FilterInputPolicy[filter_input_policy.upper()]
 
         # ==> Weights backend initialization
-        match_p, lebesgue_p, learning_policy = align_matching_learning_params(
-            match_p, lebesgue_p, learning_policy
+        initial_rf_sparsity = min(
+            initial_rf_to_input_ratio * self.feedforward_sds.sparsity,
+            initial_max_rf_sparsity
         )
-        weights_distribution = WeightsDistribution[weights_distribution.upper()]
+        self.pruning_controller = None
+        if pruning is not None:
+            self.pruning_controller = PruningController(
+                self, initial_rf_sparsity=initial_rf_sparsity,
+                **pruning
+            )
 
         # TODO: after implementation of sparse backend, add conditional initialization
         from hima.experiments.temporal_pooling.stp.se_dense import SpatialEncoderDenseBackend
         self.weights_backend = SpatialEncoderDenseBackend(
+            owner=self,
             seed=self.rng.integers(100_000_000),
-            feedforward_sds=self.feedforward_sds, output_sds=self.output_sds,
-            adapt_to_ff_sparsity=adapt_to_ff_sparsity,
             lebesgue_p=lebesgue_p, init_radius=init_radius,
-            weights_distribution=weights_distribution, inhibitory_ratio=inhibitory_ratio,
+            weights_distribution=weights_distribution, initial_rf_sparsity=initial_rf_sparsity,
             match_p=match_p, match_op=match_op,
-            learning_policy=learning_policy, persistent_signs=persistent_signs,
-            normalize_dw=normalize_dw, pruning=pruning
+            learning_policy=learning_policy,
         )
-        self.is_dense = True
+        print_backend_info(self.weights_backend)
 
         # ==> Pattern matching
         self.boosting_policy = BoostingPolicy[boosting_policy.upper()]
+        self.min_boosting_k = min_boosting_k
 
         # ==> K-extras
         soft_extra = abs_or_relative(soft_extra, k)
@@ -175,6 +149,7 @@ class SpatialEncoderLayer:
         # NB: we also require at least K/2 extra items to adjust beta
         soft_extra = max(k//2, soft_extra, k2, output_extra)
 
+        # TODO: extract to a separate class
         self.exact_partitioning = self.output_size <= 600
         if self.exact_partitioning:
             # simple ArgPartition is faster for small arrays
@@ -193,8 +168,10 @@ class SpatialEncoderLayer:
 
         # ==> Activation [applied to soft partition]
         self.activation_policy = ActivationPolicy[activation_policy.upper()]
+
+        # TODO: extract to a separate class
         # for Exp, beta is inverse temperature in the softmax
-        # for Powerlaw, beta is the power in the RePU (for simplicity I use the same name)
+        # for Powerlaw, beta is the power in the RePU (for simplicity I use the same variable)
         self.beta = beta
         self.adaptive_beta = beta_lr > 0.0
         if self.adaptive_beta:
@@ -211,7 +188,7 @@ class SpatialEncoderLayer:
         self.hard_top_k = k + max(k2, output_extra)
 
         # ==> Learning
-        self.learning_policy = learning_policy
+        # TODO: extract to a separate class
         # global learn flag that is switched each compute, to avoid passing it through
         # the whole chain on demand. After compute it's set to False automatically
         self.learn = False
@@ -221,7 +198,7 @@ class SpatialEncoderLayer:
         self.adaptive_lr = adaptive_lr
         if self.adaptive_lr:
             self.lr_range = lr_range
-            if self.learning_policy == LearningPolicy.KROTOV:
+            if self.weights_backend.learning_policy == LearningPolicy.KROTOV:
                 # faster LR increases accuracy and entropy on early stages.
                 # Later stages are defined by LR range
                 self.learning_rate *= 2
@@ -313,7 +290,7 @@ class SpatialEncoderLayer:
         # ==> Learn
         self.update_weights(x, sdr_learn, y_learn, u_raw)
         self.update_beta()
-        self.prune_newborns()
+        self.apply_pruning_step()
         self.cnt += 1
 
         if self.print_stats_scheduler.tick():
@@ -344,7 +321,8 @@ class SpatialEncoderLayer:
             xs = prepr_input_sdrs.get_batch_dense(np.arange(batch_size))
 
         # ==> Match input
-        if self.is_dense:
+        is_dense = self.weights_backend.type == BackendType.DENSE
+        if is_dense:
             us_raw = self.match_input(xs)
         else:
             us_raw = self.match_input(input_sdrs)
@@ -352,7 +330,7 @@ class SpatialEncoderLayer:
         us = self.apply_boosting(us_raw)
 
         for i in range(batch_size):
-            x = xs[i] if self.is_dense else input_sdrs.get_sdr(i)
+            x = xs[i] if is_dense else input_sdrs.get_sdr(i)
             u, u_raw = us[i], us_raw[i]
 
             # ==> Soft partition
@@ -389,7 +367,7 @@ class SpatialEncoderLayer:
 
         if self.learn:
             # ==> Learn (continue)
-            self.prune_newborns(batch_size)
+            self.apply_pruning_step(batch_size)
             # single beta update with increased force (= batch size)
             self.update_beta(mu=batch_size)
             if self.print_stats_scheduler.tick(batch_size):
@@ -471,7 +449,10 @@ class SpatialEncoderLayer:
                 else:
                     self.fast_potentials_trace.put(u_raw)
         elif self.boosting_policy == BoostingPolicy.MULTIPLICATIVE:
-            beta = boosting(relative_rate=self.output_relative_rate, k=self.pos_log_radius)
+            beta = boosting(
+                relative_rate=self.output_relative_rate, k=self.pos_log_radius,
+                min_k=self.min_boosting_k
+            )
             u = u_raw * beta
         else:
             raise ValueError(f'Unsupported boosting policy: {self.boosting_policy}')
@@ -487,6 +468,7 @@ class SpatialEncoderLayer:
         if self.normalize_output:
             y = normalize(y, has_negative=False)
 
+        # TODO: check if it's needed?
         if k_output > 0:
             eps = 0.05 / act_support
             mask = y > eps
@@ -559,10 +541,15 @@ class SpatialEncoderLayer:
 
         return RateSdr(input_sdr.sdr, rates)
 
-    def prune_newborns(self, ticks_passed: int = 1):
-        pruned = self.weights_backend.prune_newborns(ticks_passed)
-        if pruned:
-            self.ensure_suitable_backend()
+    def apply_pruning_step(self, ticks_passed: int = 1):
+        pc = self.pruning_controller
+        if pc is None or not pc.is_newborn_phase:
+            return
+        if not pc.scheduler.tick(ticks_passed):
+            return
+
+        self.weights_backend.apply_pruning_step()
+        self.ensure_suitable_backend()
 
     def update_beta(self, mu: int = 1):
         schedule = 16
@@ -715,45 +702,20 @@ class SpatialEncoderLayer:
         ff_sparsity = self.ff_avg_sparsity
         rf_sparsity = self.rf_sparsity
         total_sparsity = ff_sparsity * rf_sparsity
-        # should_be_sparse = total_sparsity <= 0.06
         should_be_sparse = total_sparsity <= 0.06
         is_current_dense = isinstance(self.weights_backend, SpatialEncoderDenseBackend)
         if should_be_sparse and is_current_dense:
             from hima.experiments.temporal_pooling.stp.se_sparse import SpatialEncoderSparseBackend
             dense_backend = self.weights_backend
-            sparse_backend = SpatialEncoderSparseBackend(
+            self.weights_backend = SpatialEncoderSparseBackend(
                 dense_backend=dense_backend
             )
-            self.weights_backend = sparse_backend
-            self.is_dense = False
+            print_backend_info(self.weights_backend)
         elif not should_be_sparse and not is_current_dense:
             raise NotImplementedError('Sparse to dense backend transition is not implemented yet')
 
         # everything is in order, no need to change backend
         ...
-
-
-def align_matching_learning_params(
-        match_p: float | None, lebesgue_p: float, learning_policy: str
-) -> tuple[float, float, LearningPolicy]:
-    learning_policy = LearningPolicy[learning_policy.upper()]
-    # check learning rule with p-norm compatibility
-    assert (
-            (learning_policy == LearningPolicy.LINEAR and lebesgue_p == 1.0) or
-            (learning_policy == LearningPolicy.KROTOV and lebesgue_p > 1.0)
-    ), f'{learning_policy} is incompatible with p-norm {lebesgue_p}'
-
-    # check learning rule with matching power p compatibility
-    if learning_policy == LearningPolicy.LINEAR:
-        # for linear learning, we allow any weights power, default is 1.0 (linear)
-        match_p = isnone(match_p, 1.0)
-    elif learning_policy == LearningPolicy.KROTOV:
-        # for krotov learning, power is fixed to weights' norm p - 1
-        induced_match_p = lebesgue_p - 1
-        assert isnone(match_p, induced_match_p) == induced_match_p
-        match_p = induced_match_p
-
-    return match_p, lebesgue_p, learning_policy
 
 
 def adapt_beta_mass(k, soft_extra, beta_active_mass):
@@ -769,11 +731,11 @@ def adapt_beta_mass(k, soft_extra, beta_active_mass):
 
 
 def parse_learning_set(ls, k):
-    # K - is a base number of active neuron as if we used k-WTA activation/learning.
+    # K - is a base number of active neurons as if we used k-WTA activation/learning.
     # However, we can disentangle learning and activation, so we can have different number
     # of active and learning neurons. It is useful in some cases to propagate more than K winners
     # to the output. It can be also useful (and it does not depend on the previous case) to
-    # learn additional number of near-winners with anti-Hebbian learning. Sometimes we may want
+    # train additional number of near-winners with anti-Hebbian learning. Sometimes we may want
     # to propagate them to the output, sometimes not.
     # TL;DR: K is the base number, it defines a desirable number of winning active neurons. But
     # we also define:
@@ -795,3 +757,11 @@ def parse_learning_set(ls, k):
 
     k1 = min(k, k1)
     return k1, k2
+
+
+def print_backend_info(bk):
+    print(
+        f'Init SE {bk.type.name.lower()} backend: {bk.lebesgue_p}-norm | {bk.avg_radius:.3f}'
+        f' | {bk.learning_policy} | match W^{bk.match_p} op: {bk.match_op_name}'
+        f' | Init RF: {bk.rf_sparsity:.2f} ({bk.rf_size})'
+    )

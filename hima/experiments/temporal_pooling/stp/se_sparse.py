@@ -5,6 +5,8 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import numpy.typing as npt
 from numba import jit
@@ -13,61 +15,60 @@ from numpy.random import Generator
 from hima.common.sdr import (
     RateSdr
 )
-from hima.common.sds import Sds
 from hima.common.timer import timed
-from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
-from hima.experiments.temporal_pooling.stp.se import (
-    LearningPolicy
-)
 from hima.experiments.temporal_pooling.stp.se_utils import (
-    pow_x, norm_p, min_match, dot_match_sparse
+    pow_x, norm_p, dot_match_sparse, LearningPolicy, BackendType, min_match_sparse
 )
+
+if TYPE_CHECKING:
+    from hima.experiments.temporal_pooling.stp.se import SpatialEncoderLayer
 
 
 class SpatialEncoderSparseBackend:
     """
-    A dense weights for the spatial encoder.
+    An implementation of sparse weights keeping and calculations for the spatial encoder.
     """
-    rng: Generator
+    owner: SpatialEncoderLayer
+    type: BackendType = BackendType.SPARSE
 
-    # input
-    feedforward_sds: Sds
-    adapt_to_ff_sparsity: bool
+    rng: Generator
 
     # connections
     # Indices naming convention:
     #   i - postsynaptic neurons,
     #   j - presynaptic neurons,
     #   k - synaptic connections
-    # ixs_srt_j: flatten synaptic connections, `k`-th connection stores an index
-    #   of the postsynaptic neuron `i`. Connections are sorted by presynaptic neurons `j`
+
+    # flatten synaptic connections, `k`-th connection stores an index of the
+    # postsynaptic neuron `i`. Connections are sorted by presynaptic neurons `j`
     ixs_srt_j: npt.NDArray[int]
-    # weights: flatten synaptic connections' corresponding weights.
+    # flatten synaptic connections' corresponding weights.
     weights: npt.NDArray[float]
-    # shifts_j: defines partition of synaptic connections by the presynaptic neurons.
-    #   `j`-th presynaptic neuron's connections are {k \in [shifts_j[j], shifts_j[j+1])}
+    # defines partition of synaptic connections by the presynaptic neurons.
+    # `j`-th presynaptic neuron's connections are {k \in [shifts_j[j], shifts_j[j+1])}
     shifts_j: npt.NDArray[int]
     # srt_i: 2D matrix, each row corresponds to postsynaptic neuron `i` and contains indices
-    #   of connections [in weights and ixs_srt_j] that define its receptive field.
-    #   Indices are sorted ASC (i.e. by presynaptic neuron `j`)
+    # of connections [in weights and ixs_srt_j] that define its receptive field.
+    # Indices are sorted ASC (i.e. by presynaptic neuron `j`)
     # NB: there's neither explicit i -> j mapping, nor j -> i. But it's possible to reconstruct
     #   both efficiently from the given data.
     kxs_srt_ij: npt.NDArray[int]
-    lebesgue_p: float
 
+    rf_sparsity: float
+
+    lebesgue_p: float
     radius: npt.NDArray[float]
     pos_log_radius: npt.NDArray[float]
 
-    pruning_controller: PruningController | None
-    pruned_mask: npt.NDArray[bool] | None
-    rf_sparsity: float
+    # potentiation
+    match_p: float
+    weights_pow_p: npt.NDArray[float] | None
+    match_op: callable
+    match_op_name: str
 
-    # potentiation and learning
+    # learning
     learning_policy: LearningPolicy
     learning_rate: float
-
-    # output
-    output_sds: Sds
 
     def __init__(
             self, *, dense_backend,
@@ -84,18 +85,14 @@ class SpatialEncoderSparseBackend:
             # match_p: float = 1.0, match_op: str = 'mul',
 
             # learning_policy: LearningPolicy = LearningPolicy.LINEAR,
-            # persistent_signs: bool = True,
-            # normalize_dw: bool = False,
-
             # pruning: TConfig = None,
     ):
+        self.owner = dense_backend.owner
+        # set it immediately so we can use pruning controller that relies on it
+        self.owner.weights_backend = self
+
         seed = dense_backend.rng.integers(1_000_000)
         self.rng = np.random.default_rng(seed)
-
-        self.feedforward_sds = Sds.make(dense_backend.feedforward_sds)
-        self.output_sds = Sds.make(dense_backend.output_sds)
-
-        self.adapt_to_ff_sparsity = dense_backend.adapt_to_ff_sparsity
 
         # ==> Weights initialization
         self.lebesgue_p = dense_backend.lebesgue_p
@@ -121,30 +118,14 @@ class SpatialEncoderSparseBackend:
         match_op = dense_backend.match_op
         can_use_min_operator = self.match_p == 1.0 and learning_policy == LearningPolicy.LINEAR
         if match_op == 'min' and can_use_min_operator:
-            self.match_op = min_match
+            self.match_op = min_match_sparse
+            self.match_op_name = 'min'
         else:
-            match_op = 'mul'
             self.match_op = dot_match_sparse
+            self.match_op_name = 'mul'
 
         # ==> Learning
-        self.learning_policy = dense_backend.learning_policy
-        self.normalize_dw = dense_backend.normalize_dw
-
-        # ==> Output
-        self.pruning_controller = None
-        # pruning = dense_backend.pruning
-        # if pruning is not None:
-        #     self.pruning_controller = PruningController(self, **pruning)
-        self.pruned_mask = np.zeros_like(self.weights, dtype=bool)
-        self.alive_connections = np.tile(
-            np.arange(self.ff_size, dtype=int),
-            (self.output_size, 1)
-        )
-
-        print(
-            f'Init SE sparse backend: {self.lebesgue_p}-norm | {self.avg_radius:.3f}'
-            f' | {self.learning_policy} | match W^{self.match_p} op: {match_op}'
-        )
+        self.learning_policy = learning_policy
 
     def match_input(self, x):
         w = self.weights if self.match_p == 1.0 else self.weights_pow_p
@@ -154,7 +135,7 @@ class SpatialEncoderSparseBackend:
         if y_sdr.size == 0:
             return
 
-        x_dense = x.to_dense(self.feedforward_sds.size)
+        x_dense = x.to_dense(self.owner.feedforward_sds.size)
 
         # TODO: negative Xs is not supported ATM
         if self.learning_policy == LearningPolicy.KROTOV:
@@ -180,7 +161,7 @@ class SpatialEncoderSparseBackend:
         if not pc.scheduler.tick(ticks_passed):
             return
 
-        (sparsity, rf_size), t = timed(pc.shrink_receptive_field)(self.pruned_mask)
+        (sparsity, rf_size), t = timed(pc.prune_receptive_field)(self.pruned_mask)
         # update alive connections
         self.alive_connections = np.array([
             np.flatnonzero(~neuron_connections)
@@ -233,12 +214,8 @@ class SpatialEncoderSparseBackend:
         return self.radius.mean()
 
     @property
-    def ff_size(self):
-        return self.feedforward_sds.size
-
-    @property
-    def output_size(self):
-        return self.output_sds.size
+    def rf_size(self):
+        return round(self.rf_sparsity * self.owner.ff_size)
 
 
 def make_sparse_weights_from_dense(dense_weights, idxs):

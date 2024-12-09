@@ -5,91 +5,93 @@
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import numpy.typing as npt
 from numba import jit
 from numpy.random import Generator
 
-from hima.common.config.base import TConfig
-from hima.common.sds import Sds
 from hima.common.timer import timed
-from hima.experiments.temporal_pooling.stp.pruning_controller_dense import PruningController
-from hima.experiments.temporal_pooling.stp.se import (
-    LearningPolicy
-)
 from hima.experiments.temporal_pooling.stp.se_utils import (
     sample_weights, WeightsDistribution,
-    pow_x, dot_match, norm_p, min_match
+    pow_x, dot_match, norm_p, min_match, LearningPolicy, align_matching_learning_params, BackendType
 )
+
+if TYPE_CHECKING:
+    from hima.experiments.temporal_pooling.stp.se import SpatialEncoderLayer
 
 
 class SpatialEncoderDenseBackend:
     """
-    A dense weights for the spatial encoder.
+    An implementation of dense weights keeping and calculations for the spatial encoder.
     """
-    rng: Generator
+    owner: SpatialEncoderLayer
+    type: BackendType = BackendType.DENSE
 
-    # input
-    feedforward_sds: Sds
-    adapt_to_ff_sparsity: bool
+    rng: Generator
 
     # connections
     weights: npt.NDArray[float]
-    lebesgue_p: float
 
+    rf_sparsity: float
+    pruned_mask: npt.NDArray[bool] | None
+    rf: npt.NDArray[int] | None
+
+    lebesgue_p: float
     radius: npt.NDArray[float]
     pos_log_radius: npt.NDArray[float]
 
-    pruning_controller: PruningController | None
-    pruned_mask: npt.NDArray[bool] | None
-    rf: npt.NDArray[int] | None
-    rf_sparsity: float
+    # potentiation
+    match_p: float
+    weights_pow_p: npt.NDArray[float] | None
+    match_op: callable
+    match_op_name: str
 
-    # potentiation and learning
+    # learning
     learning_policy: LearningPolicy
     learning_rate: float
 
-    # output
-    output_sds: Sds
-
     def __init__(
-            self, *, seed: int, feedforward_sds: Sds, output_sds: Sds,
-
-            adapt_to_ff_sparsity,
+            self, *, owner, seed: int,
 
             lebesgue_p: float = 1.0, init_radius: float = 10.0,
-            weights_distribution: WeightsDistribution = WeightsDistribution.NORMAL,
-            inhibitory_ratio: float = 0.0,
+            weights_distribution: str = 'normal',
+            initial_rf_sparsity: float = 1.0,
 
             match_p: float = 1.0, match_op: str = 'mul',
 
-            learning_policy: LearningPolicy = LearningPolicy.LINEAR, persistent_signs: bool = True,
-            normalize_dw: bool = False,
-
-            pruning: TConfig = None,
+            learning_policy: str = 'linear',
     ):
+        self.owner = owner
+        # set it immediately so we can use pruning controller that relies on it
+        self.owner.weights_backend = self
+
         self.rng = np.random.default_rng(seed)
 
-        self.feedforward_sds = Sds.make(feedforward_sds)
-        self.output_sds = Sds.make(output_sds)
-
-        self.adapt_to_ff_sparsity = adapt_to_ff_sparsity
-
         # ==> Weights initialization
-        n_out, n_in = self.output_sds.size, self.feedforward_sds.size
+        n_in, n_out = self.owner.ff_size, self.owner.output_size
         w_shape = (n_out, n_in)
 
-        self.lebesgue_p = lebesgue_p
-        self.rf_sparsity = 1.0
-        self.has_inhibitory = inhibitory_ratio > 0.0
-        assert not self.has_inhibitory, 'Proper support of inhibitory connections is not done yet'
-        self.weights = sample_weights(
-            self.rng, w_shape, weights_distribution, init_radius, self.lebesgue_p,
-            inhibitory_ratio=inhibitory_ratio
+        match_p, lebesgue_p, learning_policy = align_matching_learning_params(
+            match_p, lebesgue_p, learning_policy
         )
 
+        weights_distribution = WeightsDistribution[weights_distribution.upper()]
+        self.lebesgue_p = lebesgue_p
+        self.weights = sample_weights(
+            self.rng, w_shape, weights_distribution, init_radius, self.lebesgue_p,
+            inhibitory_ratio=0.0
+        )
+        self.has_inhibitory = False
         self.radius = self.get_radius()
         self.pos_log_radius = self.get_pos_log_radius()
+
+        # initial sparsity will be set a bit later after required initializations
+        self.rf_sparsity = 1.0
+        # init with None, they will be initialized on demand when needed
+        self.pruned_mask = None
+        self.rf = None
 
         # ==> Pattern matching
         self.match_p = match_p
@@ -97,37 +99,19 @@ class SpatialEncoderDenseBackend:
         if self.match_p != 1.0:
             self.weights_pow_p = self.get_weight_pow_p()
 
-        can_use_min_operator = (
-            self.match_p == 1.0 and not self.has_inhibitory
-            and learning_policy == LearningPolicy.LINEAR
-        )
+        can_use_min_operator = self.match_p == 1.0 and learning_policy == LearningPolicy.LINEAR
         if match_op == 'min' and can_use_min_operator:
             self.match_op = min_match
+            self.match_op_name = 'min'
         else:
-            match_op = 'mul'
             self.match_op = dot_match
+            self.match_op_name = 'mul'
 
         # ==> Learning
         self.learning_policy = learning_policy
-        self.normalize_dw = normalize_dw
-        # WARNING: this feature is disabled
-        self.persistent_signs = persistent_signs
 
-        # ==> Output
-        self.pruning_controller = None
-        if pruning is not None:
-            self.pruning_controller = PruningController(self, **pruning)
-        self.pruned_mask = np.zeros_like(self.weights, dtype=bool)
-        self.rf = np.tile(
-            np.arange(self.ff_size, dtype=int),
-            (self.output_size, 1)
-        )
-
-        print(
-            f'Init SE dense backend: {self.lebesgue_p}-norm | {self.avg_radius:.3f}'
-            f' | {self.learning_policy} | match W^{self.match_p} op: {match_op}'
-            f' | Inh: {inhibitory_ratio}'
-        )
+        # set initial sparsity and prune excess connections
+        self.set_sparsify_level(initial_rf_sparsity)
 
     def match_input(self, x):
         w = self.weights if self.match_p == 1.0 else self.weights_pow_p
@@ -151,31 +135,49 @@ class SpatialEncoderDenseBackend:
         self.radius[y_sdr] = self.get_radius(y_sdr)
         self.pos_log_radius[y_sdr] = self.get_pos_log_radius(y_sdr)
 
-    def prune_newborns(self, ticks_passed: int = 1):
-        pc = self.pruning_controller
-        if pc is None or not pc.is_newborn_phase:
-            return False
-        if not pc.scheduler.tick(ticks_passed):
-            return False
+    def apply_pruning_step(self):
+        pc = self.owner.pruning_controller
 
-        (sparsity, rf_size), t = timed(pc.shrink_receptive_field)(self.pruned_mask)
+        # move to the next step to get new current sparsity
+        sparsity = pc.next_newborn_stage()
+
+        # set current sparsity and prune excess connections
+        # noinspection PyNoneFunctionAssignment,PyTupleAssignmentBalance
+        _, t = self.set_sparsify_level(sparsity)
+
+        stage = pc.stage
+        sparsity_pct = round(100.0 * sparsity, 1)
+        t = round(t * 1000.0, 2)
+        print(f'Prune #{stage}: {sparsity_pct:.1f}% | {self.rf_size} | {t} ms')
+
+    @timed
+    def set_sparsify_level(self, sparsity):
+        if sparsity >= self.rf_sparsity:
+            # if feedforward sparsity is tracked, then it may change and lead to RF increase
+            # ==> leave RF as is
+            return
+
+        self.rf_sparsity = sparsity
+        pc = self.owner.pruning_controller
+        if self.pruned_mask is None:
+            self.pruned_mask = np.zeros_like(self.weights, dtype=bool)
+
+        pc.prune_receptive_field(self.rf_size, self.pruned_mask)
         # update alive connections
         self.rf = np.array([
             np.flatnonzero(~neuron_connections)
             for neuron_connections in self.pruned_mask
         ])
 
-        stage = pc.stage
-        sparsity_pct = round(100.0 * sparsity, 1)
-        t = round(t * 1000.0, 2)
-        print(f'Prune #{stage}: {sparsity_pct:.1f}% | {rf_size} | {t} ms')
-
-        self.rf_sparsity = sparsity
-        # rescale weights to keep the same norms
+        # Since a portion of weights is pruned, the norm is changed. So, we either should
+        # update the radius or rescale weights to keep the norm unchanged. The latter might be
+        # better to avoid interfering to the norm convergence process, because a lot of parameters
+        # depend on the norm, like boosting or learning rate, and the pruning itself does not
+        # affect all neurons' norms equally, so the balance may be broken.
         old_radius, new_radius = self.radius, self.get_radius()
         # I keep pow weights the same — each will be updated on its next learning step.
+        # So, it's a small performance optimization.
         self.weights *= np.expand_dims(old_radius / new_radius, -1)
-        return True
 
     def get_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         p = self.lebesgue_p
@@ -206,12 +208,8 @@ class SpatialEncoderDenseBackend:
         return self.radius.mean()
 
     @property
-    def ff_size(self):
-        return self.feedforward_sds.size
-
-    @property
-    def output_size(self):
-        return self.output_sds.size
+    def rf_size(self):
+        return round(self.rf_sparsity * self.owner.ff_size)
 
 
 @jit()
@@ -259,12 +257,12 @@ def oja_krotov_update(weights, x, u, y_sdr, y_rates, lr, alive_connections):
 
 @jit()
 def fix_anti_hebbian_negatives(vi, w, mask):
+    # NB: Anti-hebbian learning may cause sign change from positive to negative (when the
+    # input x is always positive). This function fixes such cases.
     # `vi` here is a value indicating hebbian (>0) or anti-hebbian (<0)
     if vi >= 0:
         return
 
-    # only anti-hebbian learning causes sign change, if input x is always positive
-    # in this case, restrict updates
     if mask is None:
         np.fmax(w, 0.0, w)
     else:

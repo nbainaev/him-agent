@@ -3,7 +3,9 @@
 #  All rights reserved.
 #
 #  Licensed under the AGPLv3 license. See LICENSE in the project root for license information.
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
@@ -11,12 +13,16 @@ from numba import jit
 from numpy.random import Generator
 
 from hima.common.scheduler import Scheduler
-from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
+from hima.common.timer import timed
 from hima.experiments.temporal_pooling.stp.se_utils import nb_choice_k
+from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
+
+if TYPE_CHECKING:
+    from hima.experiments.temporal_pooling.stp.se import SpatialEncoderLayer
 
 
 class PruningController:
-    owner: Any
+    owner: SpatialEncoderLayer
 
     mode: SpNewbornPruningMode
     n_stages: int
@@ -25,12 +31,13 @@ class PruningController:
 
     initial_rf_sparsity: float
     target_rf_to_input_ratio: float
-    target_rf_sparsity: float
+    target_max_rf_sparsity: float
 
     def __init__(
             self, owner,
             mode: str, cycle: float, n_stages: int,
-            target_rf_sparsity: float = None, target_rf_to_input_ratio: float = None
+            initial_rf_sparsity: float,
+            target_max_rf_sparsity: float = None, target_rf_to_input_ratio: float = None
     ):
         self.owner = owner
 
@@ -42,45 +49,29 @@ class PruningController:
         schedule = int(cycle / owner.output_sds.sparsity)
         self.scheduler = Scheduler(schedule)
 
-        self.initial_rf_sparsity = 1.0
+        self.initial_rf_sparsity = initial_rf_sparsity
         self.target_rf_to_input_ratio = target_rf_to_input_ratio
-        self.target_rf_sparsity = target_rf_sparsity
+        self.target_max_rf_sparsity = target_max_rf_sparsity
 
     @property
     def is_newborn_phase(self):
         return self.stage < self.n_stages
 
-    def shrink_receptive_field(self, pruned_mask):
+    def next_newborn_stage(self) -> float:
         self.stage += 1
+        return self._get_current_stage_sparsity()
 
-        if self.mode == SpNewbornPruningMode.LINEAR:
-            new_sparsity = self.newborn_linear_progress(
-                initial=self.initial_rf_sparsity, target=self.get_target_rf_sparsity()
-            )
-        elif self.mode == SpNewbornPruningMode.POWERLAW:
-            new_sparsity = self.newborn_powerlaw_progress(
-                initial=self.owner.rf_sparsity, target=self.get_target_rf_sparsity()
-            )
-        else:
-            raise ValueError(f'Pruning mode {self.mode} is not supported')
-
-        if new_sparsity > self.owner.rf_sparsity:
-            # if feedforward sparsity is tracked, then it may change and lead to RF increase
-            # ==> leave RF as is
-            return
-
+    def prune_receptive_field(self, new_rf_size, pruned_mask):
         # sample what connections to keep for each neuron independently
-        new_rf_size = round(new_sparsity * self.owner.ff_size)
-
+        backend = self.owner.weights_backend
         prune(
-            self.owner.rng, self.owner.weights, self.owner.weights_pow_p,
+            self.owner.rng, backend.weights, backend.weights_pow_p,
             new_rf_size, pruned_mask
         )
-        return new_sparsity, new_rf_size
 
     def get_target_rf_sparsity(self):
-        if self.target_rf_sparsity is not None:
-            return self.target_rf_sparsity
+        if self.target_max_rf_sparsity is not None:
+            return self.target_max_rf_sparsity
 
         if self.owner.adapt_to_ff_sparsity:
             ff_sparsity = self.owner.ff_avg_sparsity
@@ -89,16 +80,27 @@ class PruningController:
 
         return self.target_rf_to_input_ratio * ff_sparsity
 
-    def newborn_linear_progress(self, initial, target):
+    def _get_current_stage_sparsity(self):
+        if self.mode == SpNewbornPruningMode.LINEAR:
+            sparsity_progress_func = self._newborn_linear_progress
+        elif self.mode == SpNewbornPruningMode.POWERLAW:
+            sparsity_progress_func = self._newborn_powerlaw_progress
+        else:
+            raise ValueError(f'Pruning mode {self.mode} is not supported')
+        return sparsity_progress_func(
+            initial=self.initial_rf_sparsity, target=self.get_target_rf_sparsity()
+        )
+
+    def _newborn_linear_progress(self, initial, target):
         newborn_phase_progress = self.stage / self.n_stages
         # linear decay rule
         return initial + newborn_phase_progress * (target - initial)
 
     # noinspection PyUnusedLocal
-    def newborn_powerlaw_progress(self, initial, target):
+    def _newborn_powerlaw_progress(self, initial, target):
         steps_left = self.n_stages - self.stage + 1
         current = self.owner.rf_sparsity
-        # what decay is needed to reach the target in the remaining steps
+        # determine, which decay is needed to reach the target in the remaining steps
         # NB: recalculate each step to exclude rounding errors
         decay = np.power(target / current, 1 / steps_left)
         # exponential decay rule

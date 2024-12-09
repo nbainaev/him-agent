@@ -13,12 +13,66 @@ from numba import jit
 from numpy import typing as npt
 from numpy.random import Generator
 
+from hima.common.sdr import RateSdr
 from hima.common.sdr_array import SdrArray
+from hima.common.utils import isnone
 
 
 class WeightsDistribution(Enum):
     NORMAL = 1
     UNIFORM = auto()
+
+
+class FilterInputPolicy(Enum):
+    NO = 0
+    SUBTRACT_AVG = auto()
+    SUBTRACT_AVG_AND_CLIP = auto()
+
+
+class BackendType(Enum):
+    DENSE = 1
+    SPARSE = auto()
+
+
+class BoostingPolicy(Enum):
+    NO = 0
+    ADDITIVE = auto()
+    MULTIPLICATIVE = auto()
+
+
+class LearningPolicy(Enum):
+    # W \cdot x
+    LINEAR = 1
+    # W^{p-1} \cdot x
+    KROTOV = auto()
+
+
+class ActivationPolicy(Enum):
+    POWERLAW = 1
+    EXPONENTIAL = auto()
+
+
+def align_matching_learning_params(
+        match_p: float | None, lebesgue_p: float, learning_policy: str
+) -> tuple[float, float, LearningPolicy]:
+    learning_policy = LearningPolicy[learning_policy.upper()]
+    # check learning rule with p-norm compatibility
+    assert (
+            (learning_policy == LearningPolicy.LINEAR and lebesgue_p == 1.0) or
+            (learning_policy == LearningPolicy.KROTOV and lebesgue_p > 1.0)
+    ), f'{learning_policy} is incompatible with p-norm {lebesgue_p}'
+
+    # check learning rule with matching power p compatibility
+    if learning_policy == LearningPolicy.LINEAR:
+        # for linear learning, we allow any weights power, default is 1.0 (linear)
+        match_p = isnone(match_p, 1.0)
+    elif learning_policy == LearningPolicy.KROTOV:
+        # for krotov learning, power is fixed to weights' norm p - 1
+        induced_match_p = lebesgue_p - 1
+        assert isnone(match_p, induced_match_p) == induced_match_p
+        match_p = induced_match_p
+
+    return match_p, lebesgue_p, learning_policy
 
 
 def sample_weights(
@@ -62,7 +116,7 @@ def arg_top_k(x, k):
 
 def boosting(
         relative_rate: float | npt.NDArray[float], k: float | npt.NDArray[float],
-        softness: float = 3.0
+        *, min_k: float | npt.NDArray[float] = 0.0, softness: float = 3.0
 ) -> float:
     # relative rate: rate / R_target
     # x = -log(relative_rate)
@@ -74,8 +128,7 @@ def boosting(
     #   1 -> 0 -> K^tanh(0) = 1
     #   +inf -> -inf -> K^tanh(-inf) = 1 / K
     # higher softness just makes the sigmoid curve smoother; default value is empirically optimized
-    # TODO: check addition, it could be too high -> 1.05
-    return np.power(k + 1.1, np.tanh(x / softness))
+    return np.power(k + min_k + 1.0, np.tanh(x / softness))
 
 
 @jit
@@ -185,23 +238,58 @@ def min_match_j(x, w):
 
 
 def dot_match_sparse(x: SdrArray, w, ixs_srt_j, shifts, srt_i):
+    is_batch = isinstance(x, SdrArray)
+    match_func = _match_sparse_batch if is_batch else _match_sparse
+    return match_func(
+        _dot_match_sparse, x, w=w, ixs_srt_j=ixs_srt_j, shifts=shifts, srt_i=srt_i
+    )
+
+
+def min_match_sparse(x: SdrArray, *, w, ixs_srt_j, shifts, srt_i):
+    is_batch = isinstance(x, SdrArray)
+    match_func = _match_sparse_batch if is_batch else _match_sparse
+    return match_func(
+        _min_match_sparse, x, w=w, ixs_srt_j=ixs_srt_j, shifts=shifts, srt_i=srt_i
+    )
+
+
+def _match_sparse_batch(
+        match_func, x: SdrArray, *, w, ixs_srt_j, shifts, srt_i, out=None
+):
     batch_size = len(x)
     n_out = srt_i.shape[0]
 
-    res = np.zeros((batch_size, n_out))
+    out = np.zeros((batch_size, n_out)) if out is None else out
     for i in range(batch_size):
-        match_sparse_w_x_(
-            res[i, :], w, ixs_srt_j, shifts, x.sparse[i].sdr, x.sparse[i].values
+        match_func(
+            w, ixs_srt_j, shifts, x.sparse[i].sdr, x.sparse[i].values,
+            out[i, :]
         )
-    return res
+    return out
+
+
+def _match_sparse(
+        match_func, x: RateSdr, *, w, ixs_srt_j, shifts, srt_i, out=None
+):
+    n_out = srt_i.shape[0]
+    out = np.zeros(n_out) if out is None else out
+    return match_func(w, ixs_srt_j, shifts, x.sdr, x.values, out)
 
 
 @jit()
-def match_sparse_w_x_(res, wi_sp, jxs, shifts, sdr, rates):
+def _dot_match_sparse(wi_sp, jxs, shifts, sdr, rates, out):
     for i, r in zip(sdr, rates):
         for j in range(shifts[i], shifts[i + 1]):
-            res[jxs[j]] += r * wi_sp[j]
-    return res
+            out[jxs[j]] += r * wi_sp[j]
+    return out
+
+
+@jit()
+def _min_match_sparse(wi_sp, jxs, shifts, sdr, rates, out):
+    for i, r in zip(sdr, rates):
+        for j in range(shifts[i], shifts[i + 1]):
+            out[jxs[j]] += min(r, wi_sp[j])
+    return out
 
 
 def norm_p(x, p, has_negative):
