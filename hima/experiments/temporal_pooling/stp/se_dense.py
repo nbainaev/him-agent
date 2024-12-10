@@ -162,7 +162,7 @@ class SpatialEncoderDenseBackend:
         if self.pruned_mask is None:
             self.pruned_mask = np.zeros_like(self.weights, dtype=bool)
 
-        pc.prune_receptive_field(self.rf_size, self.pruned_mask)
+        pc.prune_receptive_field()
         # update alive connections
         self.rf = np.array([
             np.flatnonzero(~neuron_connections)

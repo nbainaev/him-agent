@@ -14,7 +14,7 @@ from numpy.random import Generator
 
 from hima.common.scheduler import Scheduler
 from hima.common.timer import timed
-from hima.experiments.temporal_pooling.stp.se_utils import nb_choice_k
+from hima.experiments.temporal_pooling.stp.se_utils import nb_choice_k, BackendType
 from hima.experiments.temporal_pooling.stp.sp import SpNewbornPruningMode
 
 if TYPE_CHECKING:
@@ -61,13 +61,19 @@ class PruningController:
         self.stage += 1
         return self._get_current_stage_sparsity()
 
-    def prune_receptive_field(self, new_rf_size, pruned_mask):
+    def prune_receptive_field(self):
         # sample what connections to keep for each neuron independently
         backend = self.owner.weights_backend
-        prune(
-            self.owner.rng, backend.weights, backend.weights_pow_p,
-            new_rf_size, pruned_mask
-        )
+        if backend.type == BackendType.DENSE:
+            prune(
+                self.owner.rng, backend.weights, backend.weights_pow_p,
+                backend.rf_size, backend.pruned_mask
+            )
+        else:
+            prune_sparse(
+                self.owner.rng, backend.weights, backend.weights_pow_p,
+                backend.rf_size, backend.ixs_srt_j, backend.kxs_srt_ij
+            )
 
     def get_target_rf_sparsity(self):
         if self.target_max_rf_sparsity is not None:
@@ -113,7 +119,7 @@ def prune(
         k: int, pruned_mask
 ):
     # WARNING: works only with non-negative weights!
-    n_neurons, n_synapses = weights.shape
+    n_neurons, _ = weights.shape
     w_priority = weights if pow_weights is None else pow_weights
 
     for row in range(n_neurons):
@@ -133,6 +139,25 @@ def prune(
         pm_row[new_pruned_ixs] = True
         if pow_weights is not None:
             pow_weights[row][new_pruned_ixs] = 0.0
+
+
+@jit()
+def prune_sparse(
+        rng: Generator, weights: npt.NDArray[float], pow_weights: npt.NDArray[float],
+        k: int, ixs_srt_j, kxs_srt_ij
+):
+    # WARNING: works only with non-negative weights!
+    w_priority = weights if pow_weights is None else pow_weights
+    for kxs in kxs_srt_ij:
+        w_priority_row = w_priority[kxs]
+        prune_probs = pruning_probs_from_synaptic_weights(w_priority_row)
+
+        # pruned connections are marked as already selected for "select K from N" operation
+        n_active = len(prune_probs)
+        not_k = n_active - k
+        pruned_ixs = nb_choice_k(rng, not_k, prune_probs, n_active, False)
+        # mark as pruned with -1
+        ixs_srt_j[kxs[pruned_ixs]] = -1
 
 
 @jit()

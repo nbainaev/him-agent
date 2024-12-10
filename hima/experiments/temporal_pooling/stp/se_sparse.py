@@ -153,31 +153,50 @@ class SpatialEncoderSparseBackend:
         self.radius[y_sdr] = self.get_radius(y_sdr)
         self.pos_log_radius[y_sdr] = self.get_pos_log_radius(y_sdr)
 
-    def prune_newborns(self, ticks_passed: int = 1):
-        return False
-        pc = self.pruning_controller
-        if pc is None or not pc.is_newborn_phase:
-            return
-        if not pc.scheduler.tick(ticks_passed):
-            return
+    def apply_pruning_step(self):
+        pc = self.owner.pruning_controller
 
-        (sparsity, rf_size), t = timed(pc.prune_receptive_field)(self.pruned_mask)
-        # update alive connections
-        self.alive_connections = np.array([
-            np.flatnonzero(~neuron_connections)
-            for neuron_connections in self.pruned_mask
-        ])
+        # move to the next step to get new current sparsity
+        sparsity = pc.next_newborn_stage()
+
+        # set current sparsity and prune excess connections
+        # noinspection PyNoneFunctionAssignment,PyTupleAssignmentBalance
+        _, t = self.set_sparsify_level(sparsity)
 
         stage = pc.stage
         sparsity_pct = round(100.0 * sparsity, 1)
         t = round(t * 1000.0, 2)
-        print(f'Prune #{stage}: {sparsity_pct:.1f}% | {rf_size} | {t} ms')
+        print(f'Prune #{stage}: {sparsity_pct:.1f}% | {self.rf_size} | {t} ms')
+
+    @timed
+    def set_sparsify_level(self, sparsity):
+        if sparsity >= self.rf_sparsity:
+            # if feedforward sparsity is tracked, then it may change and lead to RF increase
+            # ==> leave RF as is
+            return
 
         self.rf_sparsity = sparsity
-        # rescale weights to keep the same norms
+        pc = self.owner.pruning_controller
+
+        pc.prune_receptive_field()
+        weights, ixs_srt_j, shifts_j, kxs_srt_ij = remove_pruned_synapses(
+            self.weights, self.ixs_srt_j, self.shifts_j, self.kxs_srt_ij,
+            self.rf_size
+        )
+        self.weights = weights
+        self.ixs_srt_j = ixs_srt_j
+        self.shifts_j = shifts_j
+        self.kxs_srt_ij = kxs_srt_ij
+
+        # Since a portion of weights is pruned, the norm is changed. So, we either should
+        # update the radius or rescale weights to keep the norm unchanged. The latter might be
+        # better to avoid interfering to the norm convergence process, because a lot of parameters
+        # depend on the norm, like boosting or learning rate, and the pruning itself does not
+        # affect all neurons' norms equally, so the balance may be broken.
         old_radius, new_radius = self.radius, self.get_radius()
         # I keep pow weights the same — each will be updated on its next learning step.
-        self.weights *= np.expand_dims(old_radius / new_radius, -1)
+        # So, it's a small performance optimization.
+        self.weights *= (old_radius / new_radius)[self.ixs_srt_j]
 
     def get_radius(self, ixs: npt.NDArray[int] = None) -> npt.NDArray[float]:
         p = self.lebesgue_p
@@ -243,6 +262,40 @@ def make_sparse_weights_from_dense(dense_weights, idxs):
     kxs_srt_ij = kxs_srt_ij.reshape(sparse_weights.shape)
 
     return w_f_srt_j, ixs_srt_j, shifts_j, kxs_srt_ij
+
+
+@jit()
+def remove_pruned_synapses(weights, ixs_srt_j, shifts_j, kxs_srt_ij, rf_size):
+    n_neurons = kxs_srt_ij.shape[0]
+    n_synapses = n_neurons * rf_size
+
+    i_shifts = np.arange(n_neurons) * rf_size
+    _kxs_srt_ij = np.empty(n_synapses, np.int_)
+
+    _shifts_j = np.empty_like(shifts_j)
+    _shifts_j[0] = 0
+
+    _k, j = 0, 0
+    for k, i in enumerate(ixs_srt_j):
+        if k >= shifts_j[j+1]:
+            _shifts_j[j+1] = _k
+            j += 1
+        if i == -1:
+            continue
+        ixs_srt_j[_k] = i
+        _kxs_srt_ij[i_shifts[i]] = _k
+        i_shifts[i] += 1
+        _k += 1
+
+    _shifts_j[j + 1] = n_synapses
+
+    # assert np.all(i_shifts == (np.arange(n_neurons) + 1) * rf_size)
+    # assert _k == n_synapses
+
+    weights = weights[:n_synapses].copy()
+    ixs_srt_j = ixs_srt_j[:n_synapses].copy()
+    _kxs_srt_ij = _kxs_srt_ij.reshape(n_neurons, rf_size)
+    return weights, ixs_srt_j, _shifts_j, _kxs_srt_ij
 
 
 @jit()
