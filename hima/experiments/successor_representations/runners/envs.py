@@ -270,5 +270,6 @@ class GridWorldWrapper(BaseEnvironment):
     def _get_setup_path(setup):
         return os.path.join(
                 os.environ.get('GRIDWORLD_ROOT', None),
+                "setups",
                 f"{setup}.yaml"
             )

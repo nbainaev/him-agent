@@ -1,10 +1,10 @@
 log: true
 project_name: gridworld_ec_gen
-run_tag: test1
+run_tag: test2
 
 action_inertia: 1
 frame_skip: 0
-strategies: null
+strategies: null  # None
 observe_actions: true
 reward_free: true
 
