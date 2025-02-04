@@ -10,9 +10,14 @@
   check_every: 'episodes'
   action: switch_logging
   params: {}
-
-- condition: ['steps', 'mod', 10, 'repeat']
-  check_every: 'steps'
+- condition: ['episodes', 'mod', 100, 'repeat']
+  check_every: 'episodes'
   action: agent.agent.sleep_phase
   params:
-    sleep_iterations: 10
+    clustering_iterations: 1000
+
+#- condition: ['steps', 'mod', 1000, 'repeat']
+#  check_every: 'steps'
+#  action: agent.agent.sleep_phase
+#  params:
+#    sleep_iterations: 100

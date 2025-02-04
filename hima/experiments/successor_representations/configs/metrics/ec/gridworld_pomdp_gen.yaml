@@ -20,6 +20,21 @@ step_scalar_metrics:
       sf/goal_found:
         agg: np.mean
         att: agent.goal_found
+      layer/first_level_err:
+        agg: np.mean
+        att: agent.agent.first_level_error
+      layer/second_level_err:
+        agg: np.mean
+        att: agent.agent.second_level_error
+      layer/first_level_none:
+        agg: np.mean
+        att: agent.agent.first_level_none
+      layer/second_level_none:
+        agg: np.mean
+        att: agent.agent.second_level_none
+      layer/second_level_num_trans:
+        agg: np.mean
+        att: agent.agent.num_transitions_second_level
     update_step: steps
     update_period: 1
     log_step: episodes
@@ -44,6 +59,9 @@ episodic_scalar_metrics:
       layer/num_clones:
         agg: np.mean
         att: agent.agent.total_num_clones
+      layer/num_free_states:
+        agg: np.mean
+        att: agent.agent.num_free_states
     update_step: episodes
     update_period: 1
     log_step: episodes

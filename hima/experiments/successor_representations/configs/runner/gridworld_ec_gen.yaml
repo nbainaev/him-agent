@@ -1,6 +1,6 @@
 log: true
 project_name: gridworld_ec_gen
-run_tag: test2
+run_tag: use_second_level
 
 action_inertia: 1
 frame_skip: 0
@@ -15,4 +15,4 @@ env_conf: 'configs/environment/gridworld/pomdp.yaml'
 agent_conf: 'configs/agent/ec/gridworld.yaml'
 metrics_conf: 'configs/metrics/ec/gridworld_pomdp_gen.yaml'
 
-seed: null
+seed: 123

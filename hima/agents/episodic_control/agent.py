@@ -10,6 +10,7 @@ from enum import Enum, auto
 
 from hima.common.sdr import sparse_to_dense
 from hima.common.utils import softmax, safe_divide
+import wandb
 
 EPS = 1e-24
 
@@ -28,6 +29,7 @@ class ECAgent:
             cluster_test_steps,
             new_cluster_weight,
             free_state_weight,
+            sample_size,
             gamma,
             reward_lr,
             inverse_temp,
@@ -44,23 +46,32 @@ class ECAgent:
         self.first_level_transitions = [dict() for _ in range(n_actions)]
         self.second_level_transitions = [dict() for _ in range(n_actions)]
         self.cluster_to_states = dict()
+        self.cluster_to_obs = dict()
         self.state_to_cluster = dict()
         self.obs_to_free_states = {obs: set() for obs in range(self.n_obs_states)}
         self.obs_to_clusters = {obs: set() for obs in range(self.n_obs_states)}
 
         self.state = (0, 0)
+        self.cluster = None
         self.gamma = gamma
         self.reward_lr = reward_lr
         self.rewards = np.zeros(self.n_obs_states, dtype=np.float32)
         self.num_clones = np.zeros(self.n_obs_states, dtype=np.uint32)
         self.action_values = np.zeros(self.n_actions)
+        self.first_level_error = 0
+        self.second_level_error = 0
+        self.first_level_none = 0
+        self.second_level_none = 0
+        self.sample_size = sample_size
         self.surprise = 0
         self.sf_steps = 0
         self.test_steps = 0
         self.cluster_counter = 0
         self.goal_found = False
+        self.learn = True
         self.seed = seed
         self._rng = np.random.default_rng(self.seed)
+        self.state_labels = dict()
 
         self.inverse_temp = inverse_temp
         if exploration_eps < 0:
@@ -72,8 +83,13 @@ class ECAgent:
 
     def reset(self):
         self.state = (0, 0)
+        self.cluster = None
         self.goal_found = False
         self.surprise = 0
+        self.first_level_error = 0
+        self.second_level_error = 0
+        self.first_level_none = 0
+        self.second_level_none = 0
         self.sf_steps = 0
         self.test_steps = 0
         self.action_values = np.zeros(self.n_actions)
@@ -84,16 +100,38 @@ class ECAgent:
         obs_state = int(obs_state[0])
 
         predicted_state = self.first_level_transitions[action].get(self.state)
+        self.first_level_none = float(predicted_state is None)
         if (predicted_state is None) or (predicted_state[0] != obs_state):
+            self.first_level_error = 1
             current_state = self._new_state(obs_state)
         else:
+            self.first_level_error = 0
             current_state = predicted_state
 
+        predicted_cluster = self.second_level_transitions[action].get(self.cluster)
+        self.second_level_none = float(predicted_cluster is None)
+        if (predicted_cluster is None) or (predicted_cluster[0] != obs_state):
+            self.second_level_error = 1
+            cluster = self.state_to_cluster.get(current_state)
+            if cluster is not None:
+                current_cluster = (current_state[0], self.state_to_cluster.get(current_state))
+            else:
+                current_cluster = None
+        else:
+            self.first_level_error = 0
+            self.second_level_error = 0
+            current_cluster = predicted_cluster
+
         if learn:
-            self.first_level_transitions[action][self.state] = current_state
-            self.obs_to_free_states[self.state[0]].add(self.state)
+            if (self.state is not None) and (current_state is not None):
+                self.first_level_transitions[action][self.state] = current_state
+                self.obs_to_free_states[self.state[0]].add(self.state)
+
+            if (self.cluster is not None) and (current_cluster is not None):
+                self.second_level_transitions[action][self.cluster] = current_cluster
 
         self.state = current_state
+        self.cluster = current_cluster
 
     def sample_action(self):
         action_values = self.evaluate_actions()
@@ -104,9 +142,14 @@ class ECAgent:
         return action
 
     def reinforce(self, reward):
-        self.rewards[self.state[0]] += self.reward_lr * (
+        if self.state is not None:
+            obs = self.state[0]
+        else:
+            obs = self.cluster[0]
+
+        self.rewards[obs] += self.reward_lr * (
                 reward -
-                self.rewards[self.state[0]]
+                self.rewards[obs]
         )
 
     def evaluate_actions(self):
@@ -166,12 +209,16 @@ class ECAgent:
 
         return sf, i+1, goal_found
 
-    def sleep_phase(self, sleep_iterations):
+    def sleep_phase(self, clustering_iterations):
+        self._clustering(clustering_iterations)
+
+    def _clustering(self, iterations):
         if self.num_clones.max() < 2:
             Warning('Interrupting sleep phase. Not enough data.')
             return
 
-        for _ in range(sleep_iterations):
+        updated_clusters = set()
+        for _ in range(iterations):
             n_free_states = [len(self.obs_to_free_states[obs]) for obs in range(self.n_obs_states)]
             n_free_states = np.array(n_free_states, dtype=np.float32)
 
@@ -206,35 +253,28 @@ class ECAgent:
             for c in candidates:
                 # sample small clusters more often
                 for s in self.cluster_to_states[c]:
-                    s_weights.append(1/len(self.cluster_to_states[c])**2)
+                    s_weights.append(1 / len(self.cluster_to_states[c]) ** 2)
                     s_candidates.append(s)
             s_weights = np.array(s_weights)
             s_weights = np.concatenate([s_free_weights, s_weights])
             s_weights /= s_weights.sum()
 
-            if cluster_id == -1:
-                if len(s_candidates) < 2:
-                    return
-                # create new cluster
-                candidate_states = self._rng.choice(
-                        s_candidates,
-                        2,
-                        p=s_weights,
-                        replace=False
-                    )
-                candidate_states = {
-                    tuple(state) for state in candidate_states
-                }
-            else:
-                candidate_states = self.cluster_to_states[cluster_id]
-                if len(s_candidates) > 0:
-                    new_state = tuple(
-                        self._rng.choice(
-                            s_candidates,
-                            p=s_weights
-                        )
-                    )
-                    candidate_states.add(new_state)
+            sample_size = min(self.sample_size, len(s_candidates))
+
+            if sample_size == 0:
+                continue
+
+            candidate_states = self._rng.choice(
+                s_candidates,
+                sample_size,
+                p=s_weights,
+                replace=False
+            )
+            candidate_states = {
+                tuple(state) for state in candidate_states
+            }
+            if cluster_id != -1:
+                candidate_states = candidate_states.union(self.cluster_to_states[cluster_id])
 
             mask, self.test_steps = self._test_cluster(candidate_states)
             candidate_states = np.array(list(candidate_states))
@@ -246,7 +286,7 @@ class ECAgent:
             # update cluster
             if (len(succeed_states) < 2) and cluster_id == -1:
                 # cluster failed to form, nothing to change
-                return
+                continue
 
             if len(succeed_states) < 2:
                 # cluster is destroyed
@@ -257,10 +297,19 @@ class ECAgent:
                     cluster_id = self.cluster_counter
                     self.cluster_counter += 1
                     self.obs_to_clusters[obs_state].add(cluster_id)
+                for s in succeed_states:
+                    if s in self.state_to_cluster:
+                        old_c = self.state_to_cluster[s]
+                        if old_c != cluster_id:
+                            self.cluster_to_states[old_c].remove(s)
+                            if len(self.cluster_to_states[old_c]) == 0:
+                                self.cluster_to_states.pop(old_c)
+                                self.obs_to_clusters[obs_state].discard(old_c)
+                    self.state_to_cluster[s] = cluster_id
 
                 self.cluster_to_states[cluster_id] = succeed_states
-                for c in succeed_states:
-                    self.state_to_cluster[c] = cluster_id
+                self.cluster_to_obs[cluster_id] = obs_state
+                updated_clusters.add(cluster_id)
                 self.obs_to_free_states[obs_state] = self.obs_to_free_states[obs_state].difference(
                     self.cluster_to_states[cluster_id]
                 )
@@ -271,6 +320,53 @@ class ECAgent:
                     if self.state_to_cluster[s] == cluster_id:
                         self.state_to_cluster.pop(s)
                         self.obs_to_free_states[obs_state].add(s)
+
+            # logging
+            try:
+                cluster_error = list()
+                clusters = self.cluster_to_states
+                for cluster_id in clusters:
+                    cluster = clusters[cluster_id]
+                    cluster_labels = np.array([self.state_labels.get(s, -1) for s in cluster])
+                    labels, counts = np.unique(cluster_labels, return_counts=True)
+                    score = counts / np.max(counts)
+                    cluster_error.append(score.sum())
+
+                wandb.log(
+                    {
+                        'sleep_phase/num_clusters': self.num_clusters,
+                        'sleep_phase/av_cluster_size': self.average_cluster_size,
+                        'sleep_phase/num_free_sates': self.num_free_states,
+                        'sleep_phase/succeed_states': len(succeed_states),
+                        'sleep_phase/cluster_error': np.median(np.array(cluster_error))
+                    }
+                )
+            except wandb.Error:
+                pass
+
+        for cluster_id in updated_clusters:
+            if cluster_id in self.cluster_to_states:
+                # update transition matrix
+                for a, d_a in enumerate(self.second_level_transitions):
+                    predicted_states = [
+                        self.first_level_transitions[a][s]
+                        for s in self.cluster_to_states[cluster_id]
+                        if s in self.first_level_transitions[a]
+                    ]
+                    predicted_clusters = [
+                        self.state_to_cluster[s] for s in predicted_states
+                        if s in self.state_to_cluster
+                    ]
+                    # TODO predictions aren't always consistent
+                    predicted_clusters, counts = np.unique(predicted_clusters, return_counts=True)
+                    if len(counts) > 0:
+                        cluster = (self.cluster_to_obs[cluster_id], cluster_id)
+                        pred_cluster_id = predicted_clusters[np.argmax(counts)]
+                        pred_cluster = (self.cluster_to_obs[pred_cluster_id], pred_cluster_id)
+                        d_a[cluster] = pred_cluster
+
+    def _rehearse(self, iterations):
+        pass
 
     def _test_cluster(self, cluster: Iterable) -> (np.ndarray, int):
         """
@@ -382,5 +478,13 @@ class ECAgent:
         return len(self.cluster_to_states)
 
     @property
+    def num_free_states(self):
+        return sum([len(v) for v in self.obs_to_free_states.values()])
+
+    @property
     def average_cluster_size(self):
         return np.array([len(self.cluster_to_states[c]) for c in self.cluster_to_states]).mean()
+
+    @property
+    def num_transitions_second_level(self):
+        return sum([len(d_a) for d_a in self.second_level_transitions])

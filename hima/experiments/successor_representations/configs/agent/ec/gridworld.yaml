@@ -2,8 +2,9 @@
 agent:
   plan_steps: 50
   cluster_test_steps: 50
-  new_cluster_weight: 0.05  # the bigger this number the more clusters will be created
+  new_cluster_weight: 50  # the bigger this number the more clusters will be created
   free_state_weight: 10  # set >1 to prioritise free states sampling
+  sample_size: 100
   gamma: 0.8
   reward_lr: 0.1
   inverse_temp: 100

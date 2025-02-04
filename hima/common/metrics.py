@@ -959,11 +959,16 @@ class EClusterPurity(BaseMetric):
             logger, runner,
             update_step, log_step, update_period, log_period,
     ):
+        """
+            Effective number of state labels per cluster
+        """
         super().__init__(logger, runner, update_step, log_step, update_period, log_period)
         self.name = name
         self.state_att = state_att
         self.state_labels = dict()
         self.logger.define_metric(f'{self.name}', step_metric=self.log_step)
+        agent = self.runner.agent.agent
+        agent.state_labels = self.state_labels
 
     def update(self):
         state = self.get_attr(self.state_att)
@@ -979,9 +984,11 @@ class EClusterPurity(BaseMetric):
         clusters = self.runner.agent.agent.cluster_to_states
         for cluster_id in clusters:
             cluster = clusters[cluster_id]
-            cluster_labels = {self.state_labels[s] for s in cluster}
-            cluster_error.append((len(cluster_labels) - 1) / len(cluster))
+            cluster_labels = np.array([self.state_labels[s] for s in cluster])
+            labels, counts = np.unique(cluster_labels, return_counts=True)
+            score = counts / np.max(counts)
+            cluster_error.append(score.sum())
 
-        log_dict[self.name] = np.array(cluster_error).mean()
+        log_dict[self.name] = np.median(np.array(cluster_error))
         self.logger.log(log_dict)
 

@@ -99,7 +99,7 @@ class ICMLRunner(BaseRunner):
         env = self.environment.environment
         assert isinstance(env, hima.envs.gridworld.GridWorld)
         r, c = env.r, env.c
-        return r, c
+        return r * env.w + c
 
     @property
     def state_visited(self):
