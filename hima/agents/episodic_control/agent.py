@@ -214,7 +214,7 @@ class ECAgent:
 
     def _clustering(self, iterations):
         if self.num_clones.max() < 2:
-            Warning('Interrupting sleep phase. Not enough data.')
+            Warning('Interrupting clustering phase. Not enough data.')
             return
 
         updated_clusters = set()
@@ -334,6 +334,7 @@ class ECAgent:
 
                 wandb.log(
                     {
+                        'sleep_phase/av_test_steps': self.test_steps,
                         'sleep_phase/num_clusters': self.num_clusters,
                         'sleep_phase/av_cluster_size': self.average_cluster_size,
                         'sleep_phase/num_free_sates': self.num_free_states,
@@ -374,7 +375,8 @@ class ECAgent:
             True/False means that the cluster's element is
                 consistent/inconsistent with the majority of elements
         """
-        ps_per_i = [{s} for s in cluster]
+        ps_per_i = np.array(list(cluster))
+        test = np.ones(len(ps_per_i)).astype(np.bool8)
         t = -1
         for t in range(self.cluster_test_steps):
             score_a = np.zeros(self.n_actions)
@@ -382,36 +384,36 @@ class ECAgent:
             ps_per_a = [[] for _ in range(self.n_actions)]
             obs_per_a = [[] for _ in range(self.n_actions)]
             for a, d_a in enumerate(self.first_level_transitions):
-                for ps_i in ps_per_i:
-                    ps_a = self._predict(ps_i, a)
-                    if len(ps_a) > 0:
+                for ps_i in ps_per_i[test]:
+                    ps_a = d_a.get(tuple(ps_i))
+                    if ps_a is not None:
                         score_a[a] += 1
-                        obs_a = self._convert_to_obs_states(ps_a)
-                        obs_a = set(obs_a)
-                        if len(obs_a) > 1:
-                            obs_a = -1
-                        else:
-                            obs_a = obs_a.pop()
+                        obs_a = ps_a[0]
+                        ps_per_a[a].append(ps_a)
                     else:
                         obs_a = np.nan
-
-                    ps_per_a[a].append(ps_a)
+                        ps_per_a[a].append((-1, -1))
                     obs_per_a[a].append(obs_a)
 
                 # detect contradiction
                 obs = np.array(obs_per_a[a])
                 empty = np.isnan(obs)
+                # convert predictions to arrays
+                pa = np.full_like(ps_per_i, fill_value=-1)
+                pa[test] = np.array(ps_per_a[a])
+                ps_per_a[a] = pa
+
                 states, counts = np.unique(obs[~empty], return_counts=True)
-                if len(states) > 1:
-                    test = (obs == states[np.argmax(counts)]) | empty
-                    return test, t+1
+                if len(counts) > 0:
+                    test[test] = (obs == states[np.argmax(counts)]) | empty
+
             # choose next action
             action = np.argmax(score_a)
             ps_per_i = ps_per_a[action]
             obs = obs_per_a[action]
 
-            if score_a[action] <= 1:
-                # no predictions
+            if (score_a[action] <= 1) or (np.count_nonzero(test) <= 1):
+                # no predictions or only one trace is left
                 break
 
             obs = np.array(obs)
@@ -423,7 +425,7 @@ class ECAgent:
                     # found rewarding state
                     break
 
-        return np.ones(len(ps_per_i)).astype(np.bool8), t+1
+        return test, t+1
 
     def _predict(self, state: set, action: int) -> set:
         clusters = [self.state_to_cluster.get(s) for s in state]
