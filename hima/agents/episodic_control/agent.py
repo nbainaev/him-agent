@@ -52,7 +52,7 @@ class ECAgent:
         self.obs_to_clusters = {obs: set() for obs in range(self.n_obs_states)}
 
         self.state = (-1, -1)
-        self.cluster = (-1, -1)
+        self.cluster = {(-1, -1)}
         self.gamma = gamma
         self.reward_lr = reward_lr
         self.rewards = np.zeros(self.n_obs_states, dtype=np.float32)
@@ -83,7 +83,7 @@ class ECAgent:
 
     def reset(self):
         self.state = (-1, -1)
-        self.cluster = (-1, -1)
+        self.cluster = {(-1, -1)}
         self.goal_found = False
         self.surprise = 0
         self.first_level_error = 0
@@ -108,28 +108,31 @@ class ECAgent:
             self.first_level_error = 0
             current_state = predicted_state
 
-        predicted_cluster = self.second_level_transitions[action].get(self.cluster)
-        self.second_level_none = float(predicted_cluster is None)
-        if (predicted_cluster is None) or (predicted_cluster[0] != obs_state):
+        predicted_cluster = set()
+        for c in self.cluster:
+            pc = self.second_level_transitions[action].get(c)
+            if pc is not None:
+                predicted_cluster = predicted_cluster.union(pc)
+        predicted_obs = {c[0] for c in predicted_cluster}
+
+        self.second_level_none = len(predicted_obs)
+        if (len(predicted_cluster) == 0) or not (obs_state in predicted_obs):
             self.second_level_error = 1
-            cluster = self.state_to_cluster.get(current_state)
-            if cluster is not None:
-                current_cluster = (current_state[0], cluster)
-            else:
-                current_cluster = None
         else:
-            self.first_level_error = 0
             self.second_level_error = 0
-            current_cluster = predicted_cluster
+
+        # state induced cluster
+        cluster = self.state_to_cluster.get(current_state)
+        if cluster is not None:
+            predicted_cluster = {(current_state[0], cluster)}
+
+        current_cluster = predicted_cluster
 
         if learn:
             if (self.state is not None) and (current_state is not None):
                 self.first_level_transitions[action][self.state] = current_state
                 if self.state[0] != -1:
                     self.obs_to_free_states[self.state[0]].add(self.state)
-
-            if (self.cluster is not None) and (current_cluster is not None):
-                self.second_level_transitions[action][self.cluster] = current_cluster
 
         self.state = current_state
         self.cluster = current_cluster
@@ -145,13 +148,10 @@ class ECAgent:
     def reinforce(self, reward):
         if self.state is not None:
             obs = self.state[0]
-        else:
-            obs = self.cluster[0]
-
-        self.rewards[obs] += self.reward_lr * (
-                reward -
-                self.rewards[obs]
-        )
+            self.rewards[obs] += self.reward_lr * (
+                    reward -
+                    self.rewards[obs]
+            )
 
     def evaluate_actions(self):
         self.action_values = np.zeros(self.n_actions)
@@ -363,9 +363,8 @@ class ECAgent:
                     predicted_clusters, counts = np.unique(predicted_clusters, return_counts=True)
                     if len(counts) > 0:
                         cluster = (self.cluster_to_obs[cluster_id], cluster_id)
-                        pred_cluster_id = predicted_clusters[np.argmax(counts)]
-                        pred_cluster = (self.cluster_to_obs[pred_cluster_id], pred_cluster_id)
-                        d_a[cluster] = pred_cluster
+                        pred_clusters = {(self.cluster_to_obs[pc], pc) for pc in predicted_clusters}
+                        d_a[cluster] = pred_clusters
 
     def _rehearse(self, iterations):
         pass
