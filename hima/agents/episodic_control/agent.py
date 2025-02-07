@@ -51,8 +51,8 @@ class ECAgent:
         self.obs_to_free_states = {obs: set() for obs in range(self.n_obs_states)}
         self.obs_to_clusters = {obs: set() for obs in range(self.n_obs_states)}
 
-        self.state = (0, 0)
-        self.cluster = None
+        self.state = (-1, -1)
+        self.cluster = (-1, -1)
         self.gamma = gamma
         self.reward_lr = reward_lr
         self.rewards = np.zeros(self.n_obs_states, dtype=np.float32)
@@ -82,8 +82,8 @@ class ECAgent:
             self.exploration_eps = exploration_eps
 
     def reset(self):
-        self.state = (0, 0)
-        self.cluster = None
+        self.state = (-1, -1)
+        self.cluster = (-1, -1)
         self.goal_found = False
         self.surprise = 0
         self.first_level_error = 0
@@ -114,7 +114,7 @@ class ECAgent:
             self.second_level_error = 1
             cluster = self.state_to_cluster.get(current_state)
             if cluster is not None:
-                current_cluster = (current_state[0], self.state_to_cluster.get(current_state))
+                current_cluster = (current_state[0], cluster)
             else:
                 current_cluster = None
         else:
@@ -125,7 +125,8 @@ class ECAgent:
         if learn:
             if (self.state is not None) and (current_state is not None):
                 self.first_level_transitions[action][self.state] = current_state
-                self.obs_to_free_states[self.state[0]].add(self.state)
+                if self.state[0] != -1:
+                    self.obs_to_free_states[self.state[0]].add(self.state)
 
             if (self.cluster is not None) and (current_cluster is not None):
                 self.second_level_transitions[action][self.cluster] = current_cluster
@@ -392,14 +393,14 @@ class ECAgent:
                         ps_per_a[a].append(ps_a)
                     else:
                         obs_a = np.nan
-                        ps_per_a[a].append((-1, -1))
+                        ps_per_a[a].append((np.nan, np.nan))
                     obs_per_a[a].append(obs_a)
 
                 # detect contradiction
                 obs = np.array(obs_per_a[a])
                 empty = np.isnan(obs)
                 # convert predictions to arrays
-                pa = np.full_like(ps_per_i, fill_value=-1)
+                pa = np.full_like(ps_per_i, fill_value=np.nan)
                 pa[test] = np.array(ps_per_a[a])
                 ps_per_a[a] = pa
 
