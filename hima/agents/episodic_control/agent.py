@@ -284,25 +284,16 @@ class ECAgent:
 
             mask, self.test_steps = self._test_cluster(list(candidate_states))
 
-            succeed_states = {tuple(s) for s, m in zip(candidates, mask) if m}
+            succeed_states = {tuple(s) for s, m in zip(candidate_states, mask) if m}
             self._update_cluster(succeed_states, cluster_id, obs_state, old_cluster_assignment)
 
             if (cluster_id == self.cluster_counter) and (len(succeed_states) > 0):
                 self.cluster_counter += 1
 
-            # logging
-            cluster_error = list()
-            clusters = self.cluster_to_states
-            if len(self.state_labels) > 0:
-                for cluster_id in clusters:
-                    cluster = clusters[cluster_id]
-                    cluster_labels = np.array([self.state_labels.get(s, -1) for s in cluster])
-                    labels, counts = np.unique(cluster_labels, return_counts=True)
-                    score = counts / np.max(counts)
-                    cluster_error.append(score.sum())
-                cluster_error = np.median(np.array(cluster_error))
-            else:
-                cluster_error = 0
+            clusters = list(self.cluster_to_states.keys())
+            for cluster_id in clusters:
+                if len(self.cluster_to_states[cluster_id]) == 0:
+                    self._destroy_cluster((self.cluster_to_obs[cluster_id], cluster_id))
 
             try:
                 wandb.log(
@@ -312,33 +303,28 @@ class ECAgent:
                         'sleep_phase/av_cluster_size': self.average_cluster_size,
                         'sleep_phase/num_free_sates': self.num_free_states,
                         'sleep_phase/succeed_states': len(succeed_states),
-                        'sleep_phase/cluster_error': cluster_error
                     }
                 )
             except wandb.Error:
                 pass
 
-        clusters = list(self.cluster_to_states.keys())
-        for cluster_id in clusters:
-            if len(self.cluster_to_states[cluster_id]) == 0:
-                self._destroy_cluster((self.cluster_to_obs[cluster_id], cluster_id))
-            else:
-                # update transition matrix
-                for a, d_a in enumerate(self.second_level_transitions):
-                    predicted_states = [
-                        self.first_level_transitions[a][s]
-                        for s in self.cluster_to_states[cluster_id]
-                        if s in self.first_level_transitions[a]
-                    ]
-                    predicted_clusters = [
-                        self.state_to_cluster[s] for s in predicted_states
-                        if s in self.state_to_cluster
-                    ]
-                    predicted_clusters, counts = np.unique(predicted_clusters, return_counts=True)
-                    if len(counts) > 0:
-                        cluster = (self.cluster_to_obs[cluster_id], cluster_id)
-                        pred_clusters = {(self.cluster_to_obs[pc], pc) for pc in predicted_clusters}
-                        d_a[cluster] = pred_clusters
+        for cluster_id in self.cluster_to_states:
+            # update transition matrix
+            for a, d_a in enumerate(self.second_level_transitions):
+                predicted_states = [
+                    self.first_level_transitions[a][s]
+                    for s in self.cluster_to_states[cluster_id]
+                    if s in self.first_level_transitions[a]
+                ]
+                predicted_clusters = [
+                    self.state_to_cluster[s] for s in predicted_states
+                    if s in self.state_to_cluster
+                ]
+                predicted_clusters, counts = np.unique(predicted_clusters, return_counts=True)
+                if len(counts) > 0:
+                    cluster = (self.cluster_to_obs[cluster_id], cluster_id)
+                    pred_clusters = {(self.cluster_to_obs[pc], pc) for pc in predicted_clusters}
+                    d_a[cluster] = pred_clusters
 
     def _rehearse(self, iterations):
         pass
@@ -372,7 +358,7 @@ class ECAgent:
                 old_cluster = None
                 if old_cluster_assignment is not None:
                     old_cluster = old_cluster_assignment.get(s)
-                if old_cluster is not None:
+                if (old_cluster is not None) and (old_cluster != cluster_id):
                     self.state_to_cluster[s] = old_cluster
                     self.cluster_to_states[old_cluster].add(s)
                 else:
@@ -382,6 +368,7 @@ class ECAgent:
 
         self.cluster_to_states[cluster_id] = new_states
         self.cluster_to_obs[cluster_id] = obs_state
+        self.obs_to_clusters[obs_state].add(cluster_id)
 
     def _destroy_cluster(self, cluster: tuple):
         # TODO free states
@@ -389,7 +376,7 @@ class ECAgent:
         if cluster_id in self.cluster_to_states:
             self.cluster_to_states.pop(cluster_id)
 
-        if obs_state in self.obs_to_clusters[obs_state]:
+        if obs_state in self.obs_to_clusters:
             self.obs_to_clusters[obs_state].remove(cluster_id)
 
         for d_a in self.second_level_transitions:
