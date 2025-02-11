@@ -118,6 +118,7 @@ class ECAgent:
         self.second_level_none = len(predicted_obs)
         if (len(predicted_cluster) == 0) or not (obs_state in predicted_obs):
             self.second_level_error = 1
+            predicted_cluster = {}
         else:
             self.second_level_error = 0
 
@@ -132,7 +133,8 @@ class ECAgent:
             if (self.state is not None) and (current_state is not None):
                 self.first_level_transitions[action][self.state] = current_state
                 if self.state[0] != -1:
-                    self.obs_to_free_states[self.state[0]].add(self.state)
+                    if cluster is None:
+                        self.obs_to_free_states[current_state[0]].add(current_state)
 
         self.state = current_state
         self.cluster = current_cluster
@@ -303,6 +305,7 @@ class ECAgent:
                         'sleep_phase/av_cluster_size': self.average_cluster_size,
                         'sleep_phase/num_free_sates': self.num_free_states,
                         'sleep_phase/succeed_states': len(succeed_states),
+                        'sleep_phase/clustered_states': len(self.state_to_cluster)
                     }
                 )
             except wandb.Error:
