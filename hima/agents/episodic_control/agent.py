@@ -66,6 +66,7 @@ class ECAgent:
         self.second_level_error = 0
         self.first_level_none = 0
         self.second_level_none = 0
+        self.generalised = 0
         self.sample_size = sample_size
         self.surprise = 0
         self.sf_steps = 0
@@ -92,6 +93,7 @@ class ECAgent:
         self.surprise = 0
         self.first_level_error = 0
         self.second_level_error = 0
+        self.generalised = 0
         self.first_level_none = 0
         self.second_level_none = 0
         self.sf_steps = 0
@@ -126,6 +128,7 @@ class ECAgent:
         else:
             self.second_level_error = 0
 
+        self.generalised = self.second_level_error < self.first_level_error
         # state induced cluster
         cluster = self.state_to_cluster.get(current_state)
         if cluster is not None:

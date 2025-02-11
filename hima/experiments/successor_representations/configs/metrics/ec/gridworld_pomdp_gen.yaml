@@ -32,6 +32,9 @@ step_scalar_metrics:
       layer/second_level_none:
         agg: np.mean
         att: agent.agent.second_level_none
+      layer/generalised:
+        agg: np.mean
+        att: agent.agent.generalised
       layer/second_level_num_trans:
         agg: np.mean
         att: agent.agent.num_transitions_second_level
