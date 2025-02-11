@@ -2,7 +2,8 @@
 agent:
   plan_steps: 50
   cluster_test_steps: 50
-  minimum_test_steps: 2
+  minimum_test_steps: 0
+  expand_clusters: false
   new_cluster_weight: 1  # the bigger this number the more clusters will be created
   free_state_weight: 10  # set >1 to prioritise free states sampling
   sample_size: 100

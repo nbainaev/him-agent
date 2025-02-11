@@ -28,6 +28,7 @@ class ECAgent:
             plan_steps,
             cluster_test_steps,
             minimum_test_steps,
+            expand_clusters,
             new_cluster_weight,
             free_state_weight,
             sample_size,
@@ -42,6 +43,7 @@ class ECAgent:
         self.plan_steps = plan_steps
         self.cluster_test_steps = cluster_test_steps
         self.minimum_test_steps = minimum_test_steps
+        self.expand_clusters = expand_clusters
         self.new_cluster_weight = new_cluster_weight
         self.free_state_weight = free_state_weight
 
@@ -406,7 +408,7 @@ class ECAgent:
             for a, d_a in enumerate(self.first_level_transitions):
                 obs = np.full(len(cluster), fill_value=np.nan)
                 for pos, ps_i in ps_per_i.items():
-                    ps_a = self._predict(ps_i, a, expand_clusters=(t!=0))
+                    ps_a = self._predict(ps_i, a, expand_clusters=(t!=0) and self.expand_clusters)
                     obs_a = {s[0] for s in ps_a}
                     # contradiction
                     if len(obs_a) > 1:
