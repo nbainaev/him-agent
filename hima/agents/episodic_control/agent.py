@@ -218,7 +218,6 @@ class ECAgent:
             Warning('Interrupting clustering phase. Not enough data.')
             return
 
-        updated_clusters = set()
         for _ in range(iterations):
             n_free_states = [len(self.obs_to_free_states[obs]) for obs in range(self.n_obs_states)]
             n_free_states = np.array(n_free_states, dtype=np.float32)
@@ -276,63 +275,36 @@ class ECAgent:
             }
             if cluster_id != -1:
                 candidate_states = candidate_states.union(self.cluster_to_states[cluster_id])
-
-            mask, self.test_steps = self._test_cluster(candidate_states)
-            candidate_states = np.array(list(candidate_states))
-            failed_states = candidate_states[~mask]
-            succeed_states = candidate_states[mask]
-            failed_states = {tuple(s) for s in failed_states}
-            succeed_states = {tuple(s) for s in succeed_states}
-
-            # update cluster
-            if (len(succeed_states) < 2) and cluster_id == -1:
-                # cluster failed to form, nothing to change
-                continue
-
-            if len(succeed_states) < 2:
-                # cluster is destroyed
-                failed_states = self.cluster_to_states.pop(cluster_id)
-                self.obs_to_clusters[obs_state].remove(cluster_id)
             else:
-                if cluster_id == -1:
-                    cluster_id = self.cluster_counter
-                    self.cluster_counter += 1
-                    self.obs_to_clusters[obs_state].add(cluster_id)
-                for s in succeed_states:
-                    if s in self.state_to_cluster:
-                        old_c = self.state_to_cluster[s]
-                        if old_c != cluster_id:
-                            self.cluster_to_states[old_c].remove(s)
-                            if len(self.cluster_to_states[old_c]) == 0:
-                                self.cluster_to_states.pop(old_c)
-                                self.obs_to_clusters[obs_state].discard(old_c)
-                    self.state_to_cluster[s] = cluster_id
+                cluster_id = self.cluster_counter
 
-                self.cluster_to_states[cluster_id] = succeed_states
-                self.cluster_to_obs[cluster_id] = obs_state
-                updated_clusters.add(cluster_id)
-                self.obs_to_free_states[obs_state] = self.obs_to_free_states[obs_state].difference(
-                    self.cluster_to_states[cluster_id]
-                )
+            old_cluster_assignment = {s: self.state_to_cluster.get(s) for s in candidate_states}
 
-            # update failed states
-            for s in failed_states:
-                if s in self.state_to_cluster:
-                    if self.state_to_cluster[s] == cluster_id:
-                        self.state_to_cluster.pop(s)
-                        self.obs_to_free_states[obs_state].add(s)
+            self._update_cluster(candidate_states, cluster_id, obs_state)
+
+            mask, self.test_steps = self._test_cluster(list(candidate_states))
+
+            succeed_states = {tuple(s) for s, m in zip(candidates, mask) if m}
+            self._update_cluster(succeed_states, cluster_id, obs_state, old_cluster_assignment)
+
+            if (cluster_id == self.cluster_counter) and (len(succeed_states) > 0):
+                self.cluster_counter += 1
 
             # logging
-            try:
-                cluster_error = list()
-                clusters = self.cluster_to_states
+            cluster_error = list()
+            clusters = self.cluster_to_states
+            if len(self.state_labels) > 0:
                 for cluster_id in clusters:
                     cluster = clusters[cluster_id]
                     cluster_labels = np.array([self.state_labels.get(s, -1) for s in cluster])
                     labels, counts = np.unique(cluster_labels, return_counts=True)
                     score = counts / np.max(counts)
                     cluster_error.append(score.sum())
+                cluster_error = np.median(np.array(cluster_error))
+            else:
+                cluster_error = 0
 
+            try:
                 wandb.log(
                     {
                         'sleep_phase/av_test_steps': self.test_steps,
@@ -340,14 +312,17 @@ class ECAgent:
                         'sleep_phase/av_cluster_size': self.average_cluster_size,
                         'sleep_phase/num_free_sates': self.num_free_states,
                         'sleep_phase/succeed_states': len(succeed_states),
-                        'sleep_phase/cluster_error': np.median(np.array(cluster_error))
+                        'sleep_phase/cluster_error': cluster_error
                     }
                 )
             except wandb.Error:
                 pass
 
-        for cluster_id in updated_clusters:
-            if cluster_id in self.cluster_to_states:
+        clusters = list(self.cluster_to_states.keys())
+        for cluster_id in clusters:
+            if len(self.cluster_to_states[cluster_id]) == 0:
+                self._destroy_cluster((self.cluster_to_obs[cluster_id], cluster_id))
+            else:
                 # update transition matrix
                 for a, d_a in enumerate(self.second_level_transitions):
                     predicted_states = [
@@ -359,7 +334,6 @@ class ECAgent:
                         self.state_to_cluster[s] for s in predicted_states
                         if s in self.state_to_cluster
                     ]
-                    # TODO predictions aren't always consistent
                     predicted_clusters, counts = np.unique(predicted_clusters, return_counts=True)
                     if len(counts) > 0:
                         cluster = (self.cluster_to_obs[cluster_id], cluster_id)
@@ -369,70 +343,108 @@ class ECAgent:
     def _rehearse(self, iterations):
         pass
 
-    def _test_cluster(self, cluster: Iterable) -> (np.ndarray, int):
+    def _update_cluster(
+            self,
+            new_states: set,
+            cluster_id: int,
+            obs_state: int,
+            old_cluster_assignment: dict=None
+    ):
+        """
+            Update cluster state diff
+            Assign new_states to another cluster and also update clusters that are affected.
+
+            old_cluster_assignment: dict
+        """
+        for s in new_states:
+            if s in self.state_to_cluster:
+                # remove from old cluster
+                old_c = self.state_to_cluster[s]
+                if old_c != cluster_id:
+                    self.cluster_to_states[old_c].remove(s)
+            else:
+                self.obs_to_free_states[obs_state].remove(s)
+            self.state_to_cluster[s] = cluster_id
+
+        if cluster_id in self.cluster_to_states:
+            removed_states = self.cluster_to_states[cluster_id].difference(new_states)
+            for s in removed_states:
+                old_cluster = None
+                if old_cluster_assignment is not None:
+                    old_cluster = old_cluster_assignment.get(s)
+                if old_cluster is not None:
+                    self.state_to_cluster[s] = old_cluster
+                    self.cluster_to_states[old_cluster].add(s)
+                else:
+                    if s in self.state_to_cluster:
+                        self.state_to_cluster.pop(s)
+                    self.obs_to_free_states[obs_state].add(s)
+
+        self.cluster_to_states[cluster_id] = new_states
+        self.cluster_to_obs[cluster_id] = obs_state
+
+    def _destroy_cluster(self, cluster: tuple):
+        # TODO free states
+        obs_state, cluster_id = cluster
+        if cluster_id in self.cluster_to_states:
+            self.cluster_to_states.pop(cluster_id)
+
+        if obs_state in self.obs_to_clusters[obs_state]:
+            self.obs_to_clusters[obs_state].remove(cluster_id)
+
+        for d_a in self.second_level_transitions:
+            if cluster in d_a:
+                d_a.pop(cluster)
+
+    def _test_cluster(self, cluster: list) -> (np.ndarray, int):
         """
             Returns boolean array of size len(cluster)
             True/False means that the cluster's element is
                 consistent/inconsistent with the majority of elements
         """
-        ps_per_i = np.array(list(cluster))
+        ps_per_i = {pos: {s} for pos, s in enumerate(cluster)}
         test = np.ones(len(ps_per_i)).astype(np.bool8)
         t = -1
         for t in range(self.cluster_test_steps):
             score_a = np.zeros(self.n_actions)
             # predict states for each action and initial state
-            ps_per_a = [[] for _ in range(self.n_actions)]
-            obs_per_a = [[] for _ in range(self.n_actions)]
+            ps_per_a = [dict() for _ in range(self.n_actions)]
             for a, d_a in enumerate(self.first_level_transitions):
-                for ps_i in ps_per_i[test]:
-                    ps_a = d_a.get(tuple(ps_i))
-                    if ps_a is not None:
-                        score_a[a] += 1
-                        obs_a = ps_a[0]
-                        ps_per_a[a].append(ps_a)
-                    else:
-                        obs_a = np.nan
-                        ps_per_a[a].append((np.nan, np.nan))
-                    obs_per_a[a].append(obs_a)
-
+                obs = np.full(len(cluster), fill_value=np.nan)
+                for pos, ps_i in ps_per_i.items():
+                    ps_a = self._predict(ps_i, a, expand_clusters=(t!=0))
+                    score_a[a] += int(len(ps_a) != 0)
+                    obs_a = {s[0] for s in ps_a}
+                    # contradiction
+                    if len(obs_a) > 1:
+                        test[pos] = False
+                    elif len(obs_a) == 1:
+                        ps_per_a[a][pos] = ps_a
+                        obs[pos] = obs_a.pop()
                 # detect contradiction
-                obs = np.array(obs_per_a[a])
                 empty = np.isnan(obs)
-                # convert predictions to arrays
-                pa = np.full_like(ps_per_i, fill_value=np.nan)
-                pa[test] = np.array(ps_per_a[a])
-                ps_per_a[a] = pa
-
                 states, counts = np.unique(obs[~empty], return_counts=True)
                 if len(counts) > 0:
-                    test[test] = (obs == states[np.argmax(counts)]) | empty
+                    test = test & ((obs == states[np.argmax(counts)]) | empty)
 
             # choose next action
             action = np.argmax(score_a)
-            ps_per_i = ps_per_a[action]
-            obs = obs_per_a[action]
+            ps_per_i = {pos: s for pos, s in ps_per_a[action].items() if test[pos]}
 
-            if (score_a[action] <= 1) or (np.count_nonzero(test) <= 1):
+            if (score_a[action] <= 1) or (len(ps_per_i) <= 1):
                 # no predictions or only one trace is left
                 break
 
-            obs = np.array(obs)
-            obs = obs[~np.isnan(obs)]
-            if len(obs) > 0:
-                if np.any(
-                        self.rewards[obs.astype(np.int32)] > 0
-                ):
-                    # found rewarding state
-                    break
-
         return test, t+1
 
-    def _predict(self, state: set, action: int) -> set:
-        clusters = [self.state_to_cluster.get(s) for s in state]
-        state_expanded = set().union(
-            *[self.cluster_to_states[c] for c in clusters if c is not None]
-        )
-        state_expanded.update(state)
+    def _predict(self, state: set, action: int, expand_clusters: bool = False) -> set:
+        state_expanded = state
+        if expand_clusters:
+            clusters = [self.state_to_cluster.get(s) for s in state]
+            state_expanded = state_expanded.union(
+                *[self.cluster_to_states[c] for c in clusters if c is not None]
+            )
+
         d_a = self.first_level_transitions[action]
         predicted_state = set()
         for s in state_expanded:
