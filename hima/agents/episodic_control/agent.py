@@ -27,6 +27,7 @@ class ECAgent:
             n_actions,
             plan_steps,
             cluster_test_steps,
+            minimum_test_steps,
             new_cluster_weight,
             free_state_weight,
             sample_size,
@@ -40,6 +41,7 @@ class ECAgent:
         self.n_actions = n_actions
         self.plan_steps = plan_steps
         self.cluster_test_steps = cluster_test_steps
+        self.minimum_test_steps = minimum_test_steps
         self.new_cluster_weight = new_cluster_weight
         self.free_state_weight = free_state_weight
 
@@ -248,7 +250,7 @@ class ECAgent:
 
             s_candidates = list(self.obs_to_free_states[obs_state])
             s_free_weights = np.ones(
-                len(self.obs_to_free_states[obs_state])
+                len(s_candidates)
             ) * self.free_state_weight
 
             s_weights = list()
@@ -324,6 +326,7 @@ class ECAgent:
                     if s in self.state_to_cluster
                 ]
                 predicted_clusters, counts = np.unique(predicted_clusters, return_counts=True)
+                assert len(set([self.cluster_to_obs[c] for c in predicted_clusters])) <= 1
                 if len(counts) > 0:
                     cluster = (self.cluster_to_obs[cluster_id], cluster_id)
                     pred_clusters = {(self.cluster_to_obs[pc], pc) for pc in predicted_clusters}
@@ -399,23 +402,29 @@ class ECAgent:
             score_a = np.zeros(self.n_actions)
             # predict states for each action and initial state
             ps_per_a = [dict() for _ in range(self.n_actions)]
+            trace_interrupted = np.ones_like(test)
             for a, d_a in enumerate(self.first_level_transitions):
                 obs = np.full(len(cluster), fill_value=np.nan)
                 for pos, ps_i in ps_per_i.items():
                     ps_a = self._predict(ps_i, a, expand_clusters=(t!=0))
-                    score_a[a] += int(len(ps_a) != 0)
                     obs_a = {s[0] for s in ps_a}
                     # contradiction
                     if len(obs_a) > 1:
                         test[pos] = False
                     elif len(obs_a) == 1:
+                        score_a[a] += int(len(ps_a) != 0)
                         ps_per_a[a][pos] = ps_a
                         obs[pos] = obs_a.pop()
+                        trace_interrupted[pos] = False
                 # detect contradiction
                 empty = np.isnan(obs)
                 states, counts = np.unique(obs[~empty], return_counts=True)
                 if len(counts) > 0:
                     test = test & ((obs == states[np.argmax(counts)]) | empty)
+
+            # discard traces that were interrupted too early
+            if t < self.minimum_test_steps:
+                test = test & (~trace_interrupted)
 
             # choose next action
             action = np.argmax(score_a)
