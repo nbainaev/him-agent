@@ -506,3 +506,20 @@ class ECAgent:
     @property
     def num_transitions_second_level(self):
         return sum([len(d_a) for d_a in self.second_level_transitions])
+
+    @property
+    def draw_transition_graph(self):
+        g = pgv.AGraph(strict=False, directed=True)
+
+        for a, d_a in enumerate(self.second_level_transitions):
+            for c in d_a:
+                outs = d_a[c]
+                for out in outs:
+                    g.add_edge(c, out, label=a)
+
+        g.layout(prog='dot')
+        buf = io.BytesIO()
+        g.draw(buf, format='png')
+        buf.seek(0)
+        im = Image.open(buf)
+        return im
