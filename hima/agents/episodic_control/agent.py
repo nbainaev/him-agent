@@ -234,6 +234,7 @@ class ECAgent:
             Warning('Interrupting clustering phase. Not enough data.')
             return
 
+        cluster_score = dict()
         for _ in range(iterations):
             n_free_states = [len(self.obs_to_free_states[obs]) for obs in range(self.n_obs_states)]
             n_free_states = np.array(n_free_states, dtype=np.float32)
@@ -248,12 +249,12 @@ class ECAgent:
             # sample cluster and states
             # use Chinese-Restaurant-like prior there
             candidates = list(self.obs_to_clusters[obs_state])
-            counts = [len(self.cluster_to_states[c]) for c in candidates]
+            scores = [len(self.cluster_to_states[c]) * cluster_score.get(c, 1.0) for c in candidates]
 
             candidates.append(-1)
-            counts.append(self.new_cluster_weight)
-            counts = np.array(counts, dtype=np.float32)
-            c_probs = counts / (counts.sum() + EPS)
+            scores.append(self.new_cluster_weight)
+            scores = np.array(scores, dtype=np.float32)
+            c_probs = scores / (scores.sum() + EPS)
 
             cluster_id = int(self._rng.choice(candidates, p=c_probs))
             candidates.remove(-1)
@@ -267,7 +268,7 @@ class ECAgent:
 
             s_weights = list()
             for c in candidates:
-                # sample small clusters more often
+                # sample states from small clusters more often
                 for s in self.cluster_to_states[c]:
                     s_weights.append(1 / len(self.cluster_to_states[c]) ** 2)
                     s_candidates.append(s)
@@ -291,8 +292,10 @@ class ECAgent:
             }
             if cluster_id != -1:
                 candidate_states = candidate_states.union(self.cluster_to_states[cluster_id])
+                old_size = len(self.cluster_to_states[cluster_id])
             else:
                 cluster_id = self.cluster_counter
+                old_size = 1
 
             old_cluster_assignment = {s: self.state_to_cluster.get(s) for s in candidate_states}
 
@@ -302,6 +305,9 @@ class ECAgent:
 
             succeed_states = {tuple(s) for s, m in zip(candidate_states, mask) if m}
             self._update_cluster(succeed_states, cluster_id, obs_state, old_cluster_assignment)
+
+            # update cluster score
+            cluster_score[cluster_id] = max(0, len(succeed_states) - old_size) / sample_size
 
             if (cluster_id == self.cluster_counter) and (len(succeed_states) > 0):
                 self.cluster_counter += 1
