@@ -3,12 +3,14 @@ agent:
   plan_steps: 50
   n_rollouts: 5
   test_policy_beta: 1
+  cluster_score_lr: 0.01
   cluster_test_steps: 50
   minimum_test_steps: 1
-  expand_clusters: true
-  new_cluster_weight: 1  # the bigger this number the more clusters will be created
+  expand_clusters: false
+  new_cluster_weight: 1000  # the bigger this number the more clusters will be created
   free_state_weight: 1000  # set >1 to prioritise free states sampling
-  sample_size: 2
+  base_cluster_size: 50
+  sample_size: 100
   gamma: 0.8
   reward_lr: 0.1
   inverse_temp: 100

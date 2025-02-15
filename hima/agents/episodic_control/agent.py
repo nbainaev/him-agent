@@ -33,11 +33,13 @@ class ECAgent:
             plan_steps,
             n_rollouts,
             cluster_test_steps,
+            cluster_score_lr,
             minimum_test_steps,
             test_policy_beta,
             expand_clusters,
             new_cluster_weight,
             free_state_weight,
+            base_cluster_size,
             sample_size,
             gamma,
             reward_lr,
@@ -50,11 +52,13 @@ class ECAgent:
         self.plan_steps = plan_steps
         self.n_rollouts = n_rollouts
         self.cluster_test_steps = cluster_test_steps
+        self.cluster_score_lr = cluster_score_lr
         self.minimum_test_steps = minimum_test_steps
         self.test_policy_beta = test_policy_beta
         self.expand_clusters = expand_clusters
         self.new_cluster_weight = new_cluster_weight
         self.free_state_weight = free_state_weight
+        self.base_cluster_size = base_cluster_size
 
         self.first_level_transitions = [dict() for _ in range(n_actions)]
         self.second_level_transitions = [dict() for _ in range(n_actions)]
@@ -63,6 +67,7 @@ class ECAgent:
         self.state_to_cluster = dict()
         self.obs_to_free_states = {obs: set() for obs in range(self.n_obs_states)}
         self.obs_to_clusters = {obs: set() for obs in range(self.n_obs_states)}
+        self.cluster_score = dict()
 
         self.state = (-1, -1)
         self.cluster = {(-1, -1)}
@@ -236,7 +241,6 @@ class ECAgent:
             Warning('Interrupting clustering phase. Not enough data.')
             return
 
-        cluster_score = dict()
         for _ in range(iterations):
             n_free_states = [len(self.obs_to_free_states[obs]) for obs in range(self.n_obs_states)]
             n_free_states = np.array(n_free_states, dtype=np.float32)
@@ -251,7 +255,10 @@ class ECAgent:
             # sample cluster and states
             # use Chinese-Restaurant-like prior there
             candidates = list(self.obs_to_clusters[obs_state])
-            scores = [len(self.cluster_to_states[c]) * cluster_score.get(c, 1.0) for c in candidates]
+            scores = [
+                len(self.cluster_to_states[c]) * self.cluster_score.get(c, 1.0)
+                for c in candidates
+            ]
 
             candidates.append(-1)
             scores.append(self.new_cluster_weight)
@@ -308,11 +315,22 @@ class ECAgent:
             succeed_states = {tuple(s) for s, m in zip(candidate_states, mask) if m}
             self._update_cluster(succeed_states, cluster_id, obs_state, old_cluster_assignment)
 
-            # update cluster score
-            cluster_score[cluster_id] = max(0, len(succeed_states) - old_size) / sample_size
-
+            # update cluster counter
             if (cluster_id == self.cluster_counter) and (len(succeed_states) > 0):
                 self.cluster_counter += 1
+
+            # update cluster score
+            score = self.cluster_score.get(cluster_id, 1.0)
+            self.cluster_score[cluster_id] = score + self.cluster_score_lr * (
+                max(0, len(succeed_states) - old_size) / sample_size
+                - score
+            )
+            # the bigger the cluster and the more it takes new states, the less probable deletion
+            effective_cluster_size = score * len(succeed_states)
+            delete_prob = np.exp( - effective_cluster_size / self.base_cluster_size)
+            gamma = self._rng.random()
+            if gamma < delete_prob:
+                self._destroy_cluster((obs_state, cluster_id))
 
             clusters = list(self.cluster_to_states.keys())
             for cluster_id in clusters:
@@ -332,6 +350,7 @@ class ECAgent:
                 )
             except wandb.Error:
                 pass
+
 
         for cluster_id in self.cluster_to_states:
             # update transition matrix
