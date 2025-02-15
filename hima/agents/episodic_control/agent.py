@@ -397,10 +397,13 @@ class ECAgent:
         self.obs_to_clusters[obs_state].add(cluster_id)
 
     def _destroy_cluster(self, cluster: tuple):
-        # TODO free states
         obs_state, cluster_id = cluster
         if cluster_id in self.cluster_to_states:
-            self.cluster_to_states.pop(cluster_id)
+            states = self.cluster_to_states.pop(cluster_id)
+            for s in states:
+                if s in self.state_to_cluster:
+                    self.state_to_cluster.pop(s)
+                    self.obs_to_free_states[obs_state].add(s)
 
         if obs_state in self.obs_to_clusters:
             self.obs_to_clusters[obs_state].remove(cluster_id)
@@ -408,6 +411,9 @@ class ECAgent:
         for d_a in self.second_level_transitions:
             if cluster in d_a:
                 d_a.pop(cluster)
+
+        if cluster_id in self.cluster_score:
+            self.cluster_score.pop(cluster_id)
 
     def _test_cluster(self, cluster: list) -> (np.ndarray, int):
         """
