@@ -34,6 +34,7 @@ class ECAgent:
             n_rollouts,
             cluster_test_steps,
             minimum_test_steps,
+            test_policy_beta,
             expand_clusters,
             new_cluster_weight,
             free_state_weight,
@@ -50,6 +51,7 @@ class ECAgent:
         self.n_rollouts = n_rollouts
         self.cluster_test_steps = cluster_test_steps
         self.minimum_test_steps = minimum_test_steps
+        self.test_policy_beta = test_policy_beta
         self.expand_clusters = expand_clusters
         self.new_cluster_weight = new_cluster_weight
         self.free_state_weight = free_state_weight
@@ -446,7 +448,10 @@ class ECAgent:
                     test = test & (~trace_interrupted)
 
                 # choose next action
-                action = self._rng.choice(np.arange(len(score_a)), p=softmax(score_a))
+                action = self._rng.choice(
+                    np.arange(len(score_a)),
+                    p=softmax(score_a, beta=self.test_policy_beta)
+                )
                 ps_per_i = {pos: s for pos, s in ps_per_a[action].items() if test[pos]}
 
                 if (score_a[action] <= 1) or (len(ps_per_i) <= 1):
