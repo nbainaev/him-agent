@@ -11,6 +11,11 @@ from enum import Enum, auto
 from hima.common.sdr import sparse_to_dense
 from hima.common.utils import softmax, safe_divide
 import wandb
+from PIL import Image
+import colormap
+import pygraphviz as pgv
+import io
+
 
 EPS = 1e-24
 
@@ -26,6 +31,7 @@ class ECAgent:
             n_obs_states,
             n_actions,
             plan_steps,
+            n_rollouts,
             cluster_test_steps,
             minimum_test_steps,
             expand_clusters,
@@ -41,6 +47,7 @@ class ECAgent:
         self.n_obs_states = n_obs_states
         self.n_actions = n_actions
         self.plan_steps = plan_steps
+        self.n_rollouts = n_rollouts
         self.cluster_test_steps = cluster_test_steps
         self.minimum_test_steps = minimum_test_steps
         self.expand_clusters = expand_clusters
@@ -400,44 +407,45 @@ class ECAgent:
             True/False means that the cluster's element is
                 consistent/inconsistent with the majority of elements
         """
-        ps_per_i = {pos: {s} for pos, s in enumerate(cluster)}
-        test = np.ones(len(ps_per_i)).astype(np.bool8)
+        test = np.ones(len(cluster)).astype(np.bool8)
         t = -1
-        for t in range(self.cluster_test_steps):
-            score_a = np.zeros(self.n_actions)
-            # predict states for each action and initial state
-            ps_per_a = [dict() for _ in range(self.n_actions)]
-            trace_interrupted = np.ones_like(test)
-            for a, d_a in enumerate(self.first_level_transitions):
-                obs = np.full(len(cluster), fill_value=np.nan)
-                for pos, ps_i in ps_per_i.items():
-                    ps_a = self._predict(ps_i, a, expand_clusters=(t!=0) and self.expand_clusters)
-                    obs_a = {s[0] for s in ps_a}
-                    # contradiction
-                    if len(obs_a) > 1:
-                        test[pos] = False
-                    elif len(obs_a) == 1:
-                        score_a[a] += int(len(ps_a) != 0)
-                        ps_per_a[a][pos] = ps_a
-                        obs[pos] = obs_a.pop()
-                        trace_interrupted[pos] = False
-                # detect contradiction
-                empty = np.isnan(obs)
-                states, counts = np.unique(obs[~empty], return_counts=True)
-                if len(counts) > 0:
-                    test = test & ((obs == states[np.argmax(counts)]) | empty)
+        for _ in range(self.n_rollouts):
+            ps_per_i = {pos: {s} for pos, s in enumerate(cluster)}
+            for t in range(self.cluster_test_steps):
+                score_a = np.zeros(self.n_actions)
+                # predict states for each action and initial state
+                ps_per_a = [dict() for _ in range(self.n_actions)]
+                trace_interrupted = np.ones_like(test)
+                for a, d_a in enumerate(self.first_level_transitions):
+                    obs = np.full(len(cluster), fill_value=np.nan)
+                    for pos, ps_i in ps_per_i.items():
+                        ps_a = self._predict(ps_i, a, expand_clusters=(t!=0) and self.expand_clusters)
+                        obs_a = {s[0] for s in ps_a}
+                        # contradiction
+                        if len(obs_a) > 1:
+                            test[pos] = False
+                        elif len(obs_a) == 1:
+                            score_a[a] += int(len(ps_a) != 0)
+                            ps_per_a[a][pos] = ps_a
+                            obs[pos] = obs_a.pop()
+                            trace_interrupted[pos] = False
+                    # detect contradiction
+                    empty = np.isnan(obs)
+                    states, counts = np.unique(obs[~empty], return_counts=True)
+                    if len(counts) > 0:
+                        test = test & ((obs == states[np.argmax(counts)]) | empty)
 
-            # discard traces that were interrupted too early
-            if t < self.minimum_test_steps:
-                test = test & (~trace_interrupted)
+                # discard traces that were interrupted too early
+                if t < self.minimum_test_steps:
+                    test = test & (~trace_interrupted)
 
-            # choose next action
-            action = np.argmax(score_a)
-            ps_per_i = {pos: s for pos, s in ps_per_a[action].items() if test[pos]}
+                # choose next action
+                action = self._rng.choice(np.arange(len(score_a)), p=softmax(score_a))
+                ps_per_i = {pos: s for pos, s in ps_per_a[action].items() if test[pos]}
 
-            if (score_a[action] <= 1) or (len(ps_per_i) <= 1):
-                # no predictions or only one trace is left
-                break
+                if (score_a[action] <= 1) or (len(ps_per_i) <= 1):
+                    # no predictions or only one trace is left
+                    break
 
         return test, t+1
 
