@@ -125,6 +125,32 @@ class ICMLRunner(BaseRunner):
         return values, counts
 
     @property
+    def state_error(self):
+        env = self.environment.environment
+        assert isinstance(env, hima.envs.gridworld.GridWorld)
+        r, c = env.r, env.c
+        values = np.zeros((env.h, env.w))
+        state_error = self.agent.agent.second_level_error
+        values[r, c] = state_error
+
+        counts = np.zeros_like(values)
+        counts[r, c] = 1
+        return values, counts
+
+    @property
+    def state_prediction(self):
+        env = self.environment.environment
+        assert isinstance(env, hima.envs.gridworld.GridWorld)
+        r, c = env.r, env.c
+        values = np.zeros((env.h, env.w))
+        state_prediction = self.agent.agent.second_level_none
+        values[r, c] = state_prediction
+
+        counts = np.zeros_like(values)
+        counts[r, c] = 1
+        return values, counts
+
+    @property
     def state_representation(self):
         internal_messages = self.agent.agent.cortical_column.layer.internal_messages
         cells_per_column = self.agent.agent.cortical_column.layer.cells_per_column

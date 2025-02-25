@@ -1,12 +1,12 @@
 # encoder_conf:
 agent:
   plan_steps: 50
-  n_rollouts: 5
+  n_rollouts: 1
   test_policy_beta: 1
   cluster_score_lr: 0.01
   cluster_test_steps: 50
   minimum_test_steps: 1
-  expand_clusters: false
+  expand_clusters: true
   new_cluster_weight: 1000  # the bigger this number the more clusters will be created
   free_state_weight: 1000  # set >1 to prioritise free states sampling
   base_cluster_size: 50

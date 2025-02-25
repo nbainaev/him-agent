@@ -1,6 +1,6 @@
-log: true
+log: false
 project_name: gridworld_ec_gen
-run_tag: use_second_level
+run_tag: test6
 
 action_inertia: 1
 frame_skip: 0
