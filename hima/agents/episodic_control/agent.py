@@ -351,7 +351,9 @@ class ECAgent:
             except wandb.Error:
                 pass
 
+        self._update_second_level()
 
+    def _update_second_level(self):
         for cluster_id in self.cluster_to_states:
             # update transition matrix
             for a, d_a in enumerate(self.second_level_transitions):
@@ -367,12 +369,59 @@ class ECAgent:
                 predicted_clusters, counts = np.unique(predicted_clusters, return_counts=True)
                 assert len(set([self.cluster_to_obs[c] for c in predicted_clusters])) <= 1
                 if len(counts) > 0:
+                    probs = counts / counts.sum()
                     cluster = (self.cluster_to_obs[cluster_id], cluster_id)
-                    pred_clusters = {(self.cluster_to_obs[pc], pc) for pc in predicted_clusters}
+                    pred_clusters = {(self.cluster_to_obs[pc], pc, p) for pc, p in zip(predicted_clusters, probs)}
                     d_a[cluster] = pred_clusters
 
     def _rehearse(self, iterations):
-        pass
+        # test second-level matrix on first-level transitions
+        # generate random trajectory from those stored in first-level matrix
+        for i in range(iterations):
+            state = (-1, -1)
+            predicted_state = self.first_level_transitions[0].get(state)
+            predicted_cluster = self.second_level_transitions[0].get(state, {})
+
+            t = 0
+            total_error = 0
+
+            while predicted_state is not None:
+                error = 0
+                state = predicted_state
+
+                if len(predicted_cluster) == 0:
+                    cluster = self.state_to_cluster.get(state)
+                    if cluster is not None:
+                        cluster = {(state[0], cluster, 1.0)}
+                    else:
+                        cluster = {}
+                else:
+                    cluster = predicted_cluster
+
+                actions = np.arange(self.n_actions)
+                self._rng.shuffle(actions)
+
+                a = 0
+                for a in actions:
+                    predicted_state = self.first_level_transitions[a].get(state)
+                    if predicted_state is not None:
+                        break
+
+                if predicted_state is None:
+                    continue
+                else:
+                    predicted_cluster = set()
+                    for c in cluster:
+                        pc = self.second_level_transitions[a].get(c)
+                        if pc is not None:
+                            predicted_cluster = predicted_cluster.union(pc)
+                    predicted_obs = {c[0] for c in predicted_cluster}
+
+                error = not (predicted_state[0] in predicted_obs)
+                error = int(error)
+                total_error += error
+                t += 1
+
 
     def _update_cluster(
             self,
