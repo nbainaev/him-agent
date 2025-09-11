@@ -7,10 +7,6 @@ collision_reward: -0.1
 default_reward: -0.02
 # generates colors randomly (except obstacles <0), otherwise, uses colors from setup
 random_floor_colors: false
-# number of colors to use
-n_random_colors: 5
-# this one could be ignored for now
-markov_radius: 0
 # set false if you want to visualise agent's trajectory
 headless: true
 
