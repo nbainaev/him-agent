@@ -5,6 +5,8 @@ import torch
 from sklearn.cluster import KMeans, DBSCAN, Birch
 import matplotlib.pyplot as plt
 from scipy.optimize import linear_sum_assignment
+from scipy.stats import entropy
+from scipy.spatial.distance import jensenshannon
 
 def cluster_latent_vectors(latent_vectors, 
                            n_clusters, 
@@ -25,42 +27,6 @@ def cluster_latent_vectors(latent_vectors,
     cluster_labels = model.fit_predict(latent_vectors)
     
     return cluster_labels, model
-
-def build_transition_matrix(states, n_clusters, actions=None, mapping=None, model=None, cluster_labels=None):
-
-    cluster_labels = cluster_labels.reshape(states.shape[0], -1)
-    if actions is not None:
-        transition_matrix = np.zeros((actions.shape[2], n_clusters, n_clusters))
-    else:
-        transition_matrix = np.zeros((n_clusters, n_clusters))
-    
-    if cluster_labels is None and model is None:
-        raise ValueError('model and cluster_labels must not be None at the same time')
-    
-    for j, sequence in enumerate(states):
-        if cluster_labels is not None:
-            labels = cluster_labels[j]
-        else:
-            labels = model.predict(sequence)
-        for i in range(len(sequence) - 1):
-            if mapping is not None:
-                current_cluster = mapping[labels[i]]
-                next_cluster = mapping[labels[i + 1]]
-            else:
-                current_cluster = labels[i]
-                next_cluster = labels[i + 1]
-            if actions is not None:
-                action = actions[j, i]
-                action_idx = np.argmax(action)
-                transition_matrix[action_idx, current_cluster, next_cluster] += 1
-            else:
-                transition_matrix[current_cluster, next_cluster] += 1
-    
-    row_sums = transition_matrix.sum(axis=2, keepdims=True)
-    row_sums[row_sums == 0] = 1000
-    transition_matrix /= row_sums
-    
-    return transition_matrix
 
 def generate_true_transition_matrix(field):
     n = len(field)
@@ -155,3 +121,81 @@ def make_obs_to_state_matrix(transition_matrix, room):
     sums[sums == 0] = 1000
     out_matrix /= sums
     return out_matrix
+
+def build_transition_matrix(states, labels, n_clusters, batch_idx, n_actions=None, actions=None):
+
+    cluster_labels, _ = cluster_latent_vectors(states, n_clusters=n_clusters)
+    mapping = align_transition_matrices(n_states=n_clusters, true_labels=labels, cluster_labels=cluster_labels)
+
+    if actions is not None:
+        transition_matrix = np.zeros((n_actions, n_clusters, n_clusters))
+    else:
+        transition_matrix = np.zeros((n_clusters, n_clusters))
+    
+    for j in range(len(batch_idx)-1):
+        sequence = states[batch_idx[j]: batch_idx[j+1]]
+        actions_seq = actions[batch_idx[j]: batch_idx[j+1]]
+        labels_seq = labels[batch_idx[j]: batch_idx[j+1]]
+        for i in range(len(sequence) - 1):
+            if mapping is not None:
+                current_cluster = mapping[labels[i]]
+                next_cluster = mapping[labels[i + 1]]
+            else:
+                current_cluster = labels[i]
+                next_cluster = labels[i + 1]
+            if actions is not None:
+                action_idx = actions_seq[i]
+                transition_matrix[action_idx, current_cluster, next_cluster] += 1
+            else:
+                transition_matrix[current_cluster, next_cluster] += 1
+    
+    row_sums = transition_matrix.sum(axis=2, keepdims=True)
+    row_sums[row_sums == 0] = 1000
+    transition_matrix /= row_sums
+    
+    return transition_matrix
+
+def compute_metrics(transition_matrix, true_transition_matrix):
+
+    true_transition_matrix = true_transition_matrix.mean(axis=0)
+    row_sums = true_transition_matrix.sum(axis=-1, keepdims=True)
+    row_sums[row_sums == 0] = 1000
+    true_transition_matrix /= row_sums
+
+    transition_matrix = transition_matrix.mean(axis=0)
+    row_sums = transition_matrix.sum(axis=-1, keepdims=True)
+    row_sums[row_sums == 0] = 1000
+    transition_matrix /= row_sums
+
+    eig_true, _ = np.linalg.eig(true_transition_matrix)
+    eig_est, _ = np.linalg.eig(transition_matrix)
+    
+    eig_true_sorted = np.sort(eig_true)
+    eig_est_sorted = np.sort(eig_est)
+    
+    spectral_distance = np.mean(np.abs(eig_true_sorted - eig_est_sorted))
+
+    def get_stationary_distribution(P):
+        eigvals, eigvecs = np.linalg.eig(P.T)
+
+        stationary_idx = np.argmin(np.abs(eigvals - 1))
+        stationary = np.real(eigvecs[:, stationary_idx])
+        return stationary / np.sum(stationary)
+    
+    stat_true = get_stationary_distribution(true_transition_matrix)
+    stat_est = get_stationary_distribution(transition_matrix)
+    
+    js_divergence = jensenshannon(stat_true, stat_est)
+
+    
+    def compute_transition_entropy(P):
+
+        P_safe = P + 1e-12
+        P_safe = P_safe / P_safe.sum(axis=1, keepdims=True)
+        return np.array([entropy(row) for row in P_safe])
+    
+    entropy_true = compute_transition_entropy(true_transition_matrix)
+    entropy_est = compute_transition_entropy(transition_matrix)
+    entropy_diff = np.mean(np.abs(entropy_true - entropy_est))
+
+    return spectral_distance, js_divergence, entropy_diff

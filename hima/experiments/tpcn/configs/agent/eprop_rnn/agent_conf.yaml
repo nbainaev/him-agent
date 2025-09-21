@@ -1,5 +1,5 @@
 agent: 
-  n_obs_states: 49
+  n_obs_states: 8
   n_actions: 4
   model_config: 'configs/agent/eprop_rnn/model_config.yaml'
   batch_size: 64
@@ -16,3 +16,6 @@ agent:
   sr_early_stop_goal:  1
   seed: 42
 encoder_type: onehot
+weights: null
+encoder_weights: null
+encoder: null

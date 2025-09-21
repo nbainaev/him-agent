@@ -1,3 +1,4 @@
 decay_rate: 0.9
 hidden_size: 128
-learning_rate: 0.005
+input_size: 12
+learning_rate: 0.003

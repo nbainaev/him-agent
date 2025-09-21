@@ -38,6 +38,15 @@ episodic_scalar_metrics:
       main_metrics/total_steps:
         agg: np.mean
         att: total_steps
+      main_metrics/spectral_diff:
+        agg: np.mean
+        att: agent.agent.spectral_diff
+      main_metrics/jensenshannon_diff:
+        agg: np.mean
+        att: agent.agent.jensenshannon_diff
+      main_metrics/enpropy_diff:
+        agg: np.mean
+        att: agent.agent.entropy_diff
     update_step: episodes
     update_period: 1
     log_step: episodes
@@ -54,6 +63,17 @@ trajectory:
     log_step: episodes
     log_period: 100
 
+# step_heatmap_metrics:
+#   class: HeatmapMetrics
+#   params:
+#     metrics:
+#       agent/transition_matrix:
+#         agg: np.mean
+#         att: agent.agent.transition_matrix
+#     update_step: steps
+#     update_period: 1
+#     log_step: episodes
+#     log_period: 100
 
 #value_function:
 #  class: Histogram

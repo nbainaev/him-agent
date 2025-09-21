@@ -49,12 +49,12 @@ class RNNWithEProp:
         
         h = np.tanh(np.dot(x, self.W_xh) + np.dot(h_prev, self.W_hh) + self.b_h)
         y = np.dot(h, self.W_hy) + self.b_y
-
+        
         self.hidden_states.append(h)
         return h, softmax(y)
     
     def decode(self, hidden):
-        return softmax(np.dot(hidden, self.W_hy) + self.b_y).squeeze()
+        return (np.dot(hidden, self.W_hy) + self.b_y).squeeze()
 
     def compute_learning_signals(self, y, target):
 
@@ -91,7 +91,7 @@ class RNNWithEProp:
     
     def train_step(self, x_seq):
         total_loss = 0
-        
+        self.reset_states()
         for t in range(len(x_seq) - 1):
             x = x_seq[t].reshape(1, -1)
             target = x_seq[t + 1][:self.output_size].reshape(1, -1)
@@ -128,7 +128,7 @@ class RNNWithEProp:
         x = x.reshape(1, -1)
         _, y = self.forward(x)
 
-        return y.flatten()
+        return softmax(y).flatten()
     
     def validate(self, x_val):
         accuracy = 0

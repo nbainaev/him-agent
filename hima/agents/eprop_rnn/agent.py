@@ -4,6 +4,7 @@ from hima.modules.eprop_rnn.eprop_rnn import RNNWithEProp
 from hima.modules.eprop_rnn.constants import EPS
 from hima.common.utils import safe_divide, softmax
 from hima.common.sdr import sparse_to_dense
+from hima.experiments.tpcn.runner.transition_matrix import build_transition_matrix, compute_metrics
 
 class ExplorationPolicy(Enum):
     SOFTMAX = 1
@@ -16,6 +17,7 @@ class RNNWithEPropAgent:
                  n_actions: int,
                  batch_size: int = 64,
                  learning_rate: float = 0.005,
+                 log_transitions: bool = False,
                  gamma: float = 0.9,
                  learn: bool = True,
                  reward_lr: float = 0.01,
@@ -35,8 +37,8 @@ class RNNWithEPropAgent:
         self.exploration_eps = exploration_eps
         self.observations = []
         self.actions = []
-        self.concat_vecs = []
-        self.episode = 1
+        self.concat_vecs = [[]]
+        self.episode = 0
         self.learn = learn
         self.batch_size = batch_size
         self.inverse_temp = inverse_temp
@@ -48,10 +50,11 @@ class RNNWithEPropAgent:
         self.gamma = gamma
         self.reward_lr = reward_lr
         self.model_config = model_config
-
+        self.sf_steps = 0
+        self.is_first = True
         
         self.model_config['output_size'] = self.n_obs_states
-        self.model_config['input_size'] = self.n_actions + self.n_obs_states
+
         self.model = RNNWithEProp(**self.model_config)
 
         self.learn_rewards_from_state = learn_rewards_from_state
@@ -62,9 +65,19 @@ class RNNWithEPropAgent:
         
         self.rewards = rewards.flatten()
 
-        self.prev_hidden = None
-        self.encoded_action = None
+        self.true_transition_matrix = None
+        self.transition_matrix = None
+        self.spectral_diff = 0
+        self.entropy_diff = 0
+        self.jensenshannon_diff = 0
+        self.log_transitions = log_transitions
+
+        self.onehot_obs = []
+        self.prev_hidden = np.zeros((1, self.model.hidden_size))
         self.action = None
+        self.hiddens = []
+        self.batch_ind = []
+        self.preds = []
 
         if self.exploration_eps < 0:
             self.exploration_policy = ExplorationPolicy.SOFTMAX
@@ -75,15 +88,19 @@ class RNNWithEPropAgent:
         self._rng = np.random.default_rng(seed=seed)
 
     def observe(self, obs, action, reward):
-        
-        self.observations.append(obs.flatten())
-        if self.encoded_action is not None:
-            self.actions.append(self.encoded_action.flatten())
+        encoded_obs, onehot_obs = obs
+        self.onehot_obs.append(onehot_obs.reshape(1, -1))
+        if not self.is_first:
+            self.actions.append(action.reshape(1, -1))
+            self.concat_vecs.append(np.concatenate((self.observations[-1], self.actions[-1]), axis=-1))
+            self.prev_hidden, pred = self.model.forward(self.concat_vecs[-1])
+            self.preds.append(pred.reshape(1, -1))
         else:
-            self.actions.append(np.zeros(self.n_actions))
-        self.concat_vecs.append(np.concatenate((self.observations[-1], self.actions[-1]), axis=-1))
-        self.prev_hidden, _ = self.model.forward(self.concat_vecs[-1])
+            self.is_first = False
+            self.preds.append(np.zeros(self.n_obs_states).reshape(1, -1))
+        self.observations.append(encoded_obs.reshape(1, -1))
 
+    
     def predict(self, x):
         return self.model.decode(self.prev_hidden)
     
@@ -143,20 +160,53 @@ class RNNWithEPropAgent:
         return self.action 
 
     def reset(self):
-        
-        if self.episode > 1:
+        if self.episode > 0:
+            self.actions.append(np.zeros(self.n_actions).reshape(1, -1))
             self.concat_vecs = np.vstack(self.concat_vecs)
+            self.hiddens.extend(self.model.hidden_states)
             self.model.train_step(self.concat_vecs)
         
+            if self.episode % self.batch_size == 0:
+                if self.log_transitions:
+                    self.batch_ind.append(len(self.observations))
+                    self.observations = np.concatenate(self.observations)
+                    self.actions = np.concatenate(self.actions)
+                    self.hiddens = np.concatenate(self.hiddens)
+                    self.onehot_obs = np.concatenate(self.onehot_obs)
+                    self.transition_matrix = build_transition_matrix(
+                        states=self.hiddens,
+                        labels = self.onehot_obs.argmax(axis=-1),
+                        n_clusters=self.true_transition_matrix.shape[1],
+                        actions=self.actions.argmax(axis=-1),
+                        batch_idx=self.batch_ind,
+                        n_actions=self.n_actions
+                    )
+                    self.spectral_diff, self.jensenshannon_diff, self.entropy_diff = compute_metrics(
+                        transition_matrix=self.transition_matrix,
+                        true_transition_matrix=self.true_transition_matrix
+                    )
+                self.preds = np.argmax(np.vstack(self.preds), -1)
+                trues = np.argmax(self.onehot_obs, -1)
+                acc = (trues == self.preds).mean()
+                print("Accuracy:", acc)
+                
+                self.preds = []
+                self.onehot_obs = []
+                self.hiddens = []
+                self.batch_ind = []
+                self.observations = []
+                self.actions = []
+            else:
+                self.batch_ind.append(len(self.observations))
+        
+        self.model.reset_states()
         self.episode += 1
-        self.observations = []
-        self.actions = []
         self.concat_vecs = []
         self.cum_reward = 0
-        self.prev_hidden = None
-        self.encoded_action = None
+        self.prev_hidden = np.zeros((1, self.model.hidden_size))
         self.action = None
-
+        self.is_first = True
+    
     def reinforce(self, reward):
         if self.learn_rewards_from_state:
             deltas = self.prev_hidden.squeeze() * (reward - self.rewards)

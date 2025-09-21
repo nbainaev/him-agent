@@ -5,10 +5,12 @@ import torch
 import sys
 from typing import Union, Any
 
+from hima.common.metrics import AimLogger
 from hima.envs.gridworld import GridWorld
 from hima.experiments.successor_representations.runners.base import BaseRunner
 from hima.common.config.base import read_config, override_config
 from hima.common.run.argparse import parse_arg_list
+from hima.experiments.tpcn.runner.transition_matrix import generate_true_transition_matrix
 
 class TPCNRunner(BaseRunner):
     
@@ -166,11 +168,7 @@ def main(config_path):
     if model_config is not None:
         config['agent']['agent']['model_config'] = read_config(model_config)
     
-    if config['agent_type'] == 'tpcn':
-        config['agent']['agent']['model_config']['n_obs_states'] = config['agent']['agent']['n_obs_states']
-        config['agent']['agent']['model_config']['hidden_size'] = config['agent']['agent']['hidden_size']
-        config['agent']['agent']['model_config']['n_actions'] = config['agent']['agent']['n_actions']
-    
+
     if config['agent']['encoder_type'] == 'pcn':
         config['agent']['encoder'] = read_config(config['agent']['encoder'])
 
@@ -186,15 +184,21 @@ def main(config_path):
     logger = config['run'].pop('logger')
     if logger is not None:
         if logger == 'aim':
-            # logger = AimLogger(config)
-            pass
+            logger = AimLogger(config)
         else:
             raise NotImplementedError
+
+    if config['run']['log_transitions']:
+        field = read_config(os.environ["GRIDWORLD_ROOT"] + 'setups/' + config['run']['setup'] + '.yaml')['room'][0]
+        config['agent']['transition_matrix'] = generate_true_transition_matrix(field=field)
+    else:
+        config['agent']['transition_matrix'] = None
+    config['agent']['log_transitions'] = config['run'].pop('log_transitions')
 
     runner = TPCNRunner(logger, config)
     runner.run()
 
 
 if __name__ == '__main__':
-    default_config = 'configs/runner/eprop_rnn.yaml'
+    default_config = 'configs/runner/tpcn.yaml'
     main(os.environ.get('RUN_CONF', default_config))

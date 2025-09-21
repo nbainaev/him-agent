@@ -15,14 +15,81 @@ from hima.modules.belief.utils import normalize
 from scipy.special import rel_entr
 import matplotlib.pyplot as plt
 
-wandb = lazy_import('wandb')
+aim = lazy_import('aim')
 sns = lazy_import('seaborn')
 imageio = lazy_import('imageio')
 minisom = lazy_import('minisom')
 
+EPS = 1e-24
+
+
+class BaseLogger:
+    def log(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def define_metric(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def process_image(self, image):
+        return image
+
+    def process_video(self, video):
+        return video
+
+    def process_figure(self, figure):
+        return figure
+
+    def process_dist(self, dist):
+        return dist
+
+    @property
+    def name(self):
+        raise NotImplementedError
+
+
+class AimLogger(BaseLogger):
+    def __init__(self, config):
+        self.run = aim.Run(
+            experiment=config['run'].pop('project_name'),
+            log_system_params=True
+        )
+        tags = []
+        if 'tags' in config['run']:
+            t = config['run'].pop('tags')
+            if isinstance(t, list):
+                tags.extend(t)
+            elif t is not None:
+                tags.append(t)
+        for tag in tags:
+            self.run.add_tag(tag)
+        self.run['hparams'] = config
+
+    def log(self, *args, **kwargs):
+        self.run.track(*args, **kwargs)
+
+    def define_metric(self, *args, **kwargs):
+        ...
+
+    def process_image(self, image):
+        return aim.Image(image)
+
+    def process_video(self, video):
+        return aim.Image(video)
+
+    def process_figure(self, figure):
+        return aim.Image(figure.figure)
+
+    def process_dist(self, dist):
+        return aim.Image(sns.histplot(dist).figure)
+
+    @property
+    def name(self):
+        return self.run.run_hash
+
 
 class BaseMetric:
-    def __init__(self, logger, runner,
+    logger: BaseLogger
+    def __init__(self, logger: BaseLogger, runner,
                  update_step, log_step, update_period, log_period):
         self.logger = logger
         self.runner = runner
@@ -120,7 +187,7 @@ class ScalarMetrics(BaseMetric):
 
 
 class HeatmapMetrics(BaseMetric):
-    def __init__(self, metrics, logger, runner,
+    def __init__(self, metrics, logger: BaseLogger, runner,
                  update_step, log_step, update_period, log_period):
         super().__init__(logger, runner, update_step, log_step, update_period, log_period)
         self.logger = logger
@@ -146,7 +213,7 @@ class HeatmapMetrics(BaseMetric):
         log_dict = {self.log_step: step}
         for key, value in average_metrics.items():
             plt.figure()
-            log_dict[key] = wandb.Image(sns.heatmap(value))
+            log_dict[key] = self.logger.process_figure(sns.heatmap(value))
 
         self.logger.log(log_dict)
         plt.close('all')
@@ -165,7 +232,7 @@ class HeatmapMetrics(BaseMetric):
 
 
 class ImageMetrics(BaseMetric):
-    def __init__(self, metrics, logger, runner,
+    def __init__(self, metrics, logger: BaseLogger, runner,
                  update_step, log_step, update_period, log_period,
                  log_fps, log_dir='/tmp'):
         super().__init__(logger, runner, update_step, log_step, update_period, log_period)
@@ -197,9 +264,9 @@ class ImageMetrics(BaseMetric):
                     # mode 'L': gray 8-bit ints; duration = 1000 / fps; loop == 0: infinitely
                     gif_path, values, mode='L', duration=1000/self.log_fps, loop=0
                 )
-                log_dict[metric] = wandb.Video(gif_path)
+                log_dict[metric] = self.logger.process_video(gif_path)
             elif len(values) == 1:
-                log_dict[metric] = wandb.Image(values[0])
+                log_dict[metric] = self.logger.process_image(values[0])
 
         self.logger.log(log_dict)
         self._reset()
@@ -406,6 +473,41 @@ def get_surprise_2(probs, obs, mode='bernoulli', normalize=True):
     return surprise
 
 
+class Distribution(BaseMetric):
+    def __init__(self, metrics, logger, runner,
+                 update_step, log_step, update_period, log_period, is_cumulative):
+        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
+        self.logger = logger
+        self.is_cumulative = is_cumulative
+        self.metrics = {metric: [] for metric in metrics.keys()}
+        self.att_to_log = {
+            metric: params['att']
+            for metric, params in metrics.items()
+        }
+
+    def update(self):
+        for name in self.metrics.keys():
+            value = self.get_attr(self.att_to_log[name])
+            self.metrics[name].append(value)
+
+    def log(self, step):
+        from matplotlib import pyplot as plt
+
+        log_dict = {self.log_step: step}
+        for key, value in self.metrics.items():
+            plt.figure()
+            log_dict[key] = self.logger.process_dist(value)
+
+        self.logger.log(log_dict)
+        plt.close('all')
+
+        if not self.is_cumulative:
+            self._reset()
+
+    def _reset(self):
+        self.metrics = {metric: [] for metric in self.metrics.keys()}
+
+
 class Histogram(BaseMetric):
     def __init__(
             self, name, att, normalized,
@@ -448,7 +550,7 @@ class Histogram(BaseMetric):
         plt.figure()
         self.logger.log(
             {
-                self.name: wandb.Image(sns.heatmap(hist)),
+                self.name: self.logger.process_figure(sns.heatmap(hist)),
                 self.log_step: step
             }
         )
@@ -629,7 +731,7 @@ class SOMClusters(BaseMetric):
 
         log_dict.update(
             {
-                f'{self.name}/clusters': wandb.Image(fig),
+                f'{self.name}/clusters': self.logger.process_figure(fig),
             }
         )
         plt.close('all')
@@ -645,7 +747,7 @@ class SOMClusters(BaseMetric):
         for i in range(classes.size):
             log_dict.update(
                 {
-                    f'{self.name}/activations/class_{classes[i]}': wandb.Image(
+                    f'{self.name}/activations/class_{classes[i]}': self.logger.process_figure(
                         sns.heatmap(activation_map[:, :, i], cmap='viridis')
                     )
                 }
@@ -654,7 +756,7 @@ class SOMClusters(BaseMetric):
 
         log_dict.update(
             {
-                f'{self.name}/soft_clusters': wandb.Image(
+                f'{self.name}/soft_clusters': self.logger.process_figure(
                     plt.imshow(color_map.astype('uint8'))
                 )
             }
@@ -799,7 +901,7 @@ class GridworldSR(BaseMetric):
             log_dict[f'{self.name}/av_states_per_pos'] = np.mean(pcounts)
 
             if self.preparing_step == self.preparing_period:
-                log_dict[f'{self.name}/state_per_pos'] = wandb.Image(sns.heatmap(
+                log_dict[f'{self.name}/state_per_pos'] = self.logger.process_figure(sns.heatmap(
                     pcounts.reshape(self.grid_shape)
                 ))
                 plt.close('all')
@@ -811,7 +913,7 @@ class GridworldSR(BaseMetric):
                 f'{self.logger.name}_{self.name}_{step}.gif'
             )
             self._save_to_gif(gif_path, sr)
-            log_dict[f'{self.name}/trajectory_sr'] = wandb.Video(gif_path)
+            log_dict[f'{self.name}/trajectory_sr'] = self.logger.process_video(gif_path)
 
             self.decoded_patterns.clear()
             self.preparing = True
@@ -906,7 +1008,7 @@ class GridworldStateImage(BaseMetric):
         log_dict = dict()
         for i in range(self.n_states):
             plt.figure()
-            log_dict[f"{self.name}_state_{i}"] = wandb.Image(sns.heatmap(hist[i]))
+            log_dict[f"{self.name}_state_{i}"] = self.logger.process_figure(sns.heatmap(hist[i]))
             plt.close()
 
         log_dict[self.log_step] = step
@@ -951,44 +1053,3 @@ class ArrayMetrics(BaseMetric):
 
     def _reset(self):
         self.metrics = {metric: [] for metric in self.metrics.keys()}
-
-
-class EClusterPurity(BaseMetric):
-    def __init__(
-            self, name, state_att,
-            logger, runner,
-            update_step, log_step, update_period, log_period,
-    ):
-        """
-            Effective number of state labels per cluster
-        """
-        super().__init__(logger, runner, update_step, log_step, update_period, log_period)
-        self.name = name
-        self.state_att = state_att
-        self.state_labels = dict()
-        self.logger.define_metric(f'{self.name}', step_metric=self.log_step)
-        agent = self.runner.agent.agent
-        agent.state_labels = self.state_labels
-
-    def update(self):
-        state = self.get_attr(self.state_att)
-        estimated_state = self.runner.agent.agent.state
-        self.state_labels[estimated_state] = state
-
-    def log(self, step):
-        log_dict = {
-            self.log_step: step
-        }
-
-        cluster_error = list()
-        clusters = self.runner.agent.agent.cluster_to_states
-        for cluster_id in clusters:
-            cluster = clusters[cluster_id]
-            cluster_labels = np.array([self.state_labels[s] for s in cluster])
-            labels, counts = np.unique(cluster_labels, return_counts=True)
-            score = counts / np.max(counts)
-            cluster_error.append(score.sum())
-
-        log_dict[self.name] = np.median(np.array(cluster_error))
-        self.logger.log(log_dict)
-

@@ -79,7 +79,7 @@ class BaseRunner:
         self.logger = logger
         self.seed = conf['run'].get('seed')
         self._rng = np.random.default_rng(self.seed)
-
+        self.logging = conf['run'].get('logging')
         self.reward_free = conf['run'].get('reward_free', False)
         self.action_inertia = conf['run'].get('action_inertia', 1)
         self.frame_skip = conf['run'].get('frame_skip', 0)
@@ -138,7 +138,6 @@ class BaseRunner:
         self.total_reward = 0
         self.events = None
         self.obs = None
-        self.logging = False
         self.visualizing = False
         self.is_terminal = False
         self.end_of_episode = False

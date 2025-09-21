@@ -5,6 +5,7 @@ PyYAML
 ruamel.yaml==0.17.21
 tqdm
 wandb
+aim
 imageio
 seaborn
 pygame

@@ -1,4 +1,8 @@
-n_episodes: 10
+logging: true
+project_name: gridworld_mdp_test
+run_tag: reset_model
+
+n_episodes: 5
 update_start: True
 max_steps: 50
 reward_free: False
@@ -8,8 +12,9 @@ strategies: null
 setup: free
 setup_period: 1
 agent_conf: 'configs/agent/tpcn/agent_conf.yaml'
-env_conf: 'configs/environment/gridworld/pomdp.yaml'
+env_conf: 'configs/environment/gridworld/mdp.yaml'
 seed: null
+log_transitions: true
 metrics_conf: 'configs/metrics/gridworld_mdp.yaml'
-logger: null
+logger: aim
 

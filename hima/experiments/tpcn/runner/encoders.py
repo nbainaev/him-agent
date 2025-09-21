@@ -8,7 +8,7 @@ from typing import Union, List, Literal
 from numpy.typing import NDArray
 
 INI_MODE = Literal['dirichlet', 'normal', 'uniform']
-    
+
 class SimpleOneHotEncoder:
     def __init__(self, max_categories: int):
         
@@ -29,7 +29,7 @@ class SimpleOneHotEncoder:
         
         return self
 
-    def encode(self, x: Union[NDArray[Union[np.int32, np.int16]], List[int]]) -> NDArray:
+    def _encode(self, x: Union[NDArray[Union[np.int32, np.int16]], List[int]]) -> NDArray:
         
         if isinstance(x, list):
             x = np.array(x)
@@ -52,6 +52,28 @@ class SimpleOneHotEncoder:
             result[i, self.categories[value]] = 1.0
         
         return result
+
+class GridWorldOnehotEncoder(SimpleOneHotEncoder):
+    def __init__(self, max_categories, out_dim):
+        super().__init__(max_categories)
+
+        assert max_categories <= out_dim, f"Max number of categories = {max_categories} must not be lower than out_dim = {out_dim}!"
+        
+        self.out_dim = out_dim
+        self.step = out_dim // self.max_categories
+        self.inds = [np.array(range(i * self.step, min(i * self.step + self.step, out_dim))) for i in range(max_categories)]
+    
+    def encode(self, x):
+        res = self._encode(x)
+        
+        return self._stretch(res), res
+    
+    def _stretch(self, x):
+        inds = self.inds[np.argmax(x)]
+        res = np.zeros(self.out_dim, dtype=np.float32)
+        res[inds] = 1 / self.step
+        
+        return res
 
 class HierarchicalPCN(nn.Module):
     def __init__(self, 
@@ -144,12 +166,15 @@ class HierarchicalPCN(nn.Module):
         energy = obs_loss + latent_loss
         return energy, obs_loss
 
-    def encode(self, x):
+    def encode(self, x, is_first):
         self.eval()
 
-        encoded_x = torch.tensor(self.onehot_encoder.encode(x))
-        with torch.no_grad():
-            self.inference(inf_iters=self.inf_iters, inf_lr=self.inf_lr, inp=encoded_x)
-        
-        return self.z.clone().detach().numpy(), encoded_x
+        encoded_x = torch.tensor(self.onehot_encoder._encode(x))
+        if is_first:
+            with torch.no_grad():
+                self.inference(inf_iters=self.inf_iters, inf_lr=self.inf_lr, inp=encoded_x)
+
+            return self.z.clone().detach(), encoded_x.reshape(1, 1, -1)
+        else:
+            return 0, encoded_x.reshape(1, 1, -1)
             

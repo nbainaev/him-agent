@@ -6,6 +6,7 @@ from hima.experiments.successor_representations.runners.base import BaseAgent
 from hima.common.utils import safe_divide, softmax
 from hima.common.sdr import sparse_to_dense
 from hima.modules.tpcn.constants import EPS
+from hima.experiments.tpcn.runner.transition_matrix import compute_metrics, build_transition_matrix
 
 class ExplorationPolicy(Enum):
     SOFTMAX = 1
@@ -31,6 +32,7 @@ class tPCNAgent(BaseAgent):
                 plan_steps: int = 1,
                 inverse_temp: float = 1.0,
                 exploration_eps: float = -1,
+                log_transitions: bool = True,
                 sr_estimate_planning: str = 'uniform',
                 sr_early_stop_uniform: float | None = None,
                 sr_early_stop_goal: float | None = None,
@@ -54,7 +56,7 @@ class tPCNAgent(BaseAgent):
         self.observations = [[]]
         self.actions = [[]]
         self.init_encoded_obs = []
-        self.episode = 1
+        self.episode = 0
         self.is_first = True
         self.learn = learn
         self.batch_size = batch_size
@@ -83,12 +85,21 @@ class tPCNAgent(BaseAgent):
         self.rewards = rewards.flatten()
         self.reward_lr = reward_lr
         self.prev_hidden = None
+        self.hiddens = []
         self.encoded_action = None
         self.action = None
         self.energy = 0
         self.loss = 0
         self.sf_steps = 0
 
+        self.true_transition_matrix = None
+        self.transition_matrix = None
+        self.spectral_diff = 0
+        self.entropy_diff = 0
+        self.jensenshannon_diff = 0
+        self.log_transitions = log_transitions
+        self.preds = []
+        
         if self.exploration_eps < 0:
             self.exploration_policy = ExplorationPolicy.SOFTMAX
             self.exploration_eps = 0
@@ -99,25 +110,30 @@ class tPCNAgent(BaseAgent):
         
     def observe(self, obs, action, reward):
         encoded_obs, onehot_obs = obs
-        self.encoded_action = torch.tensor(action, dtype=torch.float32).reshape(1, 1, -1)
-        encoded_obs = torch.tensor(encoded_obs, dtype=torch.float32).reshape(1, 1, -1)
+        if not isinstance(encoded_obs, torch.Tensor):
+            encoded_obs = torch.tensor(encoded_obs, dtype=torch.float32).reshape(1, -1)
+        if not isinstance(onehot_obs, torch.Tensor):
+            onehot_obs = torch.tensor(onehot_obs, dtype=torch.float32).reshape(1, 1, -1)
         self.observations[-1].append(onehot_obs)
-
+        self.encoded_action = torch.tensor(action, dtype=torch.float32).reshape(1, 1, -1)
         if self.encoded_action is not None:
             self.actions[-1].append(self.encoded_action)
-
+        
         if not self.is_first:
             self.model.eval()
             with torch.no_grad():
+                self.preds.append(self.model.g(self.encoded_action, self.prev_hidden))
                 self.model.inference(self.inf_iters, self.inf_lr, 
                                         self.encoded_action, self.prev_hidden, onehot_obs)
-            
             # update the hidden state
             self.prev_hidden = self.model.z.clone().detach()
+            self.hiddens.append(self.prev_hidden)
         else:
             self.init_encoded_obs.append(encoded_obs)
             self.prev_hidden = encoded_obs
+            self.hiddens.append(encoded_obs.reshape(1, 1, -1))
             self.is_first = False
+        
 
     def generate_sf(self, init_hidden, n_steps=5, gamma=0.95, learn_sr=False):
         zs = [init_hidden]
@@ -140,7 +156,7 @@ class tPCNAgent(BaseAgent):
 
             if learn_sr:
                 sr += discounts[-1] * zs[-1]
-            
+
             sf += discounts[-1] * self.model.decode(zs[-1])
 
             discounts.append(discounts[-1] * gamma)
@@ -169,11 +185,8 @@ class tPCNAgent(BaseAgent):
         self.action_dist = self._get_action_selection_distribution(
             self.action_values, on_policy=True
         )
-
         self.action = self._rng.choice(self.n_actions, p=self.action_dist)
-        self.encoded_action = torch.zeros(self.n_actions, dtype=torch.float32)
-        self.encoded_action[self.action] = 1.0
-        self.encoded_action = self.encoded_action.reshape(1, 1, -1)
+
         return self.action
     
     def reinforce(self, reward):
@@ -217,29 +230,29 @@ class tPCNAgent(BaseAgent):
         return action_values
 
     def memorize(self):
-        self.actions[-1] = self._list_to_tensor(self.actions[-1])
-        self.observations[-1] = self._list_to_tensor(self.observations[-1])
-        
+        self.actions = self._list_to_tensor(self.actions)
+        self.observations = self._list_to_tensor(self.observations)
+        self.observations = self.observations[:, 1:, :]
+        self.actions = self.actions[:, 1:, :]
         sequence_length = self.observations.shape[1]
         if self.learn and self.episode >= self.batch_size:
             self.actions = self._list_to_tensor(self.actions)
             self.observations = self._list_to_tensor(self.observations)
-        
+
         self.model.train()
         total_loss = 0 # average loss across time steps
         total_energy = 0 # average energy across time steps
 
-        init_actv = self.observations[:, 0, :]
+        prev_hidden = torch.cat(self.init_encoded_obs)
+        prev_inds = torch.all(~prev_hidden.isnan(), dim=1).nonzero().flatten()
 
-        prev_inds = torch.all(~init_actv.isnan(), dim=1).nonzero().flatten()
-        prev_hidden = torch.stack(self.init_encoded_obs, dim=0)
         for k in range(self.actions.shape[1]):
-            p = self.observations[:, k+1].to(self.device)
+            p = self.observations[:, k].to(self.device)
             mask = torch.all(~p.isnan(), dim=1)
             mask = mask[prev_inds]
             prev_hidden = prev_hidden[mask]
             prev_inds = torch.all(~p.isnan(), dim=1).nonzero().flatten()
-            p = p[~p.isnan()].reshape(-1, self.n_obs)
+            p = p[~p.isnan()].reshape(-1, self.n_obs_states)
             v = self.actions[:, k].to(self.device)
             v = v[~v.isnan()].reshape(-1, self.n_actions)
 
@@ -260,17 +273,49 @@ class tPCNAgent(BaseAgent):
         self.loss = total_loss / sequence_length
 
     def reset(self):
+        
+        if self.episode >= self.batch_size:
+            self.actions[-1] = self._list_to_tensor(self.actions[-1])
+            self.observations[-1] = self._list_to_tensor(self.observations[-1])
 
-        if self.episode > self.batch_size:
+            batch_idx = [0] + [seq.shape[1] for seq in self.observations]
+            batch_idx.append(sum(batch_idx))
+            if self.log_transitions:
+                labels = np.argmax(np.concat(self.observations, axis=1), axis=-1).flatten()
+                action_labels = np.argmax(np.concat(self.actions, axis=1), axis=-1).flatten()
+                self.hiddens = torch.cat(self.hiddens).numpy().reshape(-1, self.hidden_size)
+                self.preds = self.model.decode(torch.cat(self.preds)).detach().numpy().reshape(-1, self.n_obs_states)
+                obss = [seq[:, 1:, :] for seq in self.observations]
+                trues = np.argmax(np.concat(obss, axis=1), axis=-1).flatten()
+                acc = (np.argmax(self.preds, -1) == trues).mean()
+                print("Acc: ", acc)
+                self.transition_matrix = build_transition_matrix(states=self.hiddens, 
+                                                                 labels=labels, 
+                                                                 n_clusters=self.true_transition_matrix.shape[-1],
+                                                                 actions=action_labels,
+                                                                 n_actions=self.n_actions,
+                                                                 batch_idx=batch_idx)
+                self.spectral_diff, self.jensenshannon_diff, self.entropy_diff = compute_metrics(
+                    transition_matrix=self.transition_matrix,
+                    true_transition_matrix=self.true_transition_matrix
+                )
+                print(self.spectral_diff, self.jensenshannon_diff, self.entropy_diff)
+                
             self.memorize()
-            self.episode = 1
+            self.episode = 0
             self.observations = [[]]
             self.actions = [[]]
+            self.init_encoded_obs = []
+            self.hiddens = []
+            self.preds = []
         else:
-            self.episode += 1
-            self.actions.append([])
-            self.observations.append([])
+            if self.episode:
+                self.actions[-1] = self._list_to_tensor(self.actions[-1])
+                self.observations[-1] = self._list_to_tensor(self.observations[-1])
+                self.actions.append([])
+                self.observations.append([])
         
+        self.episode += 1
         self.is_first = True
         self.cum_reward = 0
         self.prev_hidden = None
@@ -331,7 +376,7 @@ class tPCNAgent(BaseAgent):
         return self.prev_hidden.detach().numpy().squueze()
 
     def _list_to_tensor(self, tensors: list) -> torch.Tensor:
-        
+
         is_train = self._check_shapes(tensors)
 
         if not is_train:

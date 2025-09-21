@@ -15,6 +15,9 @@
 # wandb folders
 wandb/
 
+#aim folders
+.aim/
+
 # pycharm settings: ignore all with some exceptions
 .idea/*
 !.idea/scopes
